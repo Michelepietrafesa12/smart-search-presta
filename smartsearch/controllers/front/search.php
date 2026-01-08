@@ -60,6 +60,129 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * AJAX endpoint per i prodotti più venduti
+     */
+    public function displayAjaxBestsellers()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+
+        try {
+            $idLang = (int)$this->context->language->id;
+            $idShop = (int)$this->context->shop->id;
+
+            $products = $this->getBestsellers($idLang, $idShop, 12);
+
+            die(json_encode([
+                'products' => $products,
+                'total' => count($products)
+            ], JSON_UNESCAPED_UNICODE));
+
+        } catch (Exception $e) {
+            die(json_encode([
+                'products' => [],
+                'total' => 0,
+                'error' => $e->getMessage()
+            ], JSON_UNESCAPED_UNICODE));
+        }
+    }
+
+    /**
+     * Ottieni i prodotti più venduti dal database ordini
+     */
+    protected function getBestsellers($idLang, $idShop, $limit = 12)
+    {
+        // Query per trovare i prodotti più venduti basandosi sugli ordini
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.reference,
+                p.id_category_default,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                cl.name as category_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
+                IFNULL(SUM(od.product_quantity), 0) as total_sold
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl
+                ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . '
+                AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps
+                ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m
+                ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl
+                ON p.id_category_default = cl.id_category
+                AND cl.id_lang = ' . (int)$idLang . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'order_detail od
+                ON od.product_id = p.id_product
+            LEFT JOIN ' . _DB_PREFIX_ . 'orders o
+                ON o.id_order = od.id_order
+                AND o.valid = 1
+            WHERE p.active = 1
+            AND ps.active = 1
+            GROUP BY p.id_product
+            ORDER BY total_sold DESC, pl.name ASC
+            LIMIT ' . (int)$limit;
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if (!$results) {
+            return [];
+        }
+
+        $products = [];
+        foreach ($results as $row) {
+            // URL prodotto
+            $productUrl = $this->context->link->getProductLink(
+                $row['id_product'],
+                $row['link_rewrite'],
+                null,
+                null,
+                $idLang
+            );
+
+            // Immagine
+            $imageUrl = '';
+            if (!empty($row['id_image'])) {
+                $imageUrl = $this->context->link->getImageLink(
+                    $row['link_rewrite'],
+                    $row['id_image'],
+                    ImageType::getFormattedName('small')
+                );
+            }
+
+            // Prezzo
+            $priceDisplay = Product::getPriceStatic($row['id_product'], true);
+            $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
+
+            $products[] = [
+                'id' => (int)$row['id_product'],
+                'name' => $row['name'],
+                'url' => $productUrl,
+                'image' => $imageUrl,
+                'price' => Tools::displayPrice($priceDisplay),
+                'price_raw' => $priceDisplay,
+                'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
+                'price_old_raw' => ($priceOldDisplay > $priceDisplay) ? $priceOldDisplay : 0,
+                'description' => mb_substr(strip_tags($row['description_short'] ?? ''), 0, 100),
+                'category' => $row['category_name'] ?? '',
+                'manufacturer' => $row['manufacturer_name'] ?? '',
+                'reference' => $row['reference'] ?? '',
+                'in_stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product']) > 0,
+                'total_sold' => (int)$row['total_sold']
+            ];
+        }
+
+        return $products;
+    }
+
+    /**
      * Compatibilità: se chiamato senza action=search
      */
     public function initContent()

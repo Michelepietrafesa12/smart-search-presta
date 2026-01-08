@@ -12,33 +12,6 @@
     padding: 0;
 }
 
-/* === TRIGGER (Barra originale che apre overlay) === */
-.smartsearch-trigger {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: #f5f5f5;
-    border: 1px solid #e0e0e0;
-    border-radius: 25px;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: #666;
-    font-size: 14px;
-}
-
-.smartsearch-trigger:hover {
-    background: #fff;
-    border-color: #6366f1;
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.15);
-}
-
-.smartsearch-trigger svg {
-    width: 18px;
-    height: 18px;
-    color: #999;
-}
-
 /* === FULLSCREEN OVERLAY === */
 .smartsearch-overlay {
     position: fixed;
@@ -69,9 +42,9 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 20px;
+    padding: 16px 24px;
     background: #fff;
-    border-bottom: 1px solid #eee;
+    border-bottom: 2px solid #f0f0f0;
     flex-shrink: 0;
 }
 
@@ -80,22 +53,24 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #f5f5f5;
-    border-radius: 8px;
+    background: #f8f8f8;
+    border: 2px solid #e8e8e8;
+    border-radius: 12px;
     padding: 0 16px;
-    height: 48px;
+    height: 52px;
     transition: all 0.2s;
 }
 
 .smartsearch-search-box:focus-within {
     background: #fff;
-    box-shadow: 0 0 0 2px #6366f1;
+    border-color: #f97316;
+    box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.1);
 }
 
 .smartsearch-search-box svg {
-    width: 20px;
-    height: 20px;
-    color: #999;
+    width: 22px;
+    height: 22px;
+    color: #f97316;
     flex-shrink: 0;
 }
 
@@ -117,9 +92,9 @@
     display: none;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    background: #ddd;
+    width: 28px;
+    height: 28px;
+    background: #e0e0e0;
     border: none;
     border-radius: 50%;
     cursor: pointer;
@@ -132,27 +107,28 @@
 }
 
 .smartsearch-clear-input:hover {
-    background: #ccc;
+    background: #f97316;
+    color: #fff;
 }
 
 .smartsearch-close-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    background: none;
+    width: 48px;
+    height: 48px;
+    background: #f5f5f5;
     border: none;
     cursor: pointer;
     color: #666;
-    border-radius: 50%;
+    border-radius: 12px;
     transition: all 0.2s;
     flex-shrink: 0;
 }
 
 .smartsearch-close-btn:hover {
-    background: #f5f5f5;
-    color: #333;
+    background: #f97316;
+    color: #fff;
 }
 
 .smartsearch-close-btn svg {
@@ -164,8 +140,8 @@
 .smartsearch-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    padding: 12px 20px;
+    gap: 10px;
+    padding: 14px 24px;
     background: #fafafa;
     border-bottom: 1px solid #eee;
     flex-shrink: 0;
@@ -174,11 +150,11 @@
 .smartsearch-tag {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 8px;
+    padding: 8px 14px;
     background: #fff;
     border: 1px solid #e0e0e0;
-    border-radius: 20px;
+    border-radius: 25px;
     font-size: 13px;
     color: #333;
     cursor: pointer;
@@ -186,26 +162,28 @@
 }
 
 .smartsearch-tag:hover {
-    border-color: #6366f1;
-    color: #6366f1;
+    border-color: #f97316;
+    color: #f97316;
+    background: #fff7ed;
 }
 
 .smartsearch-tag-remove {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
-    background: #e0e0e0;
+    width: 18px;
+    height: 18px;
+    background: #e8e8e8;
     border-radius: 50%;
-    color: #666;
-    font-size: 12px;
+    color: #888;
+    font-size: 14px;
+    font-weight: bold;
     line-height: 1;
     transition: all 0.2s;
 }
 
 .smartsearch-tag:hover .smartsearch-tag-remove {
-    background: #6366f1;
+    background: #f97316;
     color: #fff;
 }
 
@@ -216,28 +194,34 @@
     overflow: hidden;
 }
 
-/* === SIDEBAR FILTRI === */
+/* === SIDEBAR FILTRI - PIÙ VISIBILI === */
 .smartsearch-sidebar {
-    width: 260px;
-    background: #fff;
-    border-right: 1px solid #eee;
+    width: 280px;
+    background: #f8f9fa;
+    border-right: 2px solid #e8e8e8;
     overflow-y: auto;
     flex-shrink: 0;
     padding: 0;
 }
 
 .smartsearch-filter-section {
-    border-bottom: 1px solid #eee;
+    background: #fff;
+    margin: 12px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    overflow: hidden;
 }
 
 .smartsearch-filter-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 16px 18px;
     cursor: pointer;
     user-select: none;
+    background: #fff;
     transition: background 0.2s;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .smartsearch-filter-header:hover {
@@ -246,14 +230,16 @@
 
 .smartsearch-filter-title {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 700;
     color: #333;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .smartsearch-filter-toggle {
     width: 20px;
     height: 20px;
-    color: #999;
+    color: #f97316;
     transition: transform 0.2s;
 }
 
@@ -262,76 +248,85 @@
 }
 
 .smartsearch-filter-body {
-    padding: 0 20px 16px;
+    padding: 16px 18px;
     display: block;
+    background: #fff;
 }
 
 .smartsearch-filter-section.collapsed .smartsearch-filter-body {
     display: none;
 }
 
-/* Price slider */
+/* Price slider - migliorato */
 .smartsearch-price-slider {
-    padding: 10px 0;
+    padding: 8px 0;
 }
 
 .smartsearch-price-range {
     position: relative;
-    height: 6px;
-    background: #e0e0e0;
-    border-radius: 3px;
-    margin: 15px 0;
+    height: 8px;
+    background: #e8e8e8;
+    border-radius: 4px;
+    margin: 20px 0;
 }
 
 .smartsearch-price-range-fill {
     position: absolute;
     height: 100%;
     background: linear-gradient(90deg, #f97316, #fb923c);
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
 .smartsearch-price-handle {
     position: absolute;
     top: 50%;
-    width: 18px;
-    height: 18px;
+    width: 22px;
+    height: 22px;
     background: #fff;
-    border: 2px solid #f97316;
+    border: 3px solid #f97316;
     border-radius: 50%;
     transform: translate(-50%, -50%);
     cursor: grab;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(249,115,22,0.3);
 }
 
 .smartsearch-price-values {
     display: flex;
     justify-content: space-between;
-    font-size: 13px;
+    font-size: 14px;
     color: #666;
+    margin-top: 8px;
 }
 
 .smartsearch-price-badge {
-    background: #f97316;
+    background: linear-gradient(135deg, #f97316, #fb923c);
     color: #fff;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
 }
 
-/* Filter search */
+/* Filter search - migliorato */
 .smartsearch-filter-search {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 10px;
+    padding: 10px 14px;
     background: #f5f5f5;
-    border-radius: 6px;
-    margin-bottom: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-bottom: 14px;
+}
+
+.smartsearch-filter-search:focus-within {
+    border-color: #f97316;
+    background: #fff;
 }
 
 .smartsearch-filter-search svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     color: #999;
 }
 
@@ -339,34 +334,40 @@
     flex: 1;
     border: none;
     background: transparent;
-    font-size: 13px;
+    font-size: 14px;
     outline: none;
+    color: #333;
 }
 
-/* Filter options */
+/* Filter options - migliorato */
 .smartsearch-filter-options {
-    max-height: 200px;
+    max-height: 220px;
     overflow-y: auto;
 }
 
 .smartsearch-filter-option {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 0;
+    gap: 12px;
+    padding: 10px 0;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: all 0.2s;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.smartsearch-filter-option:last-child {
+    border-bottom: none;
 }
 
 .smartsearch-filter-option:hover {
-    color: #6366f1;
+    padding-left: 8px;
 }
 
 .smartsearch-filter-checkbox {
-    width: 18px;
-    height: 18px;
-    border: 2px solid #ccc;
-    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #d0d0d0;
+    border-radius: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -374,14 +375,18 @@
     transition: all 0.2s;
 }
 
+.smartsearch-filter-option:hover .smartsearch-filter-checkbox {
+    border-color: #f97316;
+}
+
 .smartsearch-filter-option.selected .smartsearch-filter-checkbox {
-    background: #6366f1;
-    border-color: #6366f1;
+    background: #f97316;
+    border-color: #f97316;
 }
 
 .smartsearch-filter-checkbox svg {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     color: #fff;
     display: none;
 }
@@ -394,36 +399,46 @@
     flex: 1;
     font-size: 14px;
     color: #333;
+    font-weight: 500;
 }
 
 .smartsearch-filter-count {
-    font-size: 12px;
-    color: #999;
+    font-size: 13px;
+    color: #888;
+    background: #f0f0f0;
+    padding: 2px 8px;
+    border-radius: 10px;
 }
 
-/* Filter tags (Categorie) */
+/* Filter tags (Categorie) - migliorato */
 .smartsearch-filter-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 10px;
 }
 
 .smartsearch-filter-tag {
     display: inline-flex;
-    padding: 6px 12px;
+    padding: 8px 14px;
     background: #f5f5f5;
-    border: 1px solid #e0e0e0;
-    border-radius: 20px;
+    border: 2px solid #e8e8e8;
+    border-radius: 25px;
     font-size: 13px;
-    color: #333;
+    font-weight: 500;
+    color: #555;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.smartsearch-filter-tag:hover,
+.smartsearch-filter-tag:hover {
+    border-color: #f97316;
+    color: #f97316;
+    background: #fff7ed;
+}
+
 .smartsearch-filter-tag.selected {
-    background: #6366f1;
-    border-color: #6366f1;
+    background: #f97316;
+    border-color: #f97316;
     color: #fff;
 }
 
@@ -431,7 +446,7 @@
 .smartsearch-main {
     flex: 1;
     overflow-y: auto;
-    background: #fafafa;
+    background: #f5f5f5;
     padding: 0;
 }
 
@@ -440,196 +455,172 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 18px 24px;
     background: #fff;
-    border-bottom: 1px solid #eee;
+    border-bottom: 2px solid #f0f0f0;
     position: sticky;
     top: 0;
     z-index: 10;
 }
 
 .smartsearch-results-count {
-    font-size: 14px;
+    font-size: 15px;
     color: #666;
 }
 
 .smartsearch-results-count strong {
-    color: #333;
+    color: #f97316;
+    font-weight: 700;
 }
 
 .smartsearch-results-sort {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 10px;
+    font-size: 14px;
     color: #666;
 }
 
 .smartsearch-results-sort select {
-    padding: 6px 12px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 13px;
+    padding: 8px 14px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 14px;
     background: #fff;
     cursor: pointer;
+    font-weight: 500;
 }
 
-/* Banner */
-.smartsearch-banner {
-    margin: 16px 20px;
-    border-radius: 12px;
-    overflow: hidden;
-    background: linear-gradient(90deg, #f97316, #fb923c);
-    color: #fff;
-    text-align: center;
-    padding: 16px;
+.smartsearch-results-sort select:focus {
+    border-color: #f97316;
+    outline: none;
+}
+
+/* Bestsellers section title */
+.smartsearch-section-title {
+    padding: 20px 24px 12px;
     font-size: 18px;
-    font-weight: 600;
-    text-decoration: none;
-    display: block;
-    transition: transform 0.2s;
+    font-weight: 700;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-.smartsearch-banner:hover {
-    transform: scale(1.01);
+.smartsearch-section-title svg {
+    width: 24px;
+    height: 24px;
+    color: #f97316;
 }
 
-/* Products grid */
+/* Products grid - MIGLIORATO */
 .smartsearch-products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 16px;
-    padding: 16px 20px;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+    padding: 20px 24px;
 }
 
-/* Product card */
+/* Product card - MIGLIORATO senza carrello */
 .smartsearch-product-card {
     background: #fff;
-    border-radius: 12px;
+    border-radius: 16px;
     overflow: hidden;
     text-decoration: none;
     color: inherit;
-    transition: all 0.2s;
+    transition: all 0.3s;
     position: relative;
     display: flex;
     flex-direction: column;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
 }
 
 .smartsearch-product-card:hover {
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    transform: translateY(-4px);
 }
 
 /* Discount badge */
 .smartsearch-discount-badge {
     position: absolute;
-    top: 10px;
-    left: 10px;
-    background: #ef4444;
+    top: 12px;
+    left: 12px;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
     color: #fff;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
-    padding: 4px 8px;
-    border-radius: 6px;
+    padding: 6px 10px;
+    border-radius: 8px;
     z-index: 2;
+    box-shadow: 0 2px 8px rgba(239,68,68,0.3);
 }
 
-/* Product image */
+/* Product image - MIGLIORATO */
 .smartsearch-product-image {
     position: relative;
     width: 100%;
     padding-top: 100%;
-    background: #f5f5f5;
+    background: #fafafa;
     overflow: hidden;
 }
 
 .smartsearch-product-image img {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 85%;
+    max-height: 85%;
+    width: auto;
+    height: auto;
     object-fit: contain;
-    padding: 10px;
     transition: transform 0.3s;
 }
 
 .smartsearch-product-card:hover .smartsearch-product-image img {
-    transform: scale(1.05);
+    transform: translate(-50%, -50%) scale(1.08);
 }
 
-/* Product info */
+/* Product info - MIGLIORATO */
 .smartsearch-product-info {
-    padding: 12px;
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     flex: 1;
+    background: #fff;
 }
 
 .smartsearch-product-name {
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
     color: #333;
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    min-height: 36px;
+    min-height: 40px;
 }
 
 .smartsearch-product-prices {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     margin-top: auto;
+    padding-top: 8px;
 }
 
 .smartsearch-product-old-price {
-    font-size: 12px;
+    font-size: 13px;
     color: #999;
     text-decoration: line-through;
 }
 
 .smartsearch-product-price {
-    font-size: 16px;
+    font-size: 18px;
     font-weight: 700;
     color: #f97316;
-}
-
-/* Add to cart button */
-.smartsearch-add-cart {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    width: 36px;
-    height: 36px;
-    background: #f97316;
-    border: none;
-    border-radius: 8px;
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transform: scale(0.8);
-    transition: all 0.2s;
-}
-
-.smartsearch-product-card:hover .smartsearch-add-cart {
-    opacity: 1;
-    transform: scale(1);
-}
-
-.smartsearch-add-cart:hover {
-    background: #ea580c;
-}
-
-.smartsearch-add-cart svg {
-    width: 18px;
-    height: 18px;
 }
 
 /* === LOADER === */
@@ -638,18 +629,18 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 60px 20px;
+    padding: 80px 20px;
     color: #666;
 }
 
 .smartsearch-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid #e0e0e0;
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e0e0e0;
     border-top-color: #f97316;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
 }
 
 @keyframes spin {
@@ -662,53 +653,59 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 80px 20px;
+    padding: 100px 20px;
     text-align: center;
 }
 
 .smartsearch-no-results svg {
-    width: 80px;
-    height: 80px;
-    color: #ddd;
-    margin-bottom: 20px;
-}
-
-.smartsearch-no-results h3 {
-    font-size: 18px;
-    color: #333;
-    margin-bottom: 8px;
-}
-
-.smartsearch-no-results p {
-    font-size: 14px;
-    color: #666;
-}
-
-/* === INITIAL STATE (No search yet) === */
-.smartsearch-initial {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 80px 20px;
-    text-align: center;
-    flex: 1;
-}
-
-.smartsearch-initial svg {
     width: 100px;
     height: 100px;
     color: #e0e0e0;
     margin-bottom: 24px;
 }
 
-.smartsearch-initial h3 {
+.smartsearch-no-results h3 {
     font-size: 20px;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.smartsearch-no-results p {
+    font-size: 15px;
+    color: #666;
+}
+
+/* === INITIAL STATE / BESTSELLERS === */
+.smartsearch-initial {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    flex: 1;
+}
+
+.smartsearch-initial-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    text-align: center;
+}
+
+.smartsearch-initial-message svg {
+    width: 80px;
+    height: 80px;
+    color: #e0e0e0;
+    margin-bottom: 20px;
+}
+
+.smartsearch-initial-message h3 {
+    font-size: 18px;
     color: #333;
     margin-bottom: 8px;
 }
 
-.smartsearch-initial p {
+.smartsearch-initial-message p {
     font-size: 14px;
     color: #666;
 }
@@ -718,19 +715,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    background: none;
+    width: 44px;
+    height: 44px;
+    background: #f5f5f5;
     border: none;
-    border-radius: 50%;
-    color: #999;
+    border-radius: 10px;
+    color: #666;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .smartsearch-voice-btn:hover {
-    background: #f5f5f5;
-    color: #6366f1;
+    background: #f97316;
+    color: #fff;
 }
 
 .smartsearch-voice-btn.listening {
@@ -746,31 +743,31 @@
 
 /* === HIGHLIGHT === */
 mark {
-    background: #fef08a;
+    background: #fef3c7;
     color: inherit;
-    padding: 0 2px;
-    border-radius: 2px;
+    padding: 1px 3px;
+    border-radius: 3px;
 }
 
 /* === RESPONSIVE MOBILE === */
 @media (max-width: 768px) {
     .smartsearch-header {
-        padding: 10px 12px;
+        padding: 12px 16px;
     }
 
     .smartsearch-search-box {
-        height: 44px;
-        padding: 0 12px;
+        height: 48px;
+        padding: 0 14px;
     }
 
     .smartsearch-tags {
-        padding: 10px 12px;
-        gap: 6px;
+        padding: 12px 16px;
+        gap: 8px;
     }
 
     .smartsearch-tag {
         font-size: 12px;
-        padding: 5px 10px;
+        padding: 6px 12px;
     }
 
     .smartsearch-content {
@@ -779,9 +776,7 @@ mark {
 
     .smartsearch-sidebar {
         width: 100%;
-        max-height: none;
         border-right: none;
-        border-bottom: 1px solid #eee;
         display: none;
     }
 
@@ -793,7 +788,7 @@ mark {
         right: 0;
         bottom: 0;
         z-index: 100;
-        background: #fff;
+        background: #f8f9fa;
         overflow-y: auto;
     }
 
@@ -802,64 +797,47 @@ mark {
         align-items: center;
         justify-content: center;
         gap: 8px;
-        padding: 12px;
+        padding: 14px;
         background: #fff;
-        border: 1px solid #eee;
-        border-radius: 8px;
-        margin: 12px;
+        border: 2px solid #f97316;
+        border-radius: 10px;
+        margin: 16px;
         font-size: 14px;
-        font-weight: 500;
-        color: #333;
+        font-weight: 600;
+        color: #f97316;
         cursor: pointer;
-    }
-
-    .smartsearch-main {
-        padding: 0;
     }
 
     .smartsearch-products-grid {
         grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
-        padding: 10px 12px;
+        gap: 12px;
+        padding: 16px;
     }
 
     .smartsearch-product-info {
-        padding: 10px;
+        padding: 12px;
     }
 
     .smartsearch-product-name {
-        font-size: 12px;
-        min-height: 34px;
+        font-size: 13px;
+        min-height: 36px;
     }
 
     .smartsearch-product-price {
-        font-size: 14px;
+        font-size: 16px;
     }
 
     .smartsearch-product-old-price {
-        font-size: 11px;
-    }
-
-    .smartsearch-add-cart {
-        opacity: 1;
-        transform: scale(1);
-        width: 32px;
-        height: 32px;
-    }
-
-    .smartsearch-banner {
-        margin: 10px 12px;
-        font-size: 14px;
-        padding: 12px;
+        font-size: 12px;
     }
 
     .smartsearch-results-header {
-        padding: 12px;
+        padding: 14px 16px;
     }
 
-    .smartsearch-close-btn {
-        width: 40px;
-        height: 40px;
+    .smartsearch-section-title {
+        padding: 16px 16px 10px;
+        font-size: 16px;
     }
 }
 
@@ -878,33 +856,24 @@ mark {
 .smartsearch-sidebar::-webkit-scrollbar,
 .smartsearch-main::-webkit-scrollbar,
 .smartsearch-filter-options::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
 }
 
 .smartsearch-sidebar::-webkit-scrollbar-track,
 .smartsearch-main::-webkit-scrollbar-track,
 .smartsearch-filter-options::-webkit-scrollbar-track {
-    background: #f5f5f5;
+    background: #f0f0f0;
 }
 
 .smartsearch-sidebar::-webkit-scrollbar-thumb,
 .smartsearch-main::-webkit-scrollbar-thumb,
 .smartsearch-filter-options::-webkit-scrollbar-thumb {
     background: #ccc;
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
 .smartsearch-sidebar::-webkit-scrollbar-thumb:hover,
 .smartsearch-main::-webkit-scrollbar-thumb:hover,
 .smartsearch-filter-options::-webkit-scrollbar-thumb:hover {
-    background: #aaa;
-}
-
-/* === TRANSITIONS === */
-.smartsearch-overlay,
-.smartsearch-product-card,
-.smartsearch-filter-option,
-.smartsearch-tag,
-.smartsearch-close-btn {
-    transition: all 0.2s ease;
+    background: #f97316;
 }

@@ -247,6 +247,89 @@
         overlay.classList.add('active');
         document.body.style.overflow = 'hidden';
         setTimeout(() => searchInput.focus(), 100);
+
+        // Carica i prodotti più venduti all'apertura
+        loadBestsellers();
+    }
+
+    /**
+     * Carica i prodotti più venduti
+     */
+    function loadBestsellers() {
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+
+        // Mostra loader
+        main.innerHTML = `
+            <div class="smartsearch-loader">
+                <div class="smartsearch-spinner"></div>
+                <span>Caricamento prodotti...</span>
+            </div>
+        `;
+        sidebar.innerHTML = '';
+
+        // Chiama l'API per i bestseller
+        const url = config.ajax_url + '?ajax=1&action=bestsellers';
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.products && data.products.length > 0) {
+                renderBestsellers(data.products);
+            } else {
+                renderInitialState();
+            }
+        })
+        .catch(error => {
+            console.log('SmartSearch: Bestsellers non disponibili', error);
+            renderInitialState();
+        });
+    }
+
+    /**
+     * Render bestsellers
+     */
+    function renderBestsellers(products) {
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+
+        sidebar.innerHTML = '';
+
+        let html = `
+            <div class="smartsearch-section-title">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                <span>${t.bestsellers || 'Prodotti più venduti'}</span>
+            </div>
+        `;
+
+        html += '<div class="smartsearch-products-grid">';
+
+        products.forEach((product, index) => {
+            const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+
+            html += `
+                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
+                    ${discount > 0 ? `<span class="smartsearch-discount-badge">${discount}%</span>` : ''}
+                    <div class="smartsearch-product-image">
+                        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                    </div>
+                    <div class="smartsearch-product-info">
+                        <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
+                        <div class="smartsearch-product-prices">
+                            ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                            <span class="smartsearch-product-price">${product.price}</span>
+                        </div>
+                    </div>
+                </a>
+            `;
+        });
+
+        html += '</div>';
+
+        main.innerHTML = html;
     }
 
     /**
@@ -489,9 +572,6 @@
                             <span class="smartsearch-product-price">${product.price}</span>
                         </div>
                     </div>
-                    <button type="button" class="smartsearch-add-cart" title="${t.add_to_cart || 'Aggiungi al carrello'}">
-                        ${icons.cart}
-                    </button>
                 </a>
             `;
         });
