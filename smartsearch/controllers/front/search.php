@@ -252,9 +252,29 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Ricerca prodotti semplice nel database
+     * Ricerca prodotti con supporto fuzzy/tollerante
      */
     protected function searchProducts($query, $idLang, $idShop)
+    {
+        // Prima prova ricerca esatta
+        $results = $this->searchProductsExact($query, $idLang, $idShop);
+
+        // Se non trova nulla, prova ricerca fuzzy
+        if (empty($results)) {
+            $results = $this->searchProductsFuzzy($query, $idLang, $idShop);
+        }
+
+        if (!$results) {
+            return [];
+        }
+
+        return $this->formatProducts($results, $idLang);
+    }
+
+    /**
+     * Ricerca prodotti esatta
+     */
+    protected function searchProductsExact($query, $idLang, $idShop)
     {
         $words = explode(' ', $query);
         $conditions = [];
@@ -266,6 +286,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     pl.name LIKE '%{$word}%'
                     OR pl.description_short LIKE '%{$word}%'
                     OR p.reference LIKE '%{$word}%'
+                    OR m.name LIKE '%{$word}%'
                 )";
             }
         }
@@ -274,6 +295,83 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return [];
         }
 
+        return $this->executeProductSearch(implode(' AND ', $conditions), $idLang, $idShop);
+    }
+
+    /**
+     * Ricerca prodotti fuzzy (tollerante agli errori di battitura)
+     */
+    protected function searchProductsFuzzy($query, $idLang, $idShop)
+    {
+        $words = explode(' ', $query);
+        $conditions = [];
+
+        foreach ($words as $word) {
+            if (mb_strlen($word) >= 3) {
+                $word = pSQL($word);
+                $wordConditions = [];
+
+                // 1. Ricerca SOUNDEX (fonetica)
+                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$word}')";
+                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$word}')";
+
+                // 2. Ricerca con wildcard tra le lettere (per typos)
+                $fuzzyPattern = $this->createFuzzyPattern($word);
+                $wordConditions[] = "pl.name LIKE '{$fuzzyPattern}'";
+                $wordConditions[] = "m.name LIKE '{$fuzzyPattern}'";
+
+                // 3. Ricerca senza la prima/ultima lettera (per errori comuni)
+                if (mb_strlen($word) > 3) {
+                    $withoutFirst = mb_substr($word, 1);
+                    $withoutLast = mb_substr($word, 0, -1);
+                    $wordConditions[] = "pl.name LIKE '%{$withoutFirst}%'";
+                    $wordConditions[] = "pl.name LIKE '%{$withoutLast}%'";
+                    $wordConditions[] = "m.name LIKE '%{$withoutFirst}%'";
+                    $wordConditions[] = "m.name LIKE '%{$withoutLast}%'";
+                }
+
+                // 4. Ricerca con consonanti (ignora vocali)
+                $consonants = $this->extractConsonants($word);
+                if (mb_strlen($consonants) >= 3) {
+                    $consonantPattern = '%' . implode('%', str_split($consonants)) . '%';
+                    $wordConditions[] = "pl.name LIKE '{$consonantPattern}'";
+                    $wordConditions[] = "m.name LIKE '{$consonantPattern}'";
+                }
+
+                $conditions[] = '(' . implode(' OR ', $wordConditions) . ')';
+            }
+        }
+
+        if (empty($conditions)) {
+            return [];
+        }
+
+        return $this->executeProductSearch(implode(' OR ', $conditions), $idLang, $idShop);
+    }
+
+    /**
+     * Crea pattern fuzzy con wildcard tra le lettere
+     * "ethicsport" -> "%e%t%h%i%c%s%p%o%r%t%"
+     */
+    protected function createFuzzyPattern($word)
+    {
+        $chars = preg_split('//u', $word, -1, PREG_SPLIT_NO_EMPTY);
+        return '%' . implode('%', $chars) . '%';
+    }
+
+    /**
+     * Estrae solo le consonanti da una parola
+     */
+    protected function extractConsonants($word)
+    {
+        return preg_replace('/[aeiouàèéìòù]/iu', '', $word);
+    }
+
+    /**
+     * Esegue la query di ricerca prodotti
+     */
+    protected function executeProductSearch($whereCondition, $idLang, $idShop)
+    {
         $sql = '
             SELECT DISTINCT
                 p.id_product,
@@ -301,59 +399,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 AND cl.id_lang = ' . (int)$idLang . '
             WHERE p.active = 1
             AND ps.active = 1
-            AND (' . implode(' AND ', $conditions) . ')
+            AND (' . $whereCondition . ')
             ORDER BY pl.name ASC
             LIMIT 20';
 
-        $results = Db::getInstance()->executeS($sql);
-
-        if (!$results) {
-            return [];
-        }
-
-        $products = [];
-        foreach ($results as $row) {
-            // URL prodotto
-            $productUrl = $this->context->link->getProductLink(
-                $row['id_product'],
-                $row['link_rewrite'],
-                null,
-                null,
-                $idLang
-            );
-
-            // Immagine
-            $imageUrl = '';
-            if (!empty($row['id_image'])) {
-                $imageUrl = $this->context->link->getImageLink(
-                    $row['link_rewrite'],
-                    $row['id_image'],
-                    ImageType::getFormattedName('home')
-                );
-            }
-
-            // Prezzo
-            $priceDisplay = Product::getPriceStatic($row['id_product'], true);
-            $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
-
-            $products[] = [
-                'id' => (int)$row['id_product'],
-                'name' => $row['name'],
-                'url' => $productUrl,
-                'image' => $imageUrl,
-                'price' => Tools::displayPrice($priceDisplay),
-                'price_raw' => $priceDisplay,
-                'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
-                'price_old_raw' => ($priceOldDisplay > $priceDisplay) ? $priceOldDisplay : 0,
-                'description' => mb_substr(strip_tags($row['description_short'] ?? ''), 0, 100),
-                'category' => $row['category_name'] ?? '',
-                'manufacturer' => $row['manufacturer_name'] ?? '',
-                'reference' => $row['reference'] ?? '',
-                'in_stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product']) > 0
-            ];
-        }
-
-        return $products;
+        return Db::getInstance()->executeS($sql);
     }
 
     /**

@@ -347,21 +347,33 @@
 
         // Chiama l'API per i bestseller
         const url = config.ajax_url + '?ajax=1&action=bestsellers';
+        console.log('SmartSearch: Loading bestsellers from:', url);
 
         fetch(url, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('SmartSearch: Bestsellers response status:', response.status);
+            if (!response.ok) {
+                throw new Error('HTTP error ' + response.status);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('SmartSearch: Bestsellers data:', data);
             if (data.products && data.products.length > 0) {
                 renderBestsellers(data.products);
+            } else if (data.error) {
+                console.error('SmartSearch: API error:', data.error);
+                renderInitialState();
             } else {
+                console.log('SmartSearch: No products returned');
                 renderInitialState();
             }
         })
         .catch(error => {
-            console.log('SmartSearch: Bestsellers non disponibili', error);
+            console.error('SmartSearch: Bestsellers fetch error:', error);
             renderInitialState();
         });
     }
