@@ -450,6 +450,67 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * AJAX endpoint proxy per analytics - evita CORS
+     * Riceve dati dal frontend e li inoltra a n8n server-side
+     */
+    public function displayAjaxAnalytics()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+
+        try {
+            // Leggi il body JSON della richiesta
+            $inputJSON = file_get_contents('php://input');
+            $data = json_decode($inputJSON, true);
+
+            if (!$data) {
+                die(json_encode(['success' => false, 'error' => 'Invalid JSON']));
+            }
+
+            // Ottieni URL webhook dalla configurazione
+            $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
+
+            if (empty($webhookUrl)) {
+                die(json_encode(['success' => false, 'error' => 'Webhook URL not configured']));
+            }
+
+            // Inoltra i dati a n8n
+            $ch = curl_init($webhookUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($data),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5, // timeout breve per non rallentare il frontend
+                CURLOPT_CONNECTTIMEOUT => 3
+            ]);
+
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $error = curl_error($ch);
+            curl_close($ch);
+
+            if ($error) {
+                die(json_encode(['success' => false, 'error' => $error]));
+            }
+
+            die(json_encode([
+                'success' => true,
+                'http_code' => $httpCode
+            ]));
+
+        } catch (Exception $e) {
+            die(json_encode([
+                'success' => false,
+                'error' => $e->getMessage()
+            ]));
+        }
+    }
+
+    /**
      * Ottieni filtri dalla richiesta
      */
     protected function getFiltersFromRequest()

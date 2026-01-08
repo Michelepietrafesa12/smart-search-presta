@@ -47,11 +47,11 @@
     }
 
     /**
-     * Send analytics event to n8n webhook
+     * Send analytics event via PrestaShop proxy (avoids CORS issues)
      */
     function sendAnalyticsEvent(eventType, data) {
-        const webhookUrl = config.analytics_webhook_url;
-        if (!webhookUrl) return;
+        // Use proxy endpoint if webhook is configured
+        if (!config.analytics_webhook_url) return;
 
         const payload = {
             event_type: eventType,
@@ -63,12 +63,13 @@
             ...data
         };
 
-        // Use fetch with proper JSON content-type
-        fetch(webhookUrl, {
+        // Send to PrestaShop proxy which forwards to n8n with proper headers
+        const proxyUrl = config.ajax_url + '?ajax=1&action=analytics';
+
+        fetch(proxyUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
-            mode: 'no-cors', // Needed for cross-origin webhooks
             keepalive: true
         }).catch(() => {});
     }
