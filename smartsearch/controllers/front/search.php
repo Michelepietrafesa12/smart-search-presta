@@ -600,19 +600,19 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         try {
             // Verifica che cURL sia disponibile
             if (!function_exists('curl_init')) {
-                die(json_encode(['success' => false, 'error' => 'cURL not available']));
+                die(json_encode(['success' => false, 'error' => 'cURL not available', 'debug' => 'curl_init not found']));
             }
 
             // Leggi il body JSON della richiesta
             $inputJSON = file_get_contents('php://input');
             if (empty($inputJSON)) {
-                die(json_encode(['success' => false, 'error' => 'Empty request body']));
+                die(json_encode(['success' => false, 'error' => 'Empty request body', 'debug' => 'No POST data received']));
             }
 
             $data = json_decode($inputJSON, true);
 
             if (!$data || !is_array($data)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid JSON']));
+                die(json_encode(['success' => false, 'error' => 'Invalid JSON', 'debug' => 'JSON decode failed: ' . json_last_error_msg()]));
             }
 
             // Sanitizza i dati (rimuovi potenziali script injection)
@@ -622,54 +622,71 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
 
             if (empty($webhookUrl)) {
-                die(json_encode(['success' => false, 'error' => 'Webhook URL not configured']));
+                die(json_encode(['success' => false, 'error' => 'Webhook URL not configured', 'debug' => 'SMARTSEARCH_ANALYTICS_WEBHOOK_URL is empty in PrestaShop configuration']));
             }
 
             // Valida URL webhook
             if (!filter_var($webhookUrl, FILTER_VALIDATE_URL)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid webhook URL']));
+                die(json_encode(['success' => false, 'error' => 'Invalid webhook URL', 'debug' => 'URL validation failed for: ' . substr($webhookUrl, 0, 50)]));
             }
 
             // Inoltra i dati a n8n con timeout basso
             $ch = curl_init($webhookUrl);
 
             if ($ch === false) {
-                die(json_encode(['success' => false, 'error' => 'cURL init failed']));
+                die(json_encode(['success' => false, 'error' => 'cURL init failed', 'debug' => 'curl_init returned false']));
             }
+
+            $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
 
             curl_setopt_array($ch, [
                 CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($data),
+                CURLOPT_POSTFIELDS => $jsonPayload,
                 CURLOPT_HTTPHEADER => [
                     'Content-Type: application/json',
-                    'Accept: application/json'
+                    'Accept: application/json',
+                    'Content-Length: ' . strlen($jsonPayload)
                 ],
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 3,           // Max 3 secondi
-                CURLOPT_CONNECTTIMEOUT => 2,    // Max 2 secondi per connessione
+                CURLOPT_TIMEOUT => 5,           // Max 5 secondi
+                CURLOPT_CONNECTTIMEOUT => 3,    // Max 3 secondi per connessione
                 CURLOPT_NOSIGNAL => 1,
                 CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_FOLLOWLOCATION => false
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 3
             ]);
 
-            curl_exec($ch);
+            $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
+            $errno = curl_errno($ch);
             curl_close($ch);
 
             if ($error) {
-                die(json_encode(['success' => false, 'error' => 'Connection error']));
+                die(json_encode([
+                    'success' => false,
+                    'error' => 'Connection error',
+                    'debug' => 'cURL error (' . $errno . '): ' . $error,
+                    'webhook_url' => substr($webhookUrl, 0, 50) . '...'
+                ]));
             }
 
+            // Considera successo se HTTP 2xx
+            $success = $httpCode >= 200 && $httpCode < 300;
+
             die(json_encode([
-                'success' => true,
-                'http_code' => $httpCode
+                'success' => $success,
+                'http_code' => $httpCode,
+                'debug' => $success ? 'Data forwarded successfully' : 'Webhook returned non-2xx status',
+                'response_preview' => substr($response, 0, 200)
             ]));
 
         } catch (Exception $e) {
             die(json_encode([
                 'success' => false,
-                'error' => 'Server error'
+                'error' => 'Server error',
+                'debug' => 'Exception: ' . $e->getMessage()
             ]));
         }
     }
@@ -677,8 +694,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * Sanitizza dati analytics per sicurezza
      */
-    protected function sanitizeAnalyticsData($data)
+    protected function sanitizeAnalyticsData($data, $depth = 0)
     {
+        // Previeni ricorsione infinita
+        if ($depth > 5) {
+            return [];
+        }
+
         // Non filtrare troppo - permetti tutti i campi ma sanitizza i valori
         $sanitized = [];
 
@@ -697,7 +719,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $sanitized[$cleanKey] = $value;
             } elseif (is_array($value)) {
                 // Limita dimensione array e ricorsivamente sanitizza
-                $sanitized[$cleanKey] = array_slice($value, 0, 100);
+                $limitedArray = array_slice($value, 0, 100);
+                $sanitized[$cleanKey] = $this->sanitizeAnalyticsData($limitedArray, $depth + 1);
             } elseif (is_bool($value)) {
                 $sanitized[$cleanKey] = $value;
             } elseif (is_null($value)) {

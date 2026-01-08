@@ -58,8 +58,11 @@
      * Send analytics event via PrestaShop proxy (avoids CORS issues)
      */
     function sendAnalyticsEvent(eventType, data) {
-        // Use proxy endpoint if webhook is configured
-        if (!config.analytics_webhook_url) return;
+        // Check if analytics is enabled (webhook URL configured)
+        if (!config.analytics_webhook_url) {
+            console.log('SmartSearch Analytics: Webhook URL not configured, skipping event:', eventType);
+            return;
+        }
 
         const payload = {
             event_type: eventType,
@@ -68,18 +71,32 @@
             user_agent: navigator.userAgent,
             device_type: getDeviceType(),
             timestamp: new Date().toISOString(),
+            page_url: window.location.href,
             ...data
         };
 
         // Send to PrestaShop proxy which forwards to n8n with proper headers
         const proxyUrl = config.ajax_url + '?ajax=1&action=analytics';
 
+        console.log('SmartSearch Analytics: Sending event', eventType, 'to proxy:', proxyUrl);
+        console.log('SmartSearch Analytics: Payload:', payload);
+
         fetch(proxyUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             keepalive: true
-        }).catch(() => {});
+        })
+        .then(response => response.json())
+        .then(result => {
+            console.log('SmartSearch Analytics: Response:', result);
+            if (!result.success) {
+                console.warn('SmartSearch Analytics: Error from server:', result.error);
+            }
+        })
+        .catch(error => {
+            console.error('SmartSearch Analytics: Fetch error:', error);
+        });
     }
 
     /**
@@ -138,6 +155,12 @@
         bindTriggers();
 
         console.log('SmartSearch 2.0 Fullscreen: Inizializzato');
+        console.log('SmartSearch Config:', {
+            ajax_url: config.ajax_url,
+            analytics_webhook_url: config.analytics_webhook_url ? 'CONFIGURED (' + config.analytics_webhook_url.substring(0, 30) + '...)' : 'NOT SET',
+            shop_id: config.shop_id,
+            session_id: sessionId
+        });
     }
 
     /**
