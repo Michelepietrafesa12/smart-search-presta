@@ -149,28 +149,95 @@
      * Bind triggers (existing search inputs)
      */
     function bindTriggers() {
+        // Selettori comuni per vari temi PrestaShop
         const selectors = [
+            // PrestaShop Classic
             '#search_widget input[type="text"]',
+            '#search_widget input[type="search"]',
             '.search-widget input[type="text"]',
+            '.search-widget input[type="search"]',
+            // Nomi input comuni
             'input[name="s"]',
             'input[name="search_query"]',
+            'input[name="search"]',
+            // ID comuni
+            '#search_query',
+            '#search_query_top',
+            '#search-query',
+            '#searchbox input',
+            // Classi comuni
+            '.search-input',
+            '.search_query',
+            '.search-field',
+            '.input-search',
+            // Form di ricerca generici
+            'form[action*="search"] input[type="text"]',
+            'form[action*="search"] input[type="search"]',
+            'form.search input',
+            '.search-form input',
+            // Header search
+            'header input[type="search"]',
+            'header input[type="text"][placeholder*="erca"]',
+            'header input[type="text"][placeholder*="earch"]',
+            // SmartSearch
             '#smartsearch-input',
             '.smartsearch-trigger'
         ];
 
+        let found = false;
+
         selectors.forEach(selector => {
-            document.querySelectorAll(selector).forEach(el => {
-                el.addEventListener('focus', (e) => {
-                    e.preventDefault();
-                    e.target.blur();
-                    openOverlay();
+            try {
+                document.querySelectorAll(selector).forEach(el => {
+                    // Evita di bindare l'input dell'overlay stesso
+                    if (el.classList.contains('smartsearch-search-input')) return;
+
+                    found = true;
+                    console.log('SmartSearch: Trovato input', selector, el);
+
+                    // Rimuovi eventi esistenti e aggiungi i nostri
+                    el.addEventListener('focus', handleTriggerFocus, true);
+                    el.addEventListener('click', handleTriggerClick, true);
+
+                    // Marca come gestito
+                    el.setAttribute('data-smartsearch-bound', 'true');
                 });
-                el.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    openOverlay();
-                });
-            });
+            } catch (e) {}
         });
+
+        if (!found) {
+            console.warn('SmartSearch: Nessun campo di ricerca trovato! Selettori provati:', selectors);
+            // Fallback: cerca qualsiasi input che sembri una ricerca
+            document.querySelectorAll('input').forEach(el => {
+                const placeholder = (el.placeholder || '').toLowerCase();
+                const name = (el.name || '').toLowerCase();
+                const id = (el.id || '').toLowerCase();
+
+                if (placeholder.includes('cerca') || placeholder.includes('search') ||
+                    name.includes('search') || name.includes('query') ||
+                    id.includes('search') || id.includes('query')) {
+
+                    if (!el.classList.contains('smartsearch-search-input')) {
+                        console.log('SmartSearch: Trovato input via fallback', el);
+                        el.addEventListener('focus', handleTriggerFocus, true);
+                        el.addEventListener('click', handleTriggerClick, true);
+                    }
+                }
+            });
+        }
+    }
+
+    function handleTriggerFocus(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.target.blur();
+        openOverlay();
+    }
+
+    function handleTriggerClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openOverlay();
     }
 
     /**
