@@ -87,6 +87,7 @@ class SmartSearch extends Module
         return parent::install()
             && $this->registerHook('displayHeader')
             && $this->registerHook('displayTop')
+            && $this->registerHook('displaySearch')
             && $this->registerHook('actionFrontControllerSetMedia')
             && $this->registerHook('actionProductAdd')
             && $this->registerHook('actionProductUpdate')
@@ -479,6 +480,34 @@ class SmartSearch extends Module
             ]
         ]);
 
+        return '';
+    }
+
+    /**
+     * Hook displaySearch - Sovrascrive la barra di ricerca del tema
+     */
+    public function hookDisplaySearch($params)
+    {
+        if (!Configuration::get('SMARTSEARCH_ENABLED')) {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'smartsearch_placeholder' => $this->l('Cerca prodotti...'),
+            'smartsearch_voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
+            'smartsearch_search_url' => $this->context->link->getPageLink('search', true),
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/searchbar.tpl');
+    }
+
+    /**
+     * Hook displayTop - Aggiunge widget ricerca anche nella posizione top (alternativa)
+     */
+    public function hookDisplayTop($params)
+    {
+        // Se displaySearch è già gestito dal tema, non duplicare
+        // Questa è un'alternativa per temi che non supportano displaySearch
         return '';
     }
 

@@ -27,11 +27,16 @@
      * Inizializzazione
      */
     function init() {
-        // Trova il campo di ricerca
-        searchInput = document.querySelector('#search_widget input[type="text"]') ||
-                      document.querySelector('.search-widget input[type="text"]') ||
-                      document.querySelector('input[name="s"]') ||
-                      document.querySelector('input[name="search_query"]');
+        // Prima cerca il widget SmartSearch dedicato
+        searchInput = document.querySelector('#smartsearch-input');
+
+        // Se non trova il widget dedicato, cerca la barra di ricerca esistente del tema
+        if (!searchInput) {
+            searchInput = document.querySelector('#search_widget input[type="text"]') ||
+                          document.querySelector('.search-widget input[type="text"]') ||
+                          document.querySelector('input[name="s"]') ||
+                          document.querySelector('input[name="search_query"]');
+        }
 
         if (!searchInput) {
             console.warn('SmartSearch: Campo di ricerca non trovato');
@@ -40,7 +45,7 @@
 
         searchForm = searchInput.closest('form');
 
-        // Crea container risultati
+        // Crea/trova container risultati
         createResultsContainer();
 
         // Event listeners
@@ -49,8 +54,15 @@
         searchInput.addEventListener('focus', handleFocus);
         document.addEventListener('click', handleClickOutside);
 
-        // Placeholder
-        searchInput.setAttribute('placeholder', t.search_placeholder || 'Cerca prodotti...');
+        // Previeni submit form durante ricerca
+        if (searchForm) {
+            searchForm.addEventListener('submit', handleFormSubmit);
+        }
+
+        // Placeholder (se non già impostato dal template)
+        if (!searchInput.getAttribute('placeholder')) {
+            searchInput.setAttribute('placeholder', t.search_placeholder || 'Cerca prodotti...');
+        }
 
         // Inizializza ricerca vocale
         if (config.voice_enabled) {
@@ -61,26 +73,50 @@
     }
 
     /**
+     * Gestisce submit form
+     */
+    function handleFormSubmit(e) {
+        // Permetti submit solo se c'è una query valida
+        if (searchInput.value.trim().length < (config.min_chars || 2)) {
+            e.preventDefault();
+        }
+    }
+
+    /**
      * Crea container risultati con layout avanzato
      */
     function createResultsContainer() {
-        resultsContainer = document.createElement('div');
-        resultsContainer.className = 'smartsearch-results smartsearch-2';
+        // Prima cerca il container esistente dal template SmartSearch
+        resultsContainer = document.querySelector('#smartsearch-results');
+
+        // Se non esiste, crealo dinamicamente (per temi che usano barra ricerca esistente)
+        if (!resultsContainer) {
+            resultsContainer = document.createElement('div');
+            resultsContainer.id = 'smartsearch-results';
+            resultsContainer.className = 'smartsearch-results smartsearch-2';
+
+            const parent = searchInput.parentElement;
+            parent.style.position = 'relative';
+            parent.appendChild(resultsContainer);
+
+            // Aggiungi pulsante ricerca vocale solo se non esiste già
+            if (config.voice_enabled && 'webkitSpeechRecognition' in window && !parent.querySelector('.smartsearch-voice-btn')) {
+                const voiceBtn = document.createElement('button');
+                voiceBtn.type = 'button';
+                voiceBtn.className = 'smartsearch-voice-btn';
+                voiceBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z"/></svg>';
+                voiceBtn.title = t.voice_search || 'Ricerca vocale';
+                voiceBtn.addEventListener('click', toggleVoiceSearch);
+                parent.appendChild(voiceBtn);
+            }
+        }
+
         resultsContainer.style.display = 'none';
 
-        const parent = searchInput.parentElement;
-        parent.style.position = 'relative';
-        parent.appendChild(resultsContainer);
-
-        // Aggiungi pulsante ricerca vocale
-        if (config.voice_enabled && 'webkitSpeechRecognition' in window) {
-            const voiceBtn = document.createElement('button');
-            voiceBtn.type = 'button';
-            voiceBtn.className = 'smartsearch-voice-btn';
-            voiceBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z"/></svg>';
-            voiceBtn.title = t.voice_search || 'Ricerca vocale';
-            voiceBtn.addEventListener('click', toggleVoiceSearch);
-            parent.appendChild(voiceBtn);
+        // Se il pulsante vocale esiste nel template, aggiungi l'evento
+        const existingVoiceBtn = document.querySelector('.smartsearch-voice-btn');
+        if (existingVoiceBtn && config.voice_enabled) {
+            existingVoiceBtn.addEventListener('click', toggleVoiceSearch);
         }
     }
 
