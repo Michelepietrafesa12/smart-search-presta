@@ -497,6 +497,17 @@
     }
 
     /**
+     * Chiudi pannello filtri mobile
+     */
+    function closeMobileFilters() {
+        console.log('SmartSearch: Closing mobile filters');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        if (sidebar) {
+            sidebar.classList.remove('mobile-visible');
+        }
+    }
+
+    /**
      * Bind eventi filtri
      */
     function bindFilterEvents() {
@@ -511,11 +522,19 @@
             });
         });
 
-        // Chiudi filtri mobile
+        // Chiudi filtri mobile - pulsante X
         const closeBtn = sidebar.querySelector('.smartsearch-filters-close-mobile');
         if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                sidebar.classList.remove('mobile-visible');
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closeMobileFilters();
+            });
+            // Supporto touch per mobile
+            closeBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                closeMobileFilters();
             });
         }
 
@@ -625,7 +644,7 @@
         const applyBtn = sidebar.querySelector('.smartsearch-apply-filters');
         if (applyBtn) {
             applyBtn.addEventListener('click', () => {
-                sidebar.classList.remove('mobile-visible');
+                closeMobileFilters();
                 applyFiltersIfSearching();
             });
         }

@@ -771,9 +771,21 @@ mark {
         left: 0;
         right: 0;
         bottom: 0;
-        z-index: 100;
+        z-index: 999999;
         background: #f8f9fa;
         overflow-y: auto;
+        animation: slideInFromLeft 0.3s ease;
+    }
+
+    @keyframes slideInFromLeft {
+        from {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
     }
 
     .smartsearch-filter-toggle-mobile {
@@ -886,19 +898,30 @@ mark {
 
 .smartsearch-filters-close-mobile {
     display: none;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
     border: none;
-    background: #f5f5f5;
+    background: #f97316;
     border-radius: 50%;
     cursor: pointer;
     align-items: center;
     justify-content: center;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+    transition: all 0.2s;
+}
+
+.smartsearch-filters-close-mobile:hover,
+.smartsearch-filters-close-mobile:active {
+    background: #ea580c;
+    transform: scale(1.05);
 }
 
 .smartsearch-filters-close-mobile svg {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
+    color: #fff;
 }
 
 /* Sezione filtro con toggle */
@@ -1215,6 +1238,11 @@ mark {
 
     .smartsearch-sidebar.mobile-visible .smartsearch-filters-header {
         padding: 16px;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: #fff;
+        border-bottom: 2px solid #f97316;
     }
 
     .smartsearch-filter-section {
