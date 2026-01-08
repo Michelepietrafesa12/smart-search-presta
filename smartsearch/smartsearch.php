@@ -74,37 +74,13 @@ class SmartSearch extends Module
         $this->description = $this->l('Ricerca dinamica intelligente con AI, fuzzy search, sinonimi, filtri avanzati e analytics - simile a Doofinder');
         $this->confirmUninstall = $this->l('Sei sicuro di voler disinstallare questo modulo? Tutti i dati delle ricerche verranno persi.');
 
-        // Definizione tabs admin
+        // Definizione tabs admin - Solo Dashboard principale (contiene tutto)
         $this->tabs = [
             [
                 'class_name' => 'AdminSmartSearchDashboard',
                 'visible' => true,
                 'name' => 'Smart Search',
                 'parent_class_name' => 'AdminCatalog',
-            ],
-            [
-                'class_name' => 'AdminSmartSearchSynonyms',
-                'visible' => true,
-                'name' => 'Sinonimi',
-                'parent_class_name' => 'AdminSmartSearchDashboard',
-            ],
-            [
-                'class_name' => 'AdminSmartSearchBoost',
-                'visible' => true,
-                'name' => 'Boost Prodotti',
-                'parent_class_name' => 'AdminSmartSearchDashboard',
-            ],
-            [
-                'class_name' => 'AdminSmartSearchBanners',
-                'visible' => true,
-                'name' => 'Banner Promozionali',
-                'parent_class_name' => 'AdminSmartSearchDashboard',
-            ],
-            [
-                'class_name' => 'AdminSmartSearchAnalytics',
-                'visible' => true,
-                'name' => 'Analytics',
-                'parent_class_name' => 'AdminSmartSearchDashboard',
             ],
         ];
     }
@@ -413,17 +389,24 @@ class SmartSearch extends Module
     }
 
     /**
-     * Disinstalla tabs
+     * Disinstalla tabs - rimuove anche i tabs legacy
      */
     protected function uninstallTabs()
     {
-        foreach ($this->tabs as $tabData) {
-            $idTab = Tab::getIdFromClassName($tabData['class_name']);
+        // Lista completa di tutti i tabs da rimuovere (inclusi legacy)
+        $tabsToRemove = [
+            'AdminSmartSearchDashboard',
+            'AdminSmartSearchSynonyms',
+            'AdminSmartSearchBoost',
+            'AdminSmartSearchBanners',
+            'AdminSmartSearchAnalytics',
+        ];
+
+        foreach ($tabsToRemove as $className) {
+            $idTab = Tab::getIdFromClassName($className);
             if ($idTab) {
                 $tab = new Tab($idTab);
-                if (!$tab->delete()) {
-                    return false;
-                }
+                $tab->delete();
             }
         }
 
