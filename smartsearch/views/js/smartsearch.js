@@ -364,16 +364,59 @@
                 renderBestsellers(data.products);
             } else if (data.error) {
                 console.error('SmartSearch: API error:', data.error);
-                renderInitialState();
+                loadFallbackProducts();
             } else {
-                console.log('SmartSearch: No products returned');
-                renderInitialState();
+                console.log('SmartSearch: No products returned from bestsellers');
+                loadFallbackProducts();
             }
         })
         .catch(error => {
             console.error('SmartSearch: Bestsellers fetch error:', error);
-            renderInitialState();
+            loadFallbackProducts();
         });
+    }
+
+    /**
+     * Fallback: cerca prodotti generici se bestsellers non funziona
+     */
+    function loadFallbackProducts() {
+        const url = config.ajax_url + '?ajax=1&action=search&q=*';
+        console.log('SmartSearch: Loading fallback products from:', url);
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('SmartSearch: Fallback data:', data);
+            if (data.products && data.products.length > 0) {
+                renderBestsellers(data.products);
+            } else {
+                renderEmptyState();
+            }
+        })
+        .catch(error => {
+            console.error('SmartSearch: Fallback fetch error:', error);
+            renderEmptyState();
+        });
+    }
+
+    /**
+     * Mostra stato vuoto quando non ci sono prodotti
+     */
+    function renderEmptyState() {
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+
+        sidebar.innerHTML = '';
+        main.innerHTML = `
+            <div class="smartsearch-initial">
+                ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
+                <h3>${t.search_placeholder || 'Cerca prodotti...'}</h3>
+                <p>Inizia a digitare per cercare nel catalogo</p>
+            </div>
+        `;
     }
 
     /**
@@ -560,20 +603,15 @@
     }
 
     /**
-     * Render initial state
+     * Render initial state - mostra prodotti in evidenza o stato vuoto
      */
     function renderInitialState() {
-        const main = overlay.querySelector('.smartsearch-main');
-        const sidebar = overlay.querySelector('.smartsearch-sidebar');
-
-        sidebar.innerHTML = '';
-        main.innerHTML = `
-            <div class="smartsearch-initial">
-                ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
-                <h3>${t.search_placeholder || 'Cerca prodotti...'}</h3>
-                <p>Inizia a digitare per cercare nel catalogo</p>
-            </div>
-        `;
+        // Ricarica i prodotti invece di mostrare stato vuoto
+        if (overlay.classList.contains('active')) {
+            loadBestsellers();
+        } else {
+            renderEmptyState();
+        }
     }
 
     /**

@@ -19,6 +19,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $query = Tools::getValue('q', '');
             $query = trim(strip_tags($query));
 
+            $idLang = (int)$this->context->language->id;
+            $idShop = (int)$this->context->shop->id;
+
+            // Wildcard "*" restituisce prodotti recenti
+            if ($query === '*') {
+                $products = $this->getRecentProducts($idLang, $idShop, 20);
+                die(json_encode([
+                    'products' => $products,
+                    'categories' => [],
+                    'total' => count($products),
+                    'query' => $query
+                ], JSON_UNESCAPED_UNICODE));
+            }
+
             // Validazione query
             if (mb_strlen($query) < 2) {
                 die(json_encode([
@@ -28,9 +42,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     'query' => $query
                 ], JSON_UNESCAPED_UNICODE));
             }
-
-            $idLang = (int)$this->context->language->id;
-            $idShop = (int)$this->context->shop->id;
 
             // Ricerca prodotti semplice
             $products = $this->searchProducts($query, $idLang, $idShop);
