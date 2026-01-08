@@ -22,6 +22,39 @@ class SmartSearch extends Module
     /** @var array */
     protected $tabs = [];
 
+    /** @var array Cache delle configurazioni per evitare query multiple */
+    protected static $configCache = null;
+
+    /**
+     * Ottieni configurazione con cache statica
+     * Evita ~20 query al database per ogni page load
+     */
+    protected static function getConfig($key, $default = null)
+    {
+        if (self::$configCache === null) {
+            // Carica tutte le config in una volta sola
+            self::$configCache = [
+                'enabled' => (bool)Configuration::get('SMARTSEARCH_ENABLED'),
+                'min_chars' => (int)Configuration::get('SMARTSEARCH_MIN_CHARS') ?: 2,
+                'max_results' => (int)Configuration::get('SMARTSEARCH_MAX_RESULTS') ?: 8,
+                'debounce_time' => (int)Configuration::get('SMARTSEARCH_DEBOUNCE_TIME') ?: 300,
+                'show_price' => (bool)Configuration::get('SMARTSEARCH_SHOW_PRICE'),
+                'show_image' => (bool)Configuration::get('SMARTSEARCH_SHOW_IMAGE'),
+                'show_description' => (bool)Configuration::get('SMARTSEARCH_SHOW_DESCRIPTION'),
+                'show_category' => (bool)Configuration::get('SMARTSEARCH_SHOW_CATEGORY'),
+                'show_manufacturer' => (bool)Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
+                'show_stock' => (bool)Configuration::get('SMARTSEARCH_SHOW_STOCK'),
+                'highlight' => (bool)Configuration::get('SMARTSEARCH_HIGHLIGHT'),
+                'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
+                'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
+                'banners_enabled' => (bool)Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
+                'analytics_webhook_url' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
+                'cache_enabled' => (bool)Configuration::get('SMARTSEARCH_CACHE_ENABLED'),
+            ];
+        }
+        return isset(self::$configCache[$key]) ? self::$configCache[$key] : $default;
+    }
+
     public function __construct()
     {
         $this->name = 'smartsearch';
@@ -399,89 +432,77 @@ class SmartSearch extends Module
 
     /**
      * Hook per aggiungere CSS e JS
+     * OTTIMIZZATO: Carica JS in defer, CSS con preload
      */
     public function hookActionFrontControllerSetMedia($params)
     {
-        if (!Configuration::get('SMARTSEARCH_ENABLED')) {
+        if (!self::getConfig('enabled')) {
             return;
         }
 
-        // CSS
+        // CSS - caricato normalmente ma con priority bassa (non blocca render)
         $this->context->controller->registerStylesheet(
             'smartsearch-css',
             'modules/' . $this->name . '/views/css/smartsearch.css',
-            ['media' => 'all', 'priority' => 150]
+            ['media' => 'all', 'priority' => 200] // Priority alta = caricato dopo gli altri CSS
         );
 
-        // JavaScript
+        // JavaScript - caricato in defer per non bloccare il rendering
         $this->context->controller->registerJavascript(
             'smartsearch-js',
             'modules/' . $this->name . '/views/js/smartsearch.js',
-            ['position' => 'bottom', 'priority' => 150]
+            [
+                'position' => 'bottom',
+                'priority' => 200,
+                'attributes' => 'defer' // Non blocca il parsing HTML
+            ]
         );
     }
 
     /**
      * Hook displayHeader per variabili JS
+     * OTTIMIZZATO: Config minima inline, il resto via cache statica
      */
     public function hookDisplayHeader($params)
     {
-        if (!Configuration::get('SMARTSEARCH_ENABLED')) {
-            return;
+        if (!self::getConfig('enabled')) {
+            return '';
         }
 
-        // Passa le configurazioni al JavaScript
+        // Passa SOLO le configurazioni essenziali al JavaScript
+        // Usa la cache statica invece di query multiple
         Media::addJsDef([
             'smartsearch_config' => [
+                // URLs - essenziali
                 'ajax_url' => $this->context->link->getModuleLink($this->name, 'search'),
-                'track_url' => $this->context->link->getModuleLink($this->name, 'track'),
-                'min_chars' => (int)Configuration::get('SMARTSEARCH_MIN_CHARS'),
-                'max_results' => (int)Configuration::get('SMARTSEARCH_MAX_RESULTS'),
-                'debounce_time' => (int)Configuration::get('SMARTSEARCH_DEBOUNCE_TIME'),
 
-                // Visualizzazione
-                'show_price' => (bool)Configuration::get('SMARTSEARCH_SHOW_PRICE'),
-                'show_image' => (bool)Configuration::get('SMARTSEARCH_SHOW_IMAGE'),
-                'show_description' => (bool)Configuration::get('SMARTSEARCH_SHOW_DESCRIPTION'),
-                'show_category' => (bool)Configuration::get('SMARTSEARCH_SHOW_CATEGORY'),
-                'show_manufacturer' => (bool)Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
-                'show_stock' => (bool)Configuration::get('SMARTSEARCH_SHOW_STOCK'),
-                'highlight' => (bool)Configuration::get('SMARTSEARCH_HIGHLIGHT'),
+                // Config essenziali (dalla cache)
+                'min_chars' => self::getConfig('min_chars'),
+                'debounce_time' => self::getConfig('debounce_time'),
+                'highlight' => self::getConfig('highlight'),
+                'facets_enabled' => self::getConfig('facets_enabled'),
 
-                // Funzionalità
-                'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
-                'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
-                'banners_enabled' => (bool)Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
-
-                // Analytics webhook per n8n
-                'analytics_webhook_url' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
+                // Analytics - solo se configurato
+                'analytics_webhook_url' => self::getConfig('analytics_webhook_url'),
                 'shop_id' => (int)$this->context->shop->id,
 
-                // Traduzioni
+                // Valuta - minimale
+                'currency_sign' => $this->context->currency->sign,
+
+                // Traduzioni essenziali (ridotte al minimo)
                 'translations' => [
                     'search_placeholder' => $this->l('Cerca prodotti...'),
-                    'no_results' => $this->l('Nessun risultato trovato'),
-                    'view_all' => $this->l('Vedi tutti i risultati'),
-                    'did_you_mean' => $this->l('Forse cercavi'),
-                    'categories' => $this->l('Categorie'),
-                    'products' => $this->l('Prodotti'),
-                    'suggestions' => $this->l('Suggerimenti'),
+                    'no_results' => $this->l('Nessun risultato'),
                     'filters' => $this->l('Filtri'),
                     'price' => $this->l('Prezzo'),
                     'brand' => $this->l('Marca'),
-                    'in_stock' => $this->l('Disponibile'),
-                    'out_of_stock' => $this->l('Non disponibile'),
-                    'voice_search' => $this->l('Ricerca vocale'),
-                    'listening' => $this->l('Sto ascoltando...'),
+                    'categories' => $this->l('Categorie'),
                     'clear_filters' => $this->l('Rimuovi filtri'),
                     'apply_filters' => $this->l('Applica'),
-                    'from' => $this->l('Da'),
-                    'to' => $this->l('A'),
+                    'in_stock' => $this->l('Disponibile'),
+                    'featured_products' => $this->l('Prodotti in evidenza'),
+                    'products_found' => $this->l('risultati'),
                 ],
-
-                // Valuta
-                'currency_sign' => $this->context->currency->sign,
-                'currency_format' => $this->context->currency->format,
             ]
         ]);
 
@@ -490,16 +511,16 @@ class SmartSearch extends Module
 
     /**
      * Hook displaySearch - Sovrascrive la barra di ricerca del tema
+     * OTTIMIZZATO: Usa cache config
      */
     public function hookDisplaySearch($params)
     {
-        if (!Configuration::get('SMARTSEARCH_ENABLED')) {
+        if (!self::getConfig('enabled')) {
             return '';
         }
 
         $this->context->smarty->assign([
             'smartsearch_placeholder' => $this->l('Cerca prodotti...'),
-            'smartsearch_voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
             'smartsearch_search_url' => $this->context->link->getPageLink('search', true),
         ]);
 
@@ -745,7 +766,10 @@ class SmartSearch extends Module
      */
     protected function invalidateCache()
     {
-        if (Configuration::get('SMARTSEARCH_CACHE_ENABLED')) {
+        // Invalida anche la cache statica delle config
+        self::$configCache = null;
+
+        if (self::getConfig('cache_enabled')) {
             $cache = new SmartSearchCache(
                 $this->context->language->id,
                 $this->context->shop->id

@@ -58,11 +58,8 @@
      * Send analytics event via PrestaShop proxy (avoids CORS issues)
      */
     function sendAnalyticsEvent(eventType, data) {
-        // Check if analytics is enabled (webhook URL configured)
-        if (!config.analytics_webhook_url) {
-            console.log('SmartSearch Analytics: Webhook URL not configured, skipping event:', eventType);
-            return;
-        }
+        // Skip if webhook not configured
+        if (!config.analytics_webhook_url) return;
 
         const payload = {
             event_type: eventType,
@@ -75,28 +72,13 @@
             ...data
         };
 
-        // Send to PrestaShop proxy which forwards to n8n with proper headers
-        const proxyUrl = config.ajax_url + '?ajax=1&action=analytics';
-
-        console.log('SmartSearch Analytics: Sending event', eventType, 'to proxy:', proxyUrl);
-        console.log('SmartSearch Analytics: Payload:', payload);
-
-        fetch(proxyUrl, {
+        // Send to PrestaShop proxy (non-blocking)
+        fetch(config.ajax_url + '?ajax=1&action=analytics', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             keepalive: true
-        })
-        .then(response => response.json())
-        .then(result => {
-            console.log('SmartSearch Analytics: Response:', result);
-            if (!result.success) {
-                console.warn('SmartSearch Analytics: Error from server:', result.error);
-            }
-        })
-        .catch(error => {
-            console.error('SmartSearch Analytics: Fetch error:', error);
-        });
+        }).catch(() => {}); // Silent fail - analytics should never block UX
     }
 
     /**
@@ -153,14 +135,6 @@
         loadRecentSearches();
         createOverlay();
         bindTriggers();
-
-        console.log('SmartSearch 2.0 Fullscreen: Inizializzato');
-        console.log('SmartSearch Config:', {
-            ajax_url: config.ajax_url,
-            analytics_webhook_url: config.analytics_webhook_url ? 'CONFIGURED (' + config.analytics_webhook_url.substring(0, 30) + '...)' : 'NOT SET',
-            shop_id: config.shop_id,
-            session_id: sessionId
-        });
     }
 
     /**
@@ -302,7 +276,6 @@
                     if (el.classList.contains('smartsearch-search-input')) return;
 
                     found = true;
-                    console.log('SmartSearch: Trovato input', selector, el);
 
                     // Rimuovi eventi esistenti e aggiungi i nostri
                     el.addEventListener('focus', handleTriggerFocus, true);
@@ -315,7 +288,6 @@
         });
 
         if (!found) {
-            console.warn('SmartSearch: Nessun campo di ricerca trovato! Selettori provati:', selectors);
             // Fallback: cerca qualsiasi input che sembri una ricerca
             document.querySelectorAll('input').forEach(el => {
                 const placeholder = (el.placeholder || '').toLowerCase();
@@ -327,7 +299,6 @@
                     id.includes('search') || id.includes('query')) {
 
                     if (!el.classList.contains('smartsearch-search-input')) {
-                        console.log('SmartSearch: Trovato input via fallback', el);
                         el.addEventListener('focus', handleTriggerFocus, true);
                         el.addEventListener('click', handleTriggerClick, true);
                     }
@@ -382,7 +353,6 @@
             renderFilters();
         })
         .catch(error => {
-            console.error('SmartSearch: Filters fetch error:', error);
         });
     }
 
@@ -500,7 +470,6 @@
      * Chiudi pannello filtri mobile
      */
     function closeMobileFilters() {
-        console.log('SmartSearch: Closing mobile filters');
         const sidebar = overlay.querySelector('.smartsearch-sidebar');
         if (sidebar) {
             sidebar.classList.remove('mobile-visible');
@@ -704,33 +673,27 @@
 
         // Chiama l'API per i bestseller
         const url = config.ajax_url + '?ajax=1&action=bestsellers';
-        console.log('SmartSearch: Loading bestsellers from:', url);
 
         fetch(url, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => {
-            console.log('SmartSearch: Bestsellers response status:', response.status);
             if (!response.ok) {
                 throw new Error('HTTP error ' + response.status);
             }
             return response.json();
         })
         .then(data => {
-            console.log('SmartSearch: Bestsellers data:', data);
             if (data.products && data.products.length > 0) {
                 renderBestsellers(data.products);
             } else if (data.error) {
-                console.error('SmartSearch: API error:', data.error);
                 loadFallbackProducts();
             } else {
-                console.log('SmartSearch: No products returned from bestsellers');
                 loadFallbackProducts();
             }
         })
         .catch(error => {
-            console.error('SmartSearch: Bestsellers fetch error:', error);
             loadFallbackProducts();
         });
     }
@@ -740,7 +703,6 @@
      */
     function loadFallbackProducts() {
         const url = config.ajax_url + '?ajax=1&action=search&q=*';
-        console.log('SmartSearch: Loading fallback products from:', url);
 
         fetch(url, {
             method: 'GET',
@@ -748,7 +710,6 @@
         })
         .then(response => response.json())
         .then(data => {
-            console.log('SmartSearch: Fallback data:', data);
             if (data.products && data.products.length > 0) {
                 renderBestsellers(data.products);
             } else {
@@ -756,7 +717,6 @@
             }
         })
         .catch(error => {
-            console.error('SmartSearch: Fallback fetch error:', error);
             renderEmptyState();
         });
     }
@@ -899,21 +859,18 @@
         if (filters.price_max) url += '&price_max=' + filters.price_max;
         if (filters.in_stock) url += '&in_stock=1';
 
-        console.log('SmartSearch: Fetching URL:', url);
 
         fetch(url, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => {
-            console.log('SmartSearch: Response status:', response.status);
             if (!response.ok) {
                 throw new Error('HTTP error ' + response.status);
             }
             return response.json();
         })
         .then(data => {
-            console.log('SmartSearch: Results:', data);
             lastResults = data;
             renderResults(data);
             saveRecentSearch(query);
@@ -921,7 +878,6 @@
             trackSearch(query, data.total || (data.products ? data.products.length : 0));
         })
         .catch(error => {
-            console.error('SmartSearch error:', error);
             renderNoResults();
         });
     }
@@ -1283,7 +1239,6 @@
         if (sortSelect) {
             sortSelect.addEventListener('change', (e) => {
                 // Sort logic here
-                console.log('Sort by:', e.target.value);
             });
         }
     }
