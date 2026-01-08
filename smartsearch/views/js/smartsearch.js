@@ -63,17 +63,14 @@
             ...data
         };
 
-        // Use sendBeacon for better reliability (doesn't block page unload)
-        if (navigator.sendBeacon) {
-            navigator.sendBeacon(webhookUrl, JSON.stringify(payload));
-        } else {
-            fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                keepalive: true
-            }).catch(() => {});
-        }
+        // Use fetch with proper JSON content-type
+        fetch(webhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            mode: 'no-cors', // Needed for cross-origin webhooks
+            keepalive: true
+        }).catch(() => {});
     }
 
     /**
