@@ -14,33 +14,17 @@ require_once _PS_MODULE_DIR_ . 'smartsearch/classes/SmartSearchAnalytics.php';
 
 class SmartsearchSearchModuleFrontController extends ModuleFrontController
 {
-    /** @var bool */
-    public $ajax = true;
-
-    /** @var bool */
-    public $ssl = true;
-
-    /**
-     * Gestisce la richiesta di ricerca
-     */
-    public function initContent()
+    public function displayAjaxSearch()
     {
-        parent::initContent();
-
         header('Content-Type: application/json; charset=utf-8');
-
-        // Verifica che sia una richiesta AJAX
-        if (!$this->ajax) {
-            $this->sendResponse(['error' => 'Invalid request'], 400);
-        }
 
         $query = Tools::getValue('q', '');
         $query = trim(strip_tags($query));
 
         // Validazione query
-        $minChars = (int)Configuration::get('SMARTSEARCH_MIN_CHARS');
+        $minChars = (int)Configuration::get('SMARTSEARCH_MIN_CHARS') ?: 2;
         if (mb_strlen($query) < $minChars) {
-            $this->sendResponse([
+            $this->ajaxRender(json_encode([
                 'products' => [],
                 'categories' => [],
                 'suggestions' => [],
@@ -49,85 +33,112 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'did_you_mean' => [],
                 'total' => 0,
                 'query' => $query
-            ]);
+            ]));
+            return;
         }
 
         $idLang = (int)$this->context->language->id;
         $idShop = (int)$this->context->shop->id;
-        $maxResults = (int)Configuration::get('SMARTSEARCH_MAX_RESULTS');
+        $maxResults = (int)Configuration::get('SMARTSEARCH_MAX_RESULTS') ?: 10;
 
         // Ottieni filtri dalla richiesta
         $filters = $this->getFiltersFromRequest();
 
-        // Inizializza componenti
-        $cache = new SmartSearchCache($idLang, $idShop);
-        $engine = new SmartSearchEngine($idLang, $idShop);
-        $analytics = new SmartSearchAnalytics($idLang, $idShop);
+        try {
+            // Inizializza componenti
+            $cache = new SmartSearchCache($idLang, $idShop);
+            $engine = new SmartSearchEngine($idLang, $idShop);
+            $analytics = new SmartSearchAnalytics($idLang, $idShop);
 
-        // Prova a ottenere dalla cache
-        $cacheEnabled = (bool)Configuration::get('SMARTSEARCH_CACHE_ENABLED');
-        $cachedResults = $cacheEnabled ? $cache->get($query, $filters) : null;
+            // Prova a ottenere dalla cache
+            $cacheEnabled = (bool)Configuration::get('SMARTSEARCH_CACHE_ENABLED');
+            $cachedResults = $cacheEnabled ? $cache->get($query, $filters) : null;
 
-        if ($cachedResults) {
-            // Traccia ricerca (anche se da cache)
-            if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED')) {
-                $analytics->trackSearch($query, $cachedResults['total'], $filters, $this->getCustomerId());
+            if ($cachedResults) {
+                // Traccia ricerca (anche se da cache)
+                if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED')) {
+                    $analytics->trackSearch($query, $cachedResults['total'], $filters, $this->getCustomerId());
+                }
+
+                $this->context->cookie->smartsearch_last_query = $query;
+                $this->ajaxRender(json_encode($cachedResults, JSON_UNESCAPED_UNICODE));
+                return;
             }
 
-            // Salva query nell'ultima ricerca per tracciare conversioni
+            // Esegui ricerca con motore intelligente
+            $searchResults = $engine->search($query, $maxResults, $filters);
+
+            // Formatta prodotti per il frontend
+            $products = $this->formatProducts($searchResults['products'], $idLang);
+
+            // Cerca categorie
+            $categories = $this->searchCategories($query, $idLang, $idShop);
+
+            // Ottieni suggerimenti
+            $suggestions = $this->getSuggestions($query, $idLang, $idShop);
+
+            // Ottieni "Forse cercavi"
+            $didYouMean = [];
+            if (count($products) < 3) {
+                $didYouMean = $engine->getDidYouMean($query);
+            }
+
+            // Ottieni banner
+            $banners = $this->getBanners($query, $idLang, $idShop);
+
+            // Prepara risposta
+            $response = [
+                'products' => $products,
+                'categories' => $categories,
+                'suggestions' => $suggestions,
+                'facets' => $searchResults['facets'] ?? [],
+                'banners' => $banners,
+                'did_you_mean' => $didYouMean,
+                'total' => count($products),
+                'query' => $query,
+                'expanded_terms' => $searchResults['expanded_terms'] ?? []
+            ];
+
+            // Salva in cache
+            if ($cacheEnabled) {
+                $cache->set($query, $filters, $response);
+            }
+
+            // Traccia ricerca
+            if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED')) {
+                $analytics->trackSearch($query, count($products), $filters, $this->getCustomerId());
+            }
+
+            // Salva query per tracciare conversioni
             $this->context->cookie->smartsearch_last_query = $query;
 
-            $this->sendResponse($cachedResults);
+            $this->ajaxRender(json_encode($response, JSON_UNESCAPED_UNICODE));
+
+        } catch (Exception $e) {
+            $this->ajaxRender(json_encode([
+                'products' => [],
+                'categories' => [],
+                'suggestions' => [],
+                'facets' => [],
+                'banners' => [],
+                'did_you_mean' => [],
+                'total' => 0,
+                'query' => $query,
+                'error' => $e->getMessage()
+            ]));
         }
+    }
 
-        // Esegui ricerca con motore intelligente
-        $searchResults = $engine->search($query, $maxResults, $filters);
-
-        // Formatta prodotti per il frontend
-        $products = $this->formatProducts($searchResults['products'], $idLang);
-
-        // Cerca categorie
-        $categories = $this->searchCategories($query, $idLang, $idShop);
-
-        // Ottieni suggerimenti
-        $suggestions = $this->getSuggestions($query, $idLang, $idShop);
-
-        // Ottieni "Forse cercavi"
-        $didYouMean = [];
-        if (count($products) < 3) {
-            $didYouMean = $engine->getDidYouMean($query);
+    /**
+     * Metodo alternativo per compatibilità
+     */
+    public function initContent()
+    {
+        if (Tools::getValue('ajax')) {
+            $this->displayAjaxSearch();
+            exit;
         }
-
-        // Ottieni banner
-        $banners = $this->getBanners($query, $idLang, $idShop);
-
-        // Prepara risposta
-        $response = [
-            'products' => $products,
-            'categories' => $categories,
-            'suggestions' => $suggestions,
-            'facets' => $searchResults['facets'] ?? [],
-            'banners' => $banners,
-            'did_you_mean' => $didYouMean,
-            'total' => count($products),
-            'query' => $query,
-            'expanded_terms' => $searchResults['expanded_terms'] ?? []
-        ];
-
-        // Salva in cache
-        if ($cacheEnabled) {
-            $cache->set($query, $filters, $response);
-        }
-
-        // Traccia ricerca
-        if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED')) {
-            $analytics->trackSearch($query, count($products), $filters, $this->getCustomerId());
-        }
-
-        // Salva query per tracciare conversioni
-        $this->context->cookie->smartsearch_last_query = $query;
-
-        $this->sendResponse($response);
+        parent::initContent();
     }
 
     /**
@@ -137,13 +148,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         $filters = [];
 
-        // Filtro categoria
         $categoryIds = Tools::getValue('category', '');
         if (!empty($categoryIds)) {
             $filters['category'] = array_map('intval', explode(',', $categoryIds));
         }
 
-        // Filtro prezzo
         $priceMin = Tools::getValue('price_min', '');
         $priceMax = Tools::getValue('price_max', '');
         if ($priceMin !== '') {
@@ -153,25 +162,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $filters['price_max'] = (float)$priceMax;
         }
 
-        // Filtro produttore/brand
         $manufacturerIds = Tools::getValue('manufacturer', '');
         if (!empty($manufacturerIds)) {
             $filters['manufacturer'] = array_map('intval', explode(',', $manufacturerIds));
         }
 
-        // Filtro disponibilità
         $inStock = Tools::getValue('in_stock', '');
         if ($inStock !== '') {
             $filters['in_stock'] = (bool)$inStock;
-        }
-
-        // Filtri attributi
-        $attributes = Tools::getValue('attributes', '');
-        if (!empty($attributes)) {
-            $attrArray = json_decode($attributes, true);
-            if (is_array($attrArray)) {
-                $filters['attributes'] = $attrArray;
-            }
         }
 
         return $filters;
@@ -196,7 +194,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $formattedProducts = [];
 
         foreach ($products as $row) {
-            // URL prodotto
             $productUrl = $this->context->link->getProductLink(
                 $row['id_product'],
                 $row['link_rewrite'] ?? null,
@@ -205,7 +202,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $idLang
             );
 
-            // Immagine
             $imageUrl = '';
             if ($showImage && !empty($row['id_image'])) {
                 $imageUrl = $this->context->link->getImageLink(
@@ -215,7 +211,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 );
             }
 
-            // Prezzo
             $price = '';
             $priceOld = '';
             $priceRaw = 0;
@@ -232,7 +227,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
             }
 
-            // Descrizione breve (troncata)
             $description = '';
             if ($showDescription && !empty($row['description_short'])) {
                 $description = strip_tags($row['description_short']);
@@ -241,7 +235,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
             }
 
-            // Stock
             $inStock = true;
             $stockQty = 0;
             if ($showStock) {
@@ -322,25 +315,29 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     protected function getSuggestions($query, $idLang, $idShop)
     {
-        $sql = '
-            SELECT DISTINCT search_query, COUNT(*) as frequency
-            FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
-            WHERE search_query LIKE \'%' . pSQL($query) . '%\'
-            AND search_query != \'' . pSQL($query) . '\'
-            AND results_count > 0
-            AND id_lang = ' . (int)$idLang . '
-            AND id_shop = ' . (int)$idShop . '
-            GROUP BY search_query
-            ORDER BY frequency DESC
-            LIMIT 5';
+        try {
+            $sql = '
+                SELECT DISTINCT search_query, COUNT(*) as frequency
+                FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+                WHERE search_query LIKE \'%' . pSQL($query) . '%\'
+                AND search_query != \'' . pSQL($query) . '\'
+                AND results_count > 0
+                AND id_lang = ' . (int)$idLang . '
+                AND id_shop = ' . (int)$idShop . '
+                GROUP BY search_query
+                ORDER BY frequency DESC
+                LIMIT 5';
 
-        $results = Db::getInstance()->executeS($sql);
+            $results = Db::getInstance()->executeS($sql);
 
-        if (!$results) {
+            if (!$results) {
+                return [];
+            }
+
+            return array_column($results, 'search_query');
+        } catch (Exception $e) {
             return [];
         }
-
-        return array_column($results, 'search_query');
     }
 
     /**
@@ -352,40 +349,44 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return [];
         }
 
-        $sql = '
-            SELECT id_smartsearch_banner, name, image, link, position
-            FROM `' . _DB_PREFIX_ . 'smartsearch_banners`
-            WHERE active = 1
-            AND id_shop = ' . (int)$idShop . '
-            AND id_lang = ' . (int)$idLang . '
-            AND (date_start IS NULL OR date_start <= NOW())
-            AND (date_end IS NULL OR date_end >= NOW())
-            AND (
-                keywords IS NULL
-                OR keywords = \'\'
-                OR keywords LIKE \'%' . pSQL($query) . '%\'
-            )
-            ORDER BY position ASC
-            LIMIT 3';
+        try {
+            $sql = '
+                SELECT id_smartsearch_banner, name, image, link, position
+                FROM `' . _DB_PREFIX_ . 'smartsearch_banners`
+                WHERE active = 1
+                AND id_shop = ' . (int)$idShop . '
+                AND id_lang = ' . (int)$idLang . '
+                AND (date_start IS NULL OR date_start <= NOW())
+                AND (date_end IS NULL OR date_end >= NOW())
+                AND (
+                    keywords IS NULL
+                    OR keywords = \'\'
+                    OR keywords LIKE \'%' . pSQL($query) . '%\'
+                )
+                ORDER BY position ASC
+                LIMIT 3';
 
-        $results = Db::getInstance()->executeS($sql);
+            $results = Db::getInstance()->executeS($sql);
 
-        if (!$results) {
+            if (!$results) {
+                return [];
+            }
+
+            $banners = [];
+            foreach ($results as $row) {
+                $banners[] = [
+                    'id' => (int)$row['id_smartsearch_banner'],
+                    'name' => $row['name'],
+                    'image' => _MODULE_DIR_ . 'smartsearch/views/img/banners/' . $row['image'],
+                    'link' => $row['link'],
+                    'position' => $row['position']
+                ];
+            }
+
+            return $banners;
+        } catch (Exception $e) {
             return [];
         }
-
-        $banners = [];
-        foreach ($results as $row) {
-            $banners[] = [
-                'id' => (int)$row['id_smartsearch_banner'],
-                'name' => $row['name'],
-                'image' => _MODULE_DIR_ . 'smartsearch/views/img/banners/' . $row['image'],
-                'link' => $row['link'],
-                'position' => $row['position']
-            ];
-        }
-
-        return $banners;
     }
 
     /**
@@ -397,14 +398,5 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return (int)$this->context->customer->id;
         }
         return null;
-    }
-
-    /**
-     * Invia risposta JSON
-     */
-    protected function sendResponse($data, $statusCode = 200)
-    {
-        http_response_code($statusCode);
-        die(json_encode($data, JSON_UNESCAPED_UNICODE));
     }
 }

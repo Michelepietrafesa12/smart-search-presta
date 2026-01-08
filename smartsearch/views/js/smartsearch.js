@@ -316,7 +316,8 @@
 
         showLoader();
 
-        let url = config.ajax_url + '?q=' + encodeURIComponent(query);
+        // Aggiungi ajax=1 e action=search per PrestaShop
+        let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(query);
 
         if (filters.category && filters.category.length) url += '&category=' + filters.category.join(',');
         if (filters.manufacturer && filters.manufacturer.length) url += '&manufacturer=' + filters.manufacturer.join(',');
@@ -324,12 +325,21 @@
         if (filters.price_max) url += '&price_max=' + filters.price_max;
         if (filters.in_stock) url += '&in_stock=1';
 
+        console.log('SmartSearch: Fetching URL:', url);
+
         fetch(url, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('SmartSearch: Response status:', response.status);
+            if (!response.ok) {
+                throw new Error('HTTP error ' + response.status);
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('SmartSearch: Results:', data);
             lastResults = data;
             renderResults(data);
             saveRecentSearch(query);
