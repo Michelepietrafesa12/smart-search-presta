@@ -205,12 +205,14 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
     protected function renderBoostingTab()
     {
+        $formAction = $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=boosting';
+
         $html = '<div class="panel"><div class="panel-heading"><i class="icon-rocket"></i> Product Boosting</div>';
 
-        // Form
+        // Form con action esplicita
         $products = Product::getProducts($this->context->language->id, 0, 100, 'name', 'ASC', false, true);
 
-        $html .= '<form method="post"><input type="hidden" name="tab" value="boosting">';
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '">';
         $html .= '<div class="row"><div class="col-md-4"><div class="form-group"><label>Prodotto</label><select name="boost_product" class="form-control" required><option value="">Seleziona...</option>';
         foreach ($products as $p) {
             $html .= '<option value="' . $p['id_product'] . '">' . htmlspecialchars($p['name']) . '</option>';
@@ -240,10 +242,12 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
     protected function renderBannersTab()
     {
+        $formAction = $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=banners';
+
         $html = '<div class="panel"><div class="panel-heading"><i class="icon-picture-o"></i> Banner Promozionali</div>';
 
-        // Form
-        $html .= '<form method="post" enctype="multipart/form-data"><input type="hidden" name="tab" value="banners">';
+        // Form con action esplicita
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '" enctype="multipart/form-data">';
         $html .= '<div class="row">';
         $html .= '<div class="col-md-3"><div class="form-group"><label>Nome</label><input type="text" name="banner_name" class="form-control" required></div></div>';
         $html .= '<div class="col-md-3"><div class="form-group"><label>Immagine</label><input type="file" name="banner_image" class="form-control" accept="image/*" required></div></div>';
