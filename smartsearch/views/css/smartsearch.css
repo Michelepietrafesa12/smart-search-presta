@@ -560,7 +560,7 @@
     position: relative;
     width: 100%;
     padding-top: 100%;
-    background: #fafafa;
+    background: #fff;
     overflow: hidden;
 }
 
@@ -578,7 +578,7 @@
 }
 
 .smartsearch-product-card:hover .smartsearch-product-image img {
-    transform: translate(-50%, -50%) scale(1.08);
+    transform: translate(-50%, -50%) scale(1.05);
 }
 
 /* Product info - MIGLIORATO */
@@ -621,6 +621,27 @@
     font-size: 18px;
     font-weight: 700;
     color: #f97316;
+}
+
+/* Badge "Risparmi X€" */
+.smartsearch-product-savings {
+    display: inline-block;
+    background: #22c55e;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin-top: 6px;
+}
+
+/* Remove any cart button that might appear */
+.smartsearch-product-card .add-to-cart,
+.smartsearch-product-card .addtocart,
+.smartsearch-product-card .btn-cart,
+.smartsearch-product-card button[data-button-action],
+.smartsearch-product-card .smartsearch-add-cart {
+    display: none !important;
 }
 
 /* === LOADER === */

@@ -386,10 +386,11 @@
 
         products.forEach((product, index) => {
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+            const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
             html += `
                 <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
-                    ${discount > 0 ? `<span class="smartsearch-discount-badge">${discount}%</span>` : ''}
+                    ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
                     <div class="smartsearch-product-image">
                         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
                     </div>
@@ -399,6 +400,7 @@
                             ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
                             <span class="smartsearch-product-price">${product.price}</span>
                         </div>
+                        ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
                     </div>
                 </a>
             `;
@@ -637,10 +639,11 @@
 
         data.products.forEach((product, index) => {
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+            const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
             html += `
                 <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
-                    ${discount > 0 ? `<span class="smartsearch-discount-badge">${discount}%</span>` : ''}
+                    ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
                     <div class="smartsearch-product-image">
                         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
                     </div>
@@ -650,6 +653,7 @@
                             ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
                             <span class="smartsearch-product-price">${product.price}</span>
                         </div>
+                        ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
                     </div>
                 </a>
             `;
@@ -922,6 +926,22 @@
     function calculateDiscount(oldPrice, newPrice) {
         if (!oldPrice || !newPrice || oldPrice <= newPrice) return 0;
         return Math.round((1 - newPrice / oldPrice) * 100);
+    }
+
+    /**
+     * Calculate savings amount
+     */
+    function calculateSavings(oldPrice, newPrice) {
+        if (!oldPrice || !newPrice || oldPrice <= newPrice) return 0;
+        return (oldPrice - newPrice).toFixed(2);
+    }
+
+    /**
+     * Format price with currency
+     */
+    function formatSavings(amount) {
+        const sign = config.currency_sign || '€';
+        return amount + ' ' + sign;
     }
 
     /**

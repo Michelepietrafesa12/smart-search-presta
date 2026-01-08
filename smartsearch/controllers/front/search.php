@@ -153,7 +153,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $imageUrl = $this->context->link->getImageLink(
                     $row['link_rewrite'],
                     $row['id_image'],
-                    ImageType::getFormattedName('small')
+                    ImageType::getFormattedName('home')
                 );
             }
 
@@ -270,7 +270,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $imageUrl = $this->context->link->getImageLink(
                     $row['link_rewrite'],
                     $row['id_image'],
-                    ImageType::getFormattedName('small')
+                    ImageType::getFormattedName('home')
                 );
             }
 
