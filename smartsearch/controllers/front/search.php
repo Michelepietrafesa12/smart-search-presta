@@ -12,7 +12,7 @@ require_once _PS_MODULE_DIR_ . 'smartsearch/classes/SmartSearchEngine.php';
 require_once _PS_MODULE_DIR_ . 'smartsearch/classes/SmartSearchCache.php';
 require_once _PS_MODULE_DIR_ . 'smartsearch/classes/SmartSearchAnalytics.php';
 
-class SmartSearchSearchModuleFrontController extends ModuleFrontController
+class SmartsearchSearchModuleFrontController extends ModuleFrontController
 {
     /** @var bool */
     public $ajax = true;
