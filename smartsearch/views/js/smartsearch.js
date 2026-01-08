@@ -1,140 +1,227 @@
 /**
- * SmartSearch 2.0 - JavaScript per ricerca dinamica intelligente
- * Con filtri, ricerca vocale, tracking, banner e UI avanzata
+ * SmartSearch 2.0 - Fullscreen Overlay Search
+ * UI/UX ottimizzata simile a Doofinder
  */
 
 (function() {
     'use strict';
 
-    // Configurazione
+    // Config
     const config = typeof smartsearch_config !== 'undefined' ? smartsearch_config : {};
     const t = config.translations || {};
 
-    // Stato
+    // State
+    let overlay = null;
     let searchInput = null;
-    let searchForm = null;
-    let resultsContainer = null;
-    let debounceTimer = null;
     let currentQuery = '';
-    let selectedIndex = -1;
-    let isOpen = false;
     let currentFilters = {};
+    let debounceTimer = null;
+    let recentSearches = [];
     let lastResults = null;
     let voiceRecognition = null;
     let isListening = false;
 
+    // Icons SVG
+    const icons = {
+        search: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
+        close: '<svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>',
+        chevron: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>',
+        check: '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>',
+        mic: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z"/></svg>',
+        cart: '<svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M11 9h2V6h3V4h-3V1h-2v3H8v2h3v3zm-4 9c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zm-9.83-3.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.86-7.01L19.42 4h-.01l-1.1 2-2.76 5H8.53l-.13-.27L6.16 6l-.95-2-.94-2H1v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.13 0-.25-.11-.25-.25z"/></svg>',
+        filter: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>',
+        noResults: '<svg viewBox="0 0 24 24" width="80" height="80"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'
+    };
+
     /**
-     * Inizializzazione
+     * Init
      */
     function init() {
-        // Prima cerca il widget SmartSearch dedicato
-        searchInput = document.querySelector('#smartsearch-input');
+        loadRecentSearches();
+        createOverlay();
+        bindTriggers();
 
-        // Se non trova il widget dedicato, cerca la barra di ricerca esistente del tema
-        if (!searchInput) {
-            searchInput = document.querySelector('#search_widget input[type="text"]') ||
-                          document.querySelector('.search-widget input[type="text"]') ||
-                          document.querySelector('input[name="s"]') ||
-                          document.querySelector('input[name="search_query"]');
-        }
-
-        if (!searchInput) {
-            console.warn('SmartSearch: Campo di ricerca non trovato');
-            return;
-        }
-
-        searchForm = searchInput.closest('form');
-
-        // Crea/trova container risultati
-        createResultsContainer();
-
-        // Event listeners
-        searchInput.addEventListener('input', handleInput);
-        searchInput.addEventListener('keydown', handleKeydown);
-        searchInput.addEventListener('focus', handleFocus);
-        document.addEventListener('click', handleClickOutside);
-
-        // Previeni submit form durante ricerca
-        if (searchForm) {
-            searchForm.addEventListener('submit', handleFormSubmit);
-        }
-
-        // Placeholder (se non già impostato dal template)
-        if (!searchInput.getAttribute('placeholder')) {
-            searchInput.setAttribute('placeholder', t.search_placeholder || 'Cerca prodotti...');
-        }
-
-        // Inizializza ricerca vocale
-        if (config.voice_enabled) {
+        if (config.voice_enabled && 'webkitSpeechRecognition' in window) {
             initVoiceSearch();
         }
 
-        console.log('SmartSearch 2.0: Inizializzato');
+        console.log('SmartSearch 2.0 Fullscreen: Inizializzato');
     }
 
     /**
-     * Gestisce submit form
+     * Load recent searches from localStorage
      */
-    function handleFormSubmit(e) {
-        // Permetti submit solo se c'è una query valida
-        if (searchInput.value.trim().length < (config.min_chars || 2)) {
-            e.preventDefault();
-        }
-    }
-
-    /**
-     * Crea container risultati con layout avanzato
-     */
-    function createResultsContainer() {
-        // Prima cerca il container esistente dal template SmartSearch
-        resultsContainer = document.querySelector('#smartsearch-results');
-
-        // Se non esiste, crealo dinamicamente (per temi che usano barra ricerca esistente)
-        if (!resultsContainer) {
-            resultsContainer = document.createElement('div');
-            resultsContainer.id = 'smartsearch-results';
-            resultsContainer.className = 'smartsearch-results smartsearch-2';
-
-            const parent = searchInput.parentElement;
-            parent.style.position = 'relative';
-            parent.appendChild(resultsContainer);
-
-            // Aggiungi pulsante ricerca vocale solo se non esiste già
-            if (config.voice_enabled && 'webkitSpeechRecognition' in window && !parent.querySelector('.smartsearch-voice-btn')) {
-                const voiceBtn = document.createElement('button');
-                voiceBtn.type = 'button';
-                voiceBtn.className = 'smartsearch-voice-btn';
-                voiceBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1 1.93c-3.94-.49-7-3.85-7-7.93h2c0 3.31 2.69 6 6 6s6-2.69 6-6h2c0 4.08-3.06 7.44-7 7.93V19h4v2H8v-2h4v-3.07z"/></svg>';
-                voiceBtn.title = t.voice_search || 'Ricerca vocale';
-                voiceBtn.addEventListener('click', toggleVoiceSearch);
-                parent.appendChild(voiceBtn);
+    function loadRecentSearches() {
+        try {
+            const saved = localStorage.getItem('smartsearch_recent');
+            if (saved) {
+                recentSearches = JSON.parse(saved).slice(0, 5);
             }
-        }
-
-        resultsContainer.style.display = 'none';
-
-        // Se il pulsante vocale esiste nel template, aggiungi l'evento
-        const existingVoiceBtn = document.querySelector('.smartsearch-voice-btn');
-        if (existingVoiceBtn && config.voice_enabled) {
-            existingVoiceBtn.addEventListener('click', toggleVoiceSearch);
-        }
+        } catch (e) {}
     }
 
     /**
-     * Gestisce input utente
+     * Save recent search
+     */
+    function saveRecentSearch(query) {
+        if (!query || query.length < 2) return;
+
+        recentSearches = recentSearches.filter(s => s !== query);
+        recentSearches.unshift(query);
+        recentSearches = recentSearches.slice(0, 5);
+
+        try {
+            localStorage.setItem('smartsearch_recent', JSON.stringify(recentSearches));
+        } catch (e) {}
+
+        renderTags();
+    }
+
+    /**
+     * Remove recent search
+     */
+    function removeRecentSearch(query) {
+        recentSearches = recentSearches.filter(s => s !== query);
+        try {
+            localStorage.setItem('smartsearch_recent', JSON.stringify(recentSearches));
+        } catch (e) {}
+        renderTags();
+    }
+
+    /**
+     * Create overlay HTML
+     */
+    function createOverlay() {
+        overlay = document.createElement('div');
+        overlay.className = 'smartsearch-overlay';
+        overlay.innerHTML = `
+            <div class="smartsearch-header">
+                <div class="smartsearch-search-box">
+                    ${icons.search}
+                    <input type="text" class="smartsearch-search-input" placeholder="${t.search_placeholder || 'Cerca prodotti...'}" autocomplete="off">
+                    <button type="button" class="smartsearch-clear-input">${icons.close}</button>
+                    ${config.voice_enabled ? `<button type="button" class="smartsearch-voice-btn" title="${t.voice_search || 'Ricerca vocale'}">${icons.mic}</button>` : ''}
+                </div>
+                <button type="button" class="smartsearch-close-btn" title="Chiudi">${icons.close}</button>
+            </div>
+            <div class="smartsearch-tags"></div>
+            <div class="smartsearch-content">
+                <aside class="smartsearch-sidebar"></aside>
+                <main class="smartsearch-main">
+                    <div class="smartsearch-initial">
+                        ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
+                        <h3>${t.search_placeholder || 'Cerca prodotti...'}</h3>
+                        <p>Inizia a digitare per cercare nel catalogo</p>
+                    </div>
+                </main>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        // Get elements
+        searchInput = overlay.querySelector('.smartsearch-search-input');
+
+        // Bind events
+        searchInput.addEventListener('input', handleInput);
+        searchInput.addEventListener('keydown', handleKeydown);
+
+        overlay.querySelector('.smartsearch-close-btn').addEventListener('click', closeOverlay);
+        overlay.querySelector('.smartsearch-clear-input').addEventListener('click', clearInput);
+
+        if (config.voice_enabled) {
+            const voiceBtn = overlay.querySelector('.smartsearch-voice-btn');
+            if (voiceBtn) voiceBtn.addEventListener('click', toggleVoiceSearch);
+        }
+
+        // Close on ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.classList.contains('active')) {
+                closeOverlay();
+            }
+        });
+
+        // Render initial tags
+        renderTags();
+    }
+
+    /**
+     * Bind triggers (existing search inputs)
+     */
+    function bindTriggers() {
+        const selectors = [
+            '#search_widget input[type="text"]',
+            '.search-widget input[type="text"]',
+            'input[name="s"]',
+            'input[name="search_query"]',
+            '#smartsearch-input',
+            '.smartsearch-trigger'
+        ];
+
+        selectors.forEach(selector => {
+            document.querySelectorAll(selector).forEach(el => {
+                el.addEventListener('focus', (e) => {
+                    e.preventDefault();
+                    e.target.blur();
+                    openOverlay();
+                });
+                el.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    openOverlay();
+                });
+            });
+        });
+    }
+
+    /**
+     * Open overlay
+     */
+    function openOverlay() {
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        setTimeout(() => searchInput.focus(), 100);
+    }
+
+    /**
+     * Close overlay
+     */
+    function closeOverlay() {
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+        currentQuery = '';
+        currentFilters = {};
+        searchInput.value = '';
+        renderInitialState();
+    }
+
+    /**
+     * Clear input
+     */
+    function clearInput() {
+        searchInput.value = '';
+        currentQuery = '';
+        overlay.querySelector('.smartsearch-clear-input').classList.remove('visible');
+        renderInitialState();
+        searchInput.focus();
+    }
+
+    /**
+     * Handle input
      */
     function handleInput(e) {
         const query = e.target.value.trim();
 
+        // Toggle clear button
+        overlay.querySelector('.smartsearch-clear-input').classList.toggle('visible', query.length > 0);
+
         if (debounceTimer) clearTimeout(debounceTimer);
 
         if (query.length < (config.min_chars || 2)) {
-            hideResults();
-            currentQuery = '';
+            if (query.length === 0) {
+                renderInitialState();
+            }
             return;
         }
-
-        if (query === currentQuery) return;
 
         debounceTimer = setTimeout(() => {
             performSearch(query);
@@ -142,7 +229,19 @@
     }
 
     /**
-     * Esegue ricerca AJAX
+     * Handle keydown
+     */
+    function handleKeydown(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (currentQuery) {
+                saveRecentSearch(currentQuery);
+            }
+        }
+    }
+
+    /**
+     * Perform search
      */
     function performSearch(query, filters = {}) {
         currentQuery = query;
@@ -150,11 +249,10 @@
 
         showLoader();
 
-        // Costruisci URL con filtri
         let url = config.ajax_url + '?q=' + encodeURIComponent(query);
 
-        if (filters.category) url += '&category=' + filters.category.join(',');
-        if (filters.manufacturer) url += '&manufacturer=' + filters.manufacturer.join(',');
+        if (filters.category && filters.category.length) url += '&category=' + filters.category.join(',');
+        if (filters.manufacturer && filters.manufacturer.length) url += '&manufacturer=' + filters.manufacturer.join(',');
         if (filters.price_min) url += '&price_min=' + filters.price_min;
         if (filters.price_max) url += '&price_max=' + filters.price_max;
         if (filters.in_stock) url += '&in_stock=1';
@@ -167,432 +265,445 @@
         .then(data => {
             lastResults = data;
             renderResults(data);
+            saveRecentSearch(query);
         })
         .catch(error => {
-            console.error('SmartSearch: Errore', error);
-            hideResults();
+            console.error('SmartSearch error:', error);
+            renderNoResults();
         });
     }
 
     /**
-     * Mostra loader
+     * Render tags
+     */
+    function renderTags() {
+        const container = overlay.querySelector('.smartsearch-tags');
+
+        if (recentSearches.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'flex';
+        container.innerHTML = recentSearches.map(search => `
+            <div class="smartsearch-tag" data-query="${escapeHtml(search)}">
+                <span>${escapeHtml(search)}</span>
+                <span class="smartsearch-tag-remove" data-remove="${escapeHtml(search)}">&times;</span>
+            </div>
+        `).join('');
+
+        // Bind events
+        container.querySelectorAll('.smartsearch-tag').forEach(tag => {
+            tag.addEventListener('click', (e) => {
+                if (e.target.classList.contains('smartsearch-tag-remove')) {
+                    e.stopPropagation();
+                    removeRecentSearch(e.target.dataset.remove);
+                } else {
+                    const query = tag.dataset.query;
+                    searchInput.value = query;
+                    overlay.querySelector('.smartsearch-clear-input').classList.add('visible');
+                    performSearch(query);
+                }
+            });
+        });
+    }
+
+    /**
+     * Render initial state
+     */
+    function renderInitialState() {
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+
+        sidebar.innerHTML = '';
+        main.innerHTML = `
+            <div class="smartsearch-initial">
+                ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
+                <h3>${t.search_placeholder || 'Cerca prodotti...'}</h3>
+                <p>Inizia a digitare per cercare nel catalogo</p>
+            </div>
+        `;
+    }
+
+    /**
+     * Show loader
      */
     function showLoader() {
-        resultsContainer.innerHTML = `
+        const main = overlay.querySelector('.smartsearch-main');
+        main.innerHTML = `
             <div class="smartsearch-loader">
                 <div class="smartsearch-spinner"></div>
                 <span>Ricerca in corso...</span>
             </div>
         `;
-        resultsContainer.style.display = 'block';
-        isOpen = true;
     }
 
     /**
-     * Renderizza risultati completi
+     * Render results
      */
     function renderResults(data) {
-        if (!data) {
-            hideResults();
-            return;
-        }
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
 
         const hasProducts = data.products && data.products.length > 0;
-        const hasCategories = data.categories && data.categories.length > 0;
-        const hasSuggestions = data.suggestions && data.suggestions.length > 0;
-        const hasDidYouMean = data.did_you_mean && data.did_you_mean.length > 0;
-        const hasBanners = data.banners && data.banners.length > 0;
-        const hasFacets = config.facets_enabled && data.facets;
 
-        if (!hasProducts && !hasCategories && !hasSuggestions) {
-            showNoResults(data);
+        if (!hasProducts) {
+            renderNoResults(data);
             return;
         }
 
-        let html = '<div class="smartsearch-container">';
-
-        // Sidebar filtri
-        if (hasFacets && hasProducts) {
-            html += renderFacets(data.facets);
+        // Render sidebar filters
+        if (config.facets_enabled && data.facets) {
+            renderFilters(sidebar, data.facets);
+        } else {
+            sidebar.innerHTML = '';
         }
 
-        // Area principale
-        html += '<div class="smartsearch-main">';
+        // Render main content
+        let html = '';
 
-        // Banner top
-        if (hasBanners) {
-            const topBanners = data.banners.filter(b => b.position === 'top');
-            if (topBanners.length > 0) {
-                html += renderBanners(topBanners);
-            }
+        // Results header
+        html += `
+            <div class="smartsearch-results-header">
+                <div class="smartsearch-results-count">
+                    <strong>${data.total || data.products.length}</strong> ${t.products_found || 'risultati trovati'}
+                </div>
+                <div class="smartsearch-results-sort">
+                    <span>${t.sort_by || 'Ordinato per'}:</span>
+                    <select>
+                        <option value="relevance">${t.relevance || 'Rilevanza'}</option>
+                        <option value="price_asc">${t.price_low || 'Prezzo crescente'}</option>
+                        <option value="price_desc">${t.price_high || 'Prezzo decrescente'}</option>
+                    </select>
+                </div>
+            </div>
+        `;
+
+        // Mobile filter toggle
+        html += `
+            <button type="button" class="smartsearch-filter-toggle-mobile">
+                ${icons.filter}
+                <span>${t.filters || 'Filtri'}</span>
+            </button>
+        `;
+
+        // Banner
+        if (config.banners_enabled && data.banners && data.banners.length > 0) {
+            const banner = data.banners[0];
+            html += `<a href="${banner.link || '#'}" class="smartsearch-banner">${escapeHtml(banner.name || 'Offerta speciale')}</a>`;
         }
 
-        // "Forse cercavi"
-        if (hasDidYouMean) {
-            html += renderDidYouMean(data.did_you_mean);
-        }
+        // Products grid
+        html += '<div class="smartsearch-products-grid">';
 
-        // Suggerimenti
-        if (hasSuggestions) {
-            html += renderSuggestions(data.suggestions);
-        }
+        data.products.forEach((product, index) => {
+            const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
 
-        // Categorie
-        if (hasCategories) {
-            html += renderCategories(data.categories);
-        }
+            html += `
+                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
+                    ${discount > 0 ? `<span class="smartsearch-discount-badge">${discount}%</span>` : ''}
+                    <div class="smartsearch-product-image">
+                        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                    </div>
+                    <div class="smartsearch-product-info">
+                        <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
+                        <div class="smartsearch-product-prices">
+                            ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                            <span class="smartsearch-product-price">${product.price}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="smartsearch-add-cart" title="${t.add_to_cart || 'Aggiungi al carrello'}">
+                        ${icons.cart}
+                    </button>
+                </a>
+            `;
+        });
 
-        // Prodotti
-        if (hasProducts) {
-            html += renderProducts(data.products);
+        html += '</div>';
 
-            // Link vedi tutti
-            if (searchForm && data.total > 0) {
-                const searchUrl = searchForm.action + '?s=' + encodeURIComponent(currentQuery);
-                html += `
-                    <a href="${searchUrl}" class="smartsearch-view-all">
-                        <span>${t.view_all || 'Vedi tutti i risultati'} (${data.total})</span>
-                        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
-                    </a>
-                `;
-            }
-        }
+        main.innerHTML = html;
 
-        html += '</div></div>';
-
-        resultsContainer.innerHTML = html;
-        resultsContainer.style.display = 'block';
-        isOpen = true;
-        selectedIndex = -1;
-
-        // Bind eventi
+        // Bind events
         bindResultEvents();
     }
 
     /**
-     * Renderizza filtri/facets
+     * Render filters
      */
-    function renderFacets(facets) {
-        let html = '<div class="smartsearch-sidebar">';
-        html += `<div class="smartsearch-filters-header">
-            <span>${t.filters || 'Filtri'}</span>
-            <button type="button" class="smartsearch-clear-filters">${t.clear_filters || 'Rimuovi'}</button>
-        </div>`;
+    function renderFilters(container, facets) {
+        let html = '';
 
-        // Filtro categorie
-        if (facets.categories && facets.categories.length > 0) {
-            html += `<div class="smartsearch-facet">
-                <div class="smartsearch-facet-title">${t.categories || 'Categorie'}</div>
-                <div class="smartsearch-facet-values">`;
-            facets.categories.forEach(cat => {
-                const checked = currentFilters.category && currentFilters.category.includes(cat.id_category);
-                html += `<label class="smartsearch-facet-item">
-                    <input type="checkbox" data-facet="category" value="${cat.id_category}" ${checked ? 'checked' : ''}>
-                    <span>${escapeHtml(cat.name)}</span>
-                    <span class="count">(${cat.count})</span>
-                </label>`;
-            });
-            html += '</div></div>';
-        }
-
-        // Filtro produttori
-        if (facets.manufacturers && facets.manufacturers.length > 0) {
-            html += `<div class="smartsearch-facet">
-                <div class="smartsearch-facet-title">${t.brand || 'Marca'}</div>
-                <div class="smartsearch-facet-values">`;
-            facets.manufacturers.forEach(man => {
-                const checked = currentFilters.manufacturer && currentFilters.manufacturer.includes(man.id_manufacturer);
-                html += `<label class="smartsearch-facet-item">
-                    <input type="checkbox" data-facet="manufacturer" value="${man.id_manufacturer}" ${checked ? 'checked' : ''}>
-                    <span>${escapeHtml(man.name)}</span>
-                    <span class="count">(${man.count})</span>
-                </label>`;
-            });
-            html += '</div></div>';
-        }
-
-        // Filtro prezzo
+        // Price filter
         if (facets.price_range && facets.price_range.max > 0) {
             const min = Math.floor(facets.price_range.min);
             const max = Math.ceil(facets.price_range.max);
-            html += `<div class="smartsearch-facet">
-                <div class="smartsearch-facet-title">${t.price || 'Prezzo'}</div>
-                <div class="smartsearch-price-range">
-                    <input type="number" class="smartsearch-price-input" data-facet="price_min"
-                           placeholder="${t.from || 'Da'}" min="${min}" max="${max}"
-                           value="${currentFilters.price_min || ''}">
-                    <span>-</span>
-                    <input type="number" class="smartsearch-price-input" data-facet="price_max"
-                           placeholder="${t.to || 'A'}" min="${min}" max="${max}"
-                           value="${currentFilters.price_max || ''}">
-                    <span>${config.currency_sign || '€'}</span>
+            html += `
+                <div class="smartsearch-filter-section">
+                    <div class="smartsearch-filter-header">
+                        <span class="smartsearch-filter-title">${t.price || 'Prezzo'}</span>
+                        <span class="smartsearch-filter-toggle">${icons.chevron}</span>
+                    </div>
+                    <div class="smartsearch-filter-body">
+                        <div class="smartsearch-price-slider">
+                            <div class="smartsearch-price-values">
+                                <span class="smartsearch-price-badge">${min} ${config.currency_sign || '€'}</span>
+                                <span class="smartsearch-price-badge">${max} ${config.currency_sign || '€'}</span>
+                            </div>
+                            <div class="smartsearch-price-range">
+                                <div class="smartsearch-price-range-fill" style="left: 0%; width: 100%;"></div>
+                                <div class="smartsearch-price-handle" style="left: 0%;" data-handle="min"></div>
+                                <div class="smartsearch-price-handle" style="left: 100%;" data-handle="max"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>`;
+            `;
         }
 
-        // Filtro disponibilità
-        html += `<div class="smartsearch-facet">
-            <label class="smartsearch-facet-item smartsearch-stock-filter">
-                <input type="checkbox" data-facet="in_stock" ${currentFilters.in_stock ? 'checked' : ''}>
-                <span>${t.in_stock || 'Solo disponibili'}</span>
-            </label>
-        </div>`;
-
-        html += '</div>';
-        return html;
-    }
-
-    /**
-     * Renderizza "Forse cercavi"
-     */
-    function renderDidYouMean(suggestions) {
-        let html = '<div class="smartsearch-didyoumean">';
-        html += `<span>${t.did_you_mean || 'Forse cercavi'}:</span>`;
-        suggestions.forEach(s => {
-            html += `<a href="#" class="smartsearch-suggestion" data-query="${escapeHtml(s.term)}">${escapeHtml(s.term)}</a>`;
-        });
-        html += '</div>';
-        return html;
-    }
-
-    /**
-     * Renderizza suggerimenti
-     */
-    function renderSuggestions(suggestions) {
-        let html = '<div class="smartsearch-suggestions">';
-        html += `<div class="smartsearch-section-title">${t.suggestions || 'Suggerimenti'}</div>`;
-        html += '<div class="smartsearch-suggestions-list">';
-        suggestions.forEach(s => {
-            html += `<a href="#" class="smartsearch-suggestion" data-query="${escapeHtml(s)}">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-                ${highlightText(s, currentQuery)}
-            </a>`;
-        });
-        html += '</div></div>';
-        return html;
-    }
-
-    /**
-     * Renderizza categorie
-     */
-    function renderCategories(categories) {
-        let html = '<div class="smartsearch-categories">';
-        html += `<div class="smartsearch-section-title">${t.categories || 'Categorie'}</div>`;
-        html += '<div class="smartsearch-categories-list">';
-        categories.forEach(cat => {
-            html += `<a href="${cat.url}" class="smartsearch-category-item">
-                <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
-                <span>${highlightText(cat.name, currentQuery)}</span>
-            </a>`;
-        });
-        html += '</div></div>';
-        return html;
-    }
-
-    /**
-     * Renderizza prodotti
-     */
-    function renderProducts(products) {
-        let html = '<div class="smartsearch-products">';
-        html += `<div class="smartsearch-section-title">${t.products || 'Prodotti'}</div>`;
-        html += '<div class="smartsearch-products-grid">';
-
-        products.forEach((product, index) => {
-            html += `<a href="${product.url}" class="smartsearch-product" data-index="${index}" data-product-id="${product.id}">`;
-
-            // Badge boost
-            if (product.boosted) {
-                html += '<span class="smartsearch-badge-boost">★</span>';
-            }
-
-            // Immagine
-            if (config.show_image && product.image) {
-                html += `<div class="smartsearch-product-image">
-                    <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
-                </div>`;
-            }
-
-            html += '<div class="smartsearch-product-info">';
-
-            // Nome
-            html += `<div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>`;
-
-            // Categoria e produttore
-            if ((config.show_category && product.category) || (config.show_manufacturer && product.manufacturer)) {
-                html += '<div class="smartsearch-product-meta">';
-                if (product.category) html += `<span>${escapeHtml(product.category)}</span>`;
-                if (product.category && product.manufacturer) html += ' · ';
-                if (product.manufacturer) html += `<span>${escapeHtml(product.manufacturer)}</span>`;
-                html += '</div>';
-            }
-
-            // Descrizione
-            if (config.show_description && product.description) {
-                html += `<div class="smartsearch-product-desc">${highlightText(product.description, currentQuery)}</div>`;
-            }
-
-            // Prezzo e stock
-            html += '<div class="smartsearch-product-footer">';
-            if (config.show_price && product.price) {
-                html += '<div class="smartsearch-product-price">';
-                if (product.price_old) {
-                    html += `<span class="old-price">${product.price_old}</span>`;
-                }
-                html += `<span class="current-price">${product.price}</span>`;
-                html += '</div>';
-            }
-
-            if (config.show_stock) {
-                if (product.in_stock) {
-                    html += `<span class="smartsearch-stock in-stock">${t.in_stock || 'Disponibile'}</span>`;
-                } else {
-                    html += `<span class="smartsearch-stock out-of-stock">${t.out_of_stock || 'Non disponibile'}</span>`;
-                }
-            }
-            html += '</div>';
-
-            html += '</div></a>';
-        });
-
-        html += '</div></div>';
-        return html;
-    }
-
-    /**
-     * Renderizza banner
-     */
-    function renderBanners(banners) {
-        let html = '<div class="smartsearch-banners">';
-        banners.forEach(banner => {
-            html += `<a href="${banner.link || '#'}" class="smartsearch-banner" target="_blank">
-                <img src="${banner.image}" alt="${escapeHtml(banner.name)}" loading="lazy">
-            </a>`;
-        });
-        html += '</div>';
-        return html;
-    }
-
-    /**
-     * Mostra nessun risultato
-     */
-    function showNoResults(data) {
-        let html = '<div class="smartsearch-no-results">';
-        html += `<svg viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>`;
-        html += `<p>${t.no_results || 'Nessun risultato trovato'}</p>`;
-
-        // Suggerimenti "forse cercavi"
-        if (data && data.did_you_mean && data.did_you_mean.length > 0) {
-            html += `<div class="smartsearch-didyoumean-inline">`;
-            html += `<span>${t.did_you_mean || 'Forse cercavi'}:</span>`;
-            data.did_you_mean.forEach(s => {
-                html += `<a href="#" class="smartsearch-suggestion" data-query="${escapeHtml(s.term)}">${escapeHtml(s.term)}</a>`;
-            });
-            html += '</div>';
+        // Manufacturer filter
+        if (facets.manufacturers && facets.manufacturers.length > 0) {
+            html += `
+                <div class="smartsearch-filter-section">
+                    <div class="smartsearch-filter-header">
+                        <span class="smartsearch-filter-title">${t.brand || 'Marca'}</span>
+                        <span class="smartsearch-filter-toggle">${icons.chevron}</span>
+                    </div>
+                    <div class="smartsearch-filter-body">
+                        <div class="smartsearch-filter-search">
+                            ${icons.search}
+                            <input type="text" placeholder="${t.search_options || 'Cerca opzioni'}">
+                        </div>
+                        <div class="smartsearch-filter-options">
+                            ${facets.manufacturers.map(m => `
+                                <div class="smartsearch-filter-option ${currentFilters.manufacturer && currentFilters.manufacturer.includes(m.id_manufacturer) ? 'selected' : ''}"
+                                     data-filter="manufacturer" data-value="${m.id_manufacturer}">
+                                    <span class="smartsearch-filter-checkbox">${icons.check}</span>
+                                    <span class="smartsearch-filter-label">${escapeHtml(m.name)}</span>
+                                    <span class="smartsearch-filter-count">${m.count}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
-        html += '</div>';
-
-        resultsContainer.innerHTML = html;
-        resultsContainer.style.display = 'block';
-        isOpen = true;
-
-        bindResultEvents();
-    }
-
-    /**
-     * Bind eventi sui risultati
-     */
-    function bindResultEvents() {
-        // Click su suggerimenti
-        resultsContainer.querySelectorAll('.smartsearch-suggestion').forEach(el => {
-            el.addEventListener('click', e => {
-                e.preventDefault();
-                const query = el.dataset.query;
-                searchInput.value = query;
-                performSearch(query);
-            });
-        });
-
-        // Click su prodotti (tracking)
-        resultsContainer.querySelectorAll('.smartsearch-product').forEach((el, index) => {
-            el.addEventListener('click', () => {
-                trackProductClick(el.dataset.productId, index);
-            });
-        });
-
-        // Filtri checkbox
-        resultsContainer.querySelectorAll('input[data-facet]').forEach(input => {
-            input.addEventListener('change', handleFilterChange);
-        });
-
-        // Filtri prezzo
-        resultsContainer.querySelectorAll('.smartsearch-price-input').forEach(input => {
-            let timeout;
-            input.addEventListener('input', () => {
-                clearTimeout(timeout);
-                timeout = setTimeout(handleFilterChange, 500);
-            });
-        });
-
-        // Clear filters
-        const clearBtn = resultsContainer.querySelector('.smartsearch-clear-filters');
-        if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-                currentFilters = {};
-                performSearch(currentQuery);
-            });
+        // Category filter
+        if (facets.categories && facets.categories.length > 0) {
+            html += `
+                <div class="smartsearch-filter-section">
+                    <div class="smartsearch-filter-header">
+                        <span class="smartsearch-filter-title">${t.categories || 'Categorie'}</span>
+                        <span class="smartsearch-filter-toggle">${icons.chevron}</span>
+                    </div>
+                    <div class="smartsearch-filter-body">
+                        <div class="smartsearch-filter-tags">
+                            ${facets.categories.map(c => `
+                                <span class="smartsearch-filter-tag ${currentFilters.category && currentFilters.category.includes(c.id_category) ? 'selected' : ''}"
+                                      data-filter="category" data-value="${c.id_category}">
+                                    ${escapeHtml(c.name)}
+                                </span>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
         }
+
+        // Stock filter
+        html += `
+            <div class="smartsearch-filter-section">
+                <div class="smartsearch-filter-header">
+                    <span class="smartsearch-filter-title">${t.availability || 'Disponibilità'}</span>
+                    <span class="smartsearch-filter-toggle">${icons.chevron}</span>
+                </div>
+                <div class="smartsearch-filter-body">
+                    <div class="smartsearch-filter-option ${currentFilters.in_stock ? 'selected' : ''}" data-filter="in_stock" data-value="1">
+                        <span class="smartsearch-filter-checkbox">${icons.check}</span>
+                        <span class="smartsearch-filter-label">${t.in_stock || 'in stock'}</span>
+                    </div>
+                    <div class="smartsearch-filter-option" data-filter="out_of_stock" data-value="1">
+                        <span class="smartsearch-filter-checkbox">${icons.check}</span>
+                        <span class="smartsearch-filter-label">${t.out_of_stock || 'out of stock'}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.innerHTML = html;
+
+        // Bind filter events
+        bindFilterEvents(container);
     }
 
     /**
-     * Gestisce cambio filtri
+     * Bind filter events
      */
-    function handleFilterChange() {
+    function bindFilterEvents(container) {
+        // Collapsible sections
+        container.querySelectorAll('.smartsearch-filter-header').forEach(header => {
+            header.addEventListener('click', () => {
+                header.parentElement.classList.toggle('collapsed');
+            });
+        });
+
+        // Filter options (checkboxes)
+        container.querySelectorAll('.smartsearch-filter-option').forEach(option => {
+            option.addEventListener('click', () => {
+                option.classList.toggle('selected');
+                applyFilters();
+            });
+        });
+
+        // Filter tags
+        container.querySelectorAll('.smartsearch-filter-tag').forEach(tag => {
+            tag.addEventListener('click', () => {
+                tag.classList.toggle('selected');
+                applyFilters();
+            });
+        });
+
+        // Filter search
+        container.querySelectorAll('.smartsearch-filter-search input').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const options = input.closest('.smartsearch-filter-body').querySelectorAll('.smartsearch-filter-option');
+                options.forEach(opt => {
+                    const label = opt.querySelector('.smartsearch-filter-label').textContent.toLowerCase();
+                    opt.style.display = label.includes(query) ? '' : 'none';
+                });
+            });
+        });
+    }
+
+    /**
+     * Apply filters
+     */
+    function applyFilters() {
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
         const filters = {};
 
-        // Categorie
-        const categoryInputs = resultsContainer.querySelectorAll('input[data-facet="category"]:checked');
-        if (categoryInputs.length > 0) {
-            filters.category = Array.from(categoryInputs).map(i => parseInt(i.value));
+        // Categories
+        const selectedCategories = sidebar.querySelectorAll('.smartsearch-filter-tag.selected[data-filter="category"]');
+        if (selectedCategories.length > 0) {
+            filters.category = Array.from(selectedCategories).map(el => parseInt(el.dataset.value));
         }
 
-        // Produttori
-        const manufacturerInputs = resultsContainer.querySelectorAll('input[data-facet="manufacturer"]:checked');
-        if (manufacturerInputs.length > 0) {
-            filters.manufacturer = Array.from(manufacturerInputs).map(i => parseInt(i.value));
+        // Manufacturers
+        const selectedManufacturers = sidebar.querySelectorAll('.smartsearch-filter-option.selected[data-filter="manufacturer"]');
+        if (selectedManufacturers.length > 0) {
+            filters.manufacturer = Array.from(selectedManufacturers).map(el => parseInt(el.dataset.value));
         }
 
-        // Prezzo
-        const priceMin = resultsContainer.querySelector('input[data-facet="price_min"]');
-        const priceMax = resultsContainer.querySelector('input[data-facet="price_max"]');
-        if (priceMin && priceMin.value) filters.price_min = parseFloat(priceMin.value);
-        if (priceMax && priceMax.value) filters.price_max = parseFloat(priceMax.value);
-
-        // Disponibilità
-        const inStock = resultsContainer.querySelector('input[data-facet="in_stock"]');
-        if (inStock && inStock.checked) filters.in_stock = true;
+        // In stock
+        const inStock = sidebar.querySelector('.smartsearch-filter-option.selected[data-filter="in_stock"]');
+        if (inStock) {
+            filters.in_stock = true;
+        }
 
         performSearch(currentQuery, filters);
     }
 
     /**
-     * Traccia click su prodotto
+     * Bind result events
+     */
+    function bindResultEvents() {
+        const main = overlay.querySelector('.smartsearch-main');
+
+        // Product clicks
+        main.querySelectorAll('.smartsearch-product-card').forEach(card => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.smartsearch-add-cart')) {
+                    e.preventDefault();
+                    // Add to cart logic here
+                    console.log('Add to cart:', card.dataset.productId);
+                }
+                trackProductClick(card.dataset.productId, card.dataset.index);
+            });
+        });
+
+        // Mobile filter toggle
+        const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', () => {
+                const sidebar = overlay.querySelector('.smartsearch-sidebar');
+                sidebar.classList.toggle('mobile-visible');
+            });
+        }
+
+        // Sort select
+        const sortSelect = main.querySelector('.smartsearch-results-sort select');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', (e) => {
+                // Sort logic here
+                console.log('Sort by:', e.target.value);
+            });
+        }
+    }
+
+    /**
+     * Render no results
+     */
+    function renderNoResults(data) {
+        const main = overlay.querySelector('.smartsearch-main');
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+
+        sidebar.innerHTML = '';
+
+        let html = `
+            <div class="smartsearch-no-results">
+                ${icons.noResults}
+                <h3>${t.no_results || 'Nessun risultato trovato'}</h3>
+                <p>${t.try_different || 'Prova con termini di ricerca diversi'}</p>
+        `;
+
+        if (data && data.did_you_mean && data.did_you_mean.length > 0) {
+            html += `<p style="margin-top: 16px;">${t.did_you_mean || 'Forse cercavi'}:</p>`;
+            html += '<div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px;">';
+            data.did_you_mean.forEach(s => {
+                html += `<span class="smartsearch-tag smartsearch-suggestion" data-query="${escapeHtml(s.term)}">${escapeHtml(s.term)}</span>`;
+            });
+            html += '</div>';
+        }
+
+        html += '</div>';
+        main.innerHTML = html;
+
+        // Bind suggestion clicks
+        main.querySelectorAll('.smartsearch-suggestion').forEach(el => {
+            el.addEventListener('click', () => {
+                const query = el.dataset.query;
+                searchInput.value = query;
+                overlay.querySelector('.smartsearch-clear-input').classList.add('visible');
+                performSearch(query);
+            });
+        });
+    }
+
+    /**
+     * Track product click
      */
     function trackProductClick(productId, position) {
         if (!config.track_url) return;
 
-        fetch(config.track_url + '?action=click&product_id=' + productId + '&position=' + position + '&query=' + encodeURIComponent(currentQuery), {
+        fetch(`${config.track_url}?action=click&product_id=${productId}&position=${position}&query=${encodeURIComponent(currentQuery)}`, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         }).catch(() => {});
     }
 
     /**
-     * Inizializza ricerca vocale
+     * Calculate discount percentage
+     */
+    function calculateDiscount(oldPrice, newPrice) {
+        if (!oldPrice || !newPrice || oldPrice <= newPrice) return 0;
+        return Math.round((1 - newPrice / oldPrice) * 100);
+    }
+
+    /**
+     * Voice search
      */
     function initVoiceSearch() {
-        if (!('webkitSpeechRecognition' in window)) return;
-
         voiceRecognition = new webkitSpeechRecognition();
         voiceRecognition.continuous = false;
         voiceRecognition.interimResults = false;
@@ -601,6 +712,7 @@
         voiceRecognition.onresult = (event) => {
             const transcript = event.results[0][0].transcript;
             searchInput.value = transcript;
+            overlay.querySelector('.smartsearch-clear-input').classList.add('visible');
             performSearch(transcript);
             stopVoiceSearch();
         };
@@ -609,9 +721,6 @@
         voiceRecognition.onend = () => stopVoiceSearch();
     }
 
-    /**
-     * Toggle ricerca vocale
-     */
     function toggleVoiceSearch() {
         if (isListening) {
             stopVoiceSearch();
@@ -622,100 +731,22 @@
 
     function startVoiceSearch() {
         if (!voiceRecognition) return;
-
         isListening = true;
         voiceRecognition.start();
-
-        const btn = document.querySelector('.smartsearch-voice-btn');
+        const btn = overlay.querySelector('.smartsearch-voice-btn');
         if (btn) btn.classList.add('listening');
-
-        // Mostra feedback
-        resultsContainer.innerHTML = `
-            <div class="smartsearch-voice-feedback">
-                <div class="smartsearch-voice-icon listening"></div>
-                <p>${t.listening || 'Sto ascoltando...'}</p>
-            </div>
-        `;
-        resultsContainer.style.display = 'block';
-        isOpen = true;
     }
 
     function stopVoiceSearch() {
         if (!voiceRecognition) return;
-
         isListening = false;
         try { voiceRecognition.stop(); } catch(e) {}
-
-        const btn = document.querySelector('.smartsearch-voice-btn');
+        const btn = overlay.querySelector('.smartsearch-voice-btn');
         if (btn) btn.classList.remove('listening');
     }
 
     /**
-     * Gestisce navigazione tastiera
-     */
-    function handleKeydown(e) {
-        if (!isOpen) return;
-
-        const products = resultsContainer.querySelectorAll('.smartsearch-product');
-        const totalItems = products.length;
-
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                selectedIndex = Math.min(selectedIndex + 1, totalItems - 1);
-                updateSelection(products);
-                break;
-
-            case 'ArrowUp':
-                e.preventDefault();
-                selectedIndex = Math.max(selectedIndex - 1, -1);
-                updateSelection(products);
-                break;
-
-            case 'Enter':
-                if (selectedIndex >= 0 && products[selectedIndex]) {
-                    e.preventDefault();
-                    products[selectedIndex].click();
-                }
-                break;
-
-            case 'Escape':
-                hideResults();
-                searchInput.blur();
-                break;
-        }
-    }
-
-    function updateSelection(products) {
-        products.forEach((product, index) => {
-            product.classList.toggle('selected', index === selectedIndex);
-            if (index === selectedIndex) {
-                product.scrollIntoView({ block: 'nearest' });
-            }
-        });
-    }
-
-    function handleFocus() {
-        if (currentQuery && lastResults) {
-            resultsContainer.style.display = 'block';
-            isOpen = true;
-        }
-    }
-
-    function hideResults() {
-        resultsContainer.style.display = 'none';
-        isOpen = false;
-        selectedIndex = -1;
-    }
-
-    function handleClickOutside(e) {
-        if (!searchInput.contains(e.target) && !resultsContainer.contains(e.target)) {
-            hideResults();
-        }
-    }
-
-    /**
-     * Evidenzia termini
+     * Highlight text
      */
     function highlightText(text, query) {
         if (!config.highlight || !query) return escapeHtml(text);
@@ -743,7 +774,7 @@
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // Init
+    // Init on DOM ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {

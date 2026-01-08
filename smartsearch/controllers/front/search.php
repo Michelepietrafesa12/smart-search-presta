@@ -219,6 +219,7 @@ class SmartSearchSearchModuleFrontController extends ModuleFrontController
             $price = '';
             $priceOld = '';
             $priceRaw = 0;
+            $priceOldRaw = 0;
             if ($showPrice) {
                 $priceDisplay = Product::getPriceStatic($row['id_product'], true);
                 $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
@@ -227,6 +228,7 @@ class SmartSearchSearchModuleFrontController extends ModuleFrontController
                 $price = Tools::displayPrice($priceDisplay);
                 if ($priceOldDisplay > $priceDisplay) {
                     $priceOld = Tools::displayPrice($priceOldDisplay);
+                    $priceOldRaw = $priceOldDisplay;
                 }
             }
 
@@ -255,6 +257,7 @@ class SmartSearchSearchModuleFrontController extends ModuleFrontController
                 'price' => $price,
                 'price_raw' => $priceRaw,
                 'price_old' => $priceOld,
+                'price_old_raw' => $priceOldRaw,
                 'description' => $description,
                 'category' => $showCategory ? ($row['category_name'] ?? '') : '',
                 'category_id' => (int)($row['id_category_default'] ?? 0),
