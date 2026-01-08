@@ -467,6 +467,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * AJAX endpoint proxy per analytics - evita CORS
      * Riceve dati dal frontend e li inoltra a n8n server-side
+     * Fail-safe: non deve mai bloccare il frontend
      */
     public function displayAjaxAnalytics()
     {
@@ -474,13 +475,25 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         header('Access-Control-Allow-Origin: *');
 
         try {
+            // Verifica che cURL sia disponibile
+            if (!function_exists('curl_init')) {
+                die(json_encode(['success' => false, 'error' => 'cURL not available']));
+            }
+
             // Leggi il body JSON della richiesta
             $inputJSON = file_get_contents('php://input');
+            if (empty($inputJSON)) {
+                die(json_encode(['success' => false, 'error' => 'Empty request body']));
+            }
+
             $data = json_decode($inputJSON, true);
 
-            if (!$data) {
+            if (!$data || !is_array($data)) {
                 die(json_encode(['success' => false, 'error' => 'Invalid JSON']));
             }
+
+            // Sanitizza i dati (rimuovi potenziali script injection)
+            $data = $this->sanitizeAnalyticsData($data);
 
             // Ottieni URL webhook dalla configurazione
             $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
@@ -489,8 +502,18 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 die(json_encode(['success' => false, 'error' => 'Webhook URL not configured']));
             }
 
-            // Inoltra i dati a n8n
+            // Valida URL webhook
+            if (!filter_var($webhookUrl, FILTER_VALIDATE_URL)) {
+                die(json_encode(['success' => false, 'error' => 'Invalid webhook URL']));
+            }
+
+            // Inoltra i dati a n8n con timeout basso
             $ch = curl_init($webhookUrl);
+
+            if ($ch === false) {
+                die(json_encode(['success' => false, 'error' => 'cURL init failed']));
+            }
+
             curl_setopt_array($ch, [
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => json_encode($data),
@@ -499,17 +522,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     'Accept: application/json'
                 ],
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 5, // timeout breve per non rallentare il frontend
-                CURLOPT_CONNECTTIMEOUT => 3
+                CURLOPT_TIMEOUT => 3,           // Max 3 secondi
+                CURLOPT_CONNECTTIMEOUT => 2,    // Max 2 secondi per connessione
+                CURLOPT_NOSIGNAL => 1,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_FOLLOWLOCATION => false
             ]);
 
-            $response = curl_exec($ch);
+            curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $error = curl_error($ch);
             curl_close($ch);
 
             if ($error) {
-                die(json_encode(['success' => false, 'error' => $error]));
+                die(json_encode(['success' => false, 'error' => 'Connection error']));
             }
 
             die(json_encode([
@@ -520,9 +546,45 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         } catch (Exception $e) {
             die(json_encode([
                 'success' => false,
-                'error' => $e->getMessage()
+                'error' => 'Server error'
             ]));
         }
+    }
+
+    /**
+     * Sanitizza dati analytics per sicurezza
+     */
+    protected function sanitizeAnalyticsData($data)
+    {
+        $sanitized = [];
+
+        // Lista campi permessi
+        $allowedFields = [
+            'event_type', 'shop_id', 'session_id', 'user_agent', 'device_type',
+            'timestamp', 'query', 'results_count', 'product_id', 'product_name',
+            'position', 'price', 'category', 'filters'
+        ];
+
+        foreach ($data as $key => $value) {
+            // Solo campi permessi
+            if (!in_array($key, $allowedFields)) {
+                continue;
+            }
+
+            // Sanitizza stringhe
+            if (is_string($value)) {
+                $sanitized[$key] = strip_tags(mb_substr($value, 0, 500));
+            } elseif (is_numeric($value)) {
+                $sanitized[$key] = $value;
+            } elseif (is_array($value)) {
+                // Limita dimensione array
+                $sanitized[$key] = array_slice($value, 0, 50);
+            } elseif (is_bool($value)) {
+                $sanitized[$key] = $value;
+            }
+        }
+
+        return $sanitized;
     }
 
     /**

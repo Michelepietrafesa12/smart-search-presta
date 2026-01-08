@@ -536,76 +536,153 @@ class SmartSearch extends Module
 
     /**
      * Hook per tracciare conversioni
+     * IMPORTANTE: Questo hook è fail-safe - non deve mai bloccare il checkout
      */
     public function hookActionOrderStatusPostUpdate($params)
     {
-        $newStatus = $params['newOrderStatus'];
+        // Tutto in try/catch per non bloccare MAI il checkout
+        try {
+            // Verifica parametri obbligatori
+            if (!isset($params['newOrderStatus']) || !isset($params['id_order'])) {
+                return;
+            }
 
-        // Traccia solo quando l'ordine viene pagato
-        if (!$newStatus->paid) {
-            return;
-        }
+            $newStatus = $params['newOrderStatus'];
 
-        $orderId = $params['id_order'];
-        $order = new Order($orderId);
+            // Verifica che sia un oggetto valido con proprietà paid
+            if (!is_object($newStatus) || !isset($newStatus->paid) || !$newStatus->paid) {
+                return;
+            }
 
-        // Recupera dati dalla sessione/cookie
-        $cookie = Context::getContext()->cookie;
-        $lastSearch = $cookie->smartsearch_last_query ?? '';
-        $sessionId = $cookie->smartsearch_session_id ?? '';
+            $orderId = (int)$params['id_order'];
+            if ($orderId <= 0) {
+                return;
+            }
 
-        // Prepara i dati dei prodotti
-        $products = $order->getProducts();
-        $productsData = [];
-        $totalRevenue = 0;
+            // Carica ordine e verifica che esista
+            $order = new Order($orderId);
+            if (!Validate::isLoadedObject($order)) {
+                return;
+            }
 
-        foreach ($products as $product) {
-            $productsData[] = [
-                'product_id' => (int)$product['product_id'],
-                'product_name' => $product['product_name'],
-                'quantity' => (int)$product['product_quantity'],
-                'price' => (float)$product['unit_price_tax_incl'],
-                'total' => (float)$product['total_price_tax_incl']
-            ];
-            $totalRevenue += (float)$product['total_price_tax_incl'];
-        }
+            // Recupera dati dalla sessione/cookie in modo sicuro
+            $cookie = Context::getContext()->cookie;
+            $lastSearch = '';
+            $sessionId = '';
 
-        // Invia al webhook n8n
-        $this->sendConversionToWebhook([
-            'event_type' => 'conversion',
-            'order_id' => (int)$orderId,
-            'order_reference' => $order->reference,
-            'session_id' => $sessionId,
-            'last_search_query' => $lastSearch,
-            'customer_id' => (int)$order->id_customer,
-            'products' => $productsData,
-            'products_count' => count($productsData),
-            'revenue' => round($totalRevenue, 2),
-            'currency' => Currency::getIsoCodeById($order->id_currency),
-            'shop_id' => (int)$this->context->shop->id,
-            'timestamp' => date('c')
-        ]);
+            if (isset($cookie->smartsearch_last_query)) {
+                $lastSearch = (string)$cookie->smartsearch_last_query;
+            }
+            if (isset($cookie->smartsearch_session_id)) {
+                $sessionId = (string)$cookie->smartsearch_session_id;
+            }
 
-        // Traccia anche internamente se abilitato
-        if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED') && !empty($lastSearch)) {
-            $analytics = new SmartSearchAnalytics(
-                $this->context->language->id,
-                $this->context->shop->id
-            );
+            // Prepara i dati dei prodotti
+            $products = $order->getProducts();
+            if (!is_array($products)) {
+                $products = [];
+            }
+
+            $productsData = [];
+            $totalRevenue = 0;
 
             foreach ($products as $product) {
-                $analytics->trackConversion(
-                    $lastSearch,
-                    $product['product_id'],
-                    $orderId,
-                    $product['total_price_tax_incl']
+                if (!is_array($product)) {
+                    continue;
+                }
+                $productsData[] = [
+                    'product_id' => isset($product['product_id']) ? (int)$product['product_id'] : 0,
+                    'product_name' => isset($product['product_name']) ? (string)$product['product_name'] : '',
+                    'quantity' => isset($product['product_quantity']) ? (int)$product['product_quantity'] : 0,
+                    'price' => isset($product['unit_price_tax_incl']) ? (float)$product['unit_price_tax_incl'] : 0,
+                    'total' => isset($product['total_price_tax_incl']) ? (float)$product['total_price_tax_incl'] : 0
+                ];
+                $totalRevenue += isset($product['total_price_tax_incl']) ? (float)$product['total_price_tax_incl'] : 0;
+            }
+
+            // Ottieni valuta in modo sicuro
+            $currency = 'EUR';
+            if ($order->id_currency) {
+                $currencyIso = Currency::getIsoCodeById((int)$order->id_currency);
+                if ($currencyIso) {
+                    $currency = $currencyIso;
+                }
+            }
+
+            // Invia al webhook n8n (non bloccante, con timeout basso)
+            $this->sendConversionToWebhook([
+                'event_type' => 'conversion',
+                'order_id' => $orderId,
+                'order_reference' => $order->reference ?? '',
+                'session_id' => $sessionId,
+                'last_search_query' => $lastSearch,
+                'customer_id' => (int)$order->id_customer,
+                'products' => $productsData,
+                'products_count' => count($productsData),
+                'revenue' => round($totalRevenue, 2),
+                'currency' => $currency,
+                'shop_id' => (int)$this->context->shop->id,
+                'timestamp' => date('c')
+            ]);
+
+            // Traccia anche internamente se abilitato
+            if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED') && !empty($lastSearch)) {
+                $this->trackConversionInternal($lastSearch, $products, $orderId);
+            }
+
+        } catch (Exception $e) {
+            // Log silenzioso - NON bloccare mai il checkout
+            if (_PS_MODE_DEV_) {
+                PrestaShopLogger::addLog(
+                    'SmartSearch conversion tracking error: ' . $e->getMessage(),
+                    2,
+                    null,
+                    'SmartSearch'
+                );
+            }
+        } catch (Error $e) {
+            // Cattura anche errori PHP 7+ fatali
+            if (_PS_MODE_DEV_) {
+                PrestaShopLogger::addLog(
+                    'SmartSearch conversion tracking fatal error: ' . $e->getMessage(),
+                    3,
+                    null,
+                    'SmartSearch'
                 );
             }
         }
     }
 
     /**
+     * Traccia conversione internamente (separato per gestione errori)
+     */
+    protected function trackConversionInternal($lastSearch, $products, $orderId)
+    {
+        try {
+            $analytics = new SmartSearchAnalytics(
+                $this->context->language->id,
+                $this->context->shop->id
+            );
+
+            foreach ($products as $product) {
+                if (!is_array($product)) {
+                    continue;
+                }
+                $analytics->trackConversion(
+                    $lastSearch,
+                    isset($product['product_id']) ? $product['product_id'] : 0,
+                    $orderId,
+                    isset($product['total_price_tax_incl']) ? $product['total_price_tax_incl'] : 0
+                );
+            }
+        } catch (Exception $e) {
+            // Ignora errori di tracking interno
+        }
+    }
+
+    /**
      * Invia dati conversione al webhook n8n
+     * Timeout molto basso per non bloccare il checkout
      */
     protected function sendConversionToWebhook($data)
     {
@@ -615,8 +692,18 @@ class SmartSearch extends Module
             return false;
         }
 
+        // Verifica che cURL sia disponibile
+        if (!function_exists('curl_init')) {
+            return false;
+        }
+
         try {
             $ch = curl_init($webhookUrl);
+
+            if ($ch === false) {
+                return false;
+            }
+
             curl_setopt_array($ch, [
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => json_encode($data),
@@ -625,13 +712,29 @@ class SmartSearch extends Module
                     'Accept: application/json'
                 ],
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 5,
-                CURLOPT_CONNECTTIMEOUT => 3
+                CURLOPT_TIMEOUT => 2,           // Max 2 secondi totali
+                CURLOPT_CONNECTTIMEOUT => 1,    // Max 1 secondo per connessione
+                CURLOPT_NOSIGNAL => 1,          // Necessario per timeout < 1s su alcuni sistemi
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_FOLLOWLOCATION => false // Non seguire redirect
             ]);
 
             curl_exec($ch);
+            $error = curl_error($ch);
             curl_close($ch);
-            return true;
+
+            // Log errori solo in dev mode
+            if ($error && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog(
+                    'SmartSearch webhook error: ' . $error,
+                    2,
+                    null,
+                    'SmartSearch'
+                );
+            }
+
+            return empty($error);
+
         } catch (Exception $e) {
             return false;
         }
