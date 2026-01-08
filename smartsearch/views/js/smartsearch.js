@@ -21,6 +21,83 @@
     let voiceRecognition = null;
     let isListening = false;
 
+    // Analytics
+    const sessionId = getOrCreateSessionId();
+
+    /**
+     * Get or create session ID for analytics
+     */
+    function getOrCreateSessionId() {
+        let sid = sessionStorage.getItem('smartsearch_session_id');
+        if (!sid) {
+            sid = 'ss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            sessionStorage.setItem('smartsearch_session_id', sid);
+        }
+        return sid;
+    }
+
+    /**
+     * Get device type
+     */
+    function getDeviceType() {
+        const width = window.innerWidth;
+        if (width < 768) return 'mobile';
+        if (width < 1024) return 'tablet';
+        return 'desktop';
+    }
+
+    /**
+     * Send analytics event to n8n webhook
+     */
+    function sendAnalyticsEvent(eventType, data) {
+        const webhookUrl = config.analytics_webhook_url;
+        if (!webhookUrl) return;
+
+        const payload = {
+            event_type: eventType,
+            shop_id: config.shop_id || window.location.hostname,
+            session_id: sessionId,
+            user_agent: navigator.userAgent,
+            device_type: getDeviceType(),
+            timestamp: new Date().toISOString(),
+            ...data
+        };
+
+        // Use sendBeacon for better reliability (doesn't block page unload)
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(webhookUrl, JSON.stringify(payload));
+        } else {
+            fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                keepalive: true
+            }).catch(() => {});
+        }
+    }
+
+    /**
+     * Track search event
+     */
+    function trackSearch(query, resultsCount) {
+        sendAnalyticsEvent(resultsCount > 0 ? 'search' : 'no_results', {
+            query: query,
+            results_count: resultsCount
+        });
+    }
+
+    /**
+     * Track product click event
+     */
+    function trackClick(productId, productName, position) {
+        sendAnalyticsEvent('click', {
+            query: currentQuery,
+            product_id: productId,
+            product_name: productName,
+            position: position
+        });
+    }
+
     // Icons SVG
     const icons = {
         search: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>',
@@ -426,6 +503,8 @@
             lastResults = data;
             renderResults(data);
             saveRecentSearch(query);
+            // Track search analytics
+            trackSearch(query, data.total || (data.products ? data.products.length : 0));
         })
         .catch(error => {
             console.error('SmartSearch error:', error);
@@ -770,12 +849,11 @@
         // Product clicks
         main.querySelectorAll('.smartsearch-product-card').forEach(card => {
             card.addEventListener('click', (e) => {
-                if (e.target.closest('.smartsearch-add-cart')) {
-                    e.preventDefault();
-                    // Add to cart logic here
-                    console.log('Add to cart:', card.dataset.productId);
-                }
-                trackProductClick(card.dataset.productId, card.dataset.index);
+                const productId = parseInt(card.dataset.productId);
+                const position = parseInt(card.dataset.index);
+                const productName = card.querySelector('.smartsearch-product-name')?.textContent || '';
+                // Track click to n8n analytics
+                trackClick(productId, productName, position);
             });
         });
 
@@ -837,17 +915,6 @@
         });
     }
 
-    /**
-     * Track product click
-     */
-    function trackProductClick(productId, position) {
-        if (!config.track_url) return;
-
-        fetch(`${config.track_url}?action=click&product_id=${productId}&position=${position}&query=${encodeURIComponent(currentQuery)}`, {
-            method: 'GET',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        }).catch(() => {});
-    }
 
     /**
      * Calculate discount percentage

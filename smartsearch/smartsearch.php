@@ -150,6 +150,7 @@ class SmartSearch extends Module
         // Analytics
         Configuration::updateValue('SMARTSEARCH_ANALYTICS_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_ANALYTICS_RETENTION', 90);
+        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', '');
 
         // Voice Search
         Configuration::updateValue('SMARTSEARCH_VOICE_ENABLED', 1);
@@ -175,7 +176,7 @@ class SmartSearch extends Module
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
             'SMARTSEARCH_FACETS_STOCK', 'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL',
             'SMARTSEARCH_ANALYTICS_ENABLED', 'SMARTSEARCH_ANALYTICS_RETENTION',
-            'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED'
+            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED'
         ];
 
         foreach ($configs as $config) {
@@ -452,6 +453,10 @@ class SmartSearch extends Module
                 'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
                 'banners_enabled' => (bool)Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
 
+                // Analytics webhook per n8n
+                'analytics_webhook_url' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
+                'shop_id' => (int)$this->context->shop->id,
+
                 // Traduzioni
                 'translations' => [
                     'search_placeholder' => $this->l('Cerca prodotti...'),
@@ -622,6 +627,9 @@ class SmartSearch extends Module
             Configuration::updateValue($config, (int)Tools::getValue($config));
         }
 
+        // Salva separatamente i campi stringa
+        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', Tools::getValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'));
+
         $this->invalidateCache();
     }
 
@@ -734,6 +742,8 @@ class SmartSearch extends Module
                     ['type' => 'switch', 'label' => $this->l('Abilita Analytics'), 'name' => 'SMARTSEARCH_ANALYTICS_ENABLED', 'is_bool' => true,
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
                     ['type' => 'text', 'label' => $this->l('Retention (giorni)'), 'name' => 'SMARTSEARCH_ANALYTICS_RETENTION', 'class' => 'fixed-width-sm'],
+                    ['type' => 'text', 'label' => $this->l('Webhook URL (n8n)'), 'name' => 'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'class' => 'fixed-width-xxl',
+                     'desc' => $this->l('URL del webhook n8n per inviare gli eventi analytics (es. https://tuo-n8n.com/webhook/smartsearch-analytics)')],
                 ]
             ]
         ];
@@ -790,6 +800,7 @@ class SmartSearch extends Module
             'SMARTSEARCH_CACHE_TTL' => Configuration::get('SMARTSEARCH_CACHE_TTL'),
             'SMARTSEARCH_ANALYTICS_ENABLED' => Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED'),
             'SMARTSEARCH_ANALYTICS_RETENTION' => Configuration::get('SMARTSEARCH_ANALYTICS_RETENTION'),
+            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
             'SMARTSEARCH_VOICE_ENABLED' => Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
         ];
