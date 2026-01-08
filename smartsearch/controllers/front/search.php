@@ -296,6 +296,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $conditions[] = "(
                     pl.name LIKE '%{$word}%'
                     OR pl.description_short LIKE '%{$word}%'
+                    OR pl.description LIKE '%{$word}%'
                     OR p.reference LIKE '%{$word}%'
                     OR m.name LIKE '%{$word}%'
                 )";
@@ -329,6 +330,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 // 2. Ricerca con wildcard tra le lettere (per typos)
                 $fuzzyPattern = $this->createFuzzyPattern($word);
                 $wordConditions[] = "pl.name LIKE '{$fuzzyPattern}'";
+                $wordConditions[] = "pl.description LIKE '{$fuzzyPattern}'";
                 $wordConditions[] = "m.name LIKE '{$fuzzyPattern}'";
 
                 // 3. Ricerca senza la prima/ultima lettera (per errori comuni)
@@ -337,6 +339,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     $withoutLast = mb_substr($word, 0, -1);
                     $wordConditions[] = "pl.name LIKE '%{$withoutFirst}%'";
                     $wordConditions[] = "pl.name LIKE '%{$withoutLast}%'";
+                    $wordConditions[] = "pl.description LIKE '%{$withoutFirst}%'";
                     $wordConditions[] = "m.name LIKE '%{$withoutFirst}%'";
                     $wordConditions[] = "m.name LIKE '%{$withoutLast}%'";
                 }
@@ -346,6 +349,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 if (mb_strlen($consonants) >= 3) {
                     $consonantPattern = '%' . implode('%', str_split($consonants)) . '%';
                     $wordConditions[] = "pl.name LIKE '{$consonantPattern}'";
+                    $wordConditions[] = "pl.description LIKE '{$consonantPattern}'";
                     $wordConditions[] = "m.name LIKE '{$consonantPattern}'";
                 }
 
