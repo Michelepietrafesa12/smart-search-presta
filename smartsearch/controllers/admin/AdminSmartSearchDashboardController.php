@@ -45,7 +45,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'current_url' => $this->context->link->getAdminLink('AdminSmartSearchDashboard'),
         ]);
 
-        $this->setTemplate('dashboard.tpl');
+        $this->setTemplate('module:smartsearch/views/templates/admin/dashboard.tpl');
     }
 
     /**

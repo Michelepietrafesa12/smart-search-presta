@@ -60,7 +60,10 @@
      */
     function sendAnalyticsEvent(eventType, data) {
         // Skip if webhook not configured
-        if (!config.analytics_webhook_url) return;
+        if (!config.analytics_webhook_url) {
+            console.log('[SmartSearch] Analytics skipped - no webhook URL configured');
+            return;
+        }
 
         const payload = {
             event_type: eventType,
@@ -73,13 +76,25 @@
             ...data
         };
 
+        console.log('[SmartSearch] Sending analytics:', eventType, payload);
+
         // Send to PrestaShop proxy (non-blocking)
         fetch(config.ajax_url + '?ajax=1&action=analytics', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             keepalive: true
-        }).catch(() => {}); // Silent fail - analytics should never block UX
+        })
+        .then(response => response.json())
+        .then(result => {
+            console.log('[SmartSearch] Analytics response:', result);
+            if (!result.success) {
+                console.warn('[SmartSearch] Analytics failed:', result.error, result.debug);
+            }
+        })
+        .catch(err => {
+            console.error('[SmartSearch] Analytics error:', err);
+        });
     }
 
     /**

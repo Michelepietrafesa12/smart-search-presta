@@ -513,12 +513,20 @@
     color: #f97316;
 }
 
-/* Products grid - MIGLIORATO */
+/* Products grid - MIGLIORATO - Fix spazi vuoti */
 .smartsearch-products-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 20px;
     padding: 20px 24px;
+    align-items: start; /* Evita stretching verticale */
+}
+
+/* Assicura che le card vuote o nascoste non occupino spazio */
+.smartsearch-products-grid > *:empty,
+.smartsearch-products-grid > *[style*="display: none"],
+.smartsearch-products-grid > *[hidden] {
+    display: none !important;
 }
 
 /* Product card - MIGLIORATO senza carrello */
@@ -533,6 +541,8 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    min-height: 280px; /* Altezza minima consistente */
+    height: 100%; /* Riempi la cella del grid */
 }
 
 .smartsearch-product-card:hover {
