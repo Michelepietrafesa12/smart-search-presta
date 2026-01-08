@@ -49,13 +49,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ricerca categorie
             $categories = $this->searchCategories($query, $idLang, $idShop);
 
+            // Ottieni banner attivi per questa query
+            $banners = $this->getBannersForQuery($query, $idShop);
+
             die(json_encode([
                 'products' => $products,
                 'categories' => $categories,
                 'total' => count($products),
                 'query' => $query,
                 'facets' => [],
-                'banners' => [],
+                'banners' => $banners,
                 'did_you_mean' => []
             ], JSON_UNESCAPED_UNICODE));
 
@@ -386,7 +389,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Ricerca prodotti con supporto fuzzy/tollerante
+     * Ricerca prodotti con supporto fuzzy/tollerante e boosting
      */
     protected function searchProducts($query, $idLang, $idShop)
     {
@@ -402,7 +405,102 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return [];
         }
 
+        // Applica boosting ai risultati
+        $results = $this->applyBoosting($results, $query, $idShop);
+
         return $this->formatProducts($results, $idLang);
+    }
+
+    /**
+     * Applica boost ai prodotti in base alle regole configurate
+     */
+    protected function applyBoosting($products, $query, $idShop)
+    {
+        // Ottieni le regole di boosting attive
+        $boostRules = Db::getInstance()->executeS('
+            SELECT id_product, boost_value, keywords
+            FROM `' . _DB_PREFIX_ . 'smartsearch_boost`
+            WHERE id_shop = ' . (int)$idShop . ' AND active = 1
+        ');
+
+        if (!$boostRules || empty($boostRules)) {
+            return $products;
+        }
+
+        // Crea una mappa di boost per prodotto e keyword
+        $productBoosts = [];
+        $keywordBoosts = [];
+
+        foreach ($boostRules as $rule) {
+            // Boost per prodotto specifico
+            if ($rule['id_product']) {
+                $productBoosts[$rule['id_product']] = (float)$rule['boost_value'];
+            }
+
+            // Boost per keyword
+            if (!empty($rule['keywords'])) {
+                $keywords = array_map('trim', explode(',', mb_strtolower($rule['keywords'])));
+                foreach ($keywords as $keyword) {
+                    if (!empty($keyword)) {
+                        if (!isset($keywordBoosts[$keyword])) {
+                            $keywordBoosts[$keyword] = [];
+                        }
+                        $keywordBoosts[$keyword][] = [
+                            'product_id' => $rule['id_product'],
+                            'boost' => (float)$rule['boost_value']
+                        ];
+                    }
+                }
+            }
+        }
+
+        // Normalizza la query
+        $queryLower = mb_strtolower($query);
+        $queryWords = explode(' ', $queryLower);
+
+        // Calcola score per ogni prodotto
+        foreach ($products as &$product) {
+            $product['_boost_score'] = 1.0;
+
+            // Applica boost per prodotto specifico
+            if (isset($productBoosts[$product['id_product']])) {
+                $product['_boost_score'] *= $productBoosts[$product['id_product']];
+            }
+
+            // Applica boost per keyword match
+            foreach ($keywordBoosts as $keyword => $rules) {
+                // Verifica se la keyword matcha la query
+                $keywordMatches = false;
+                foreach ($queryWords as $word) {
+                    if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
+                        $keywordMatches = true;
+                        break;
+                    }
+                }
+
+                if ($keywordMatches) {
+                    foreach ($rules as $rule) {
+                        // Se la regola è per questo prodotto o per tutti (product_id = 0)
+                        if ($rule['product_id'] == $product['id_product'] || !$rule['product_id']) {
+                            $product['_boost_score'] *= $rule['boost'];
+                        }
+                    }
+                }
+            }
+        }
+
+        // Ordina per boost score (più alto prima)
+        usort($products, function($a, $b) {
+            $scoreA = isset($a['_boost_score']) ? $a['_boost_score'] : 1.0;
+            $scoreB = isset($b['_boost_score']) ? $b['_boost_score'] : 1.0;
+
+            if ($scoreA == $scoreB) {
+                return 0;
+            }
+            return ($scoreB > $scoreA) ? 1 : -1; // Ordine decrescente
+        });
+
+        return $products;
     }
 
     /**
@@ -826,5 +924,69 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             'success' => true,
             'banners' => $result
         ]));
+    }
+
+    /**
+     * Ottiene i banner attivi che matchano la query
+     */
+    protected function getBannersForQuery($query, $idShop)
+    {
+        $queryWords = array_filter(explode(' ', mb_strtolower(trim($query))));
+
+        // Get active banners
+        $sql = '
+            SELECT
+                id_smartsearch_banner,
+                name,
+                image,
+                link,
+                keywords,
+                position
+            FROM `' . _DB_PREFIX_ . 'smartsearch_banners`
+            WHERE id_shop = ' . (int)$idShop . '
+            AND active = 1
+            AND (date_start IS NULL OR date_start <= NOW())
+            AND (date_end IS NULL OR date_end >= NOW())
+            ORDER BY position ASC, date_add DESC
+        ';
+
+        $banners = Db::getInstance()->executeS($sql);
+        $result = [];
+
+        if ($banners) {
+            $baseUrl = _MODULE_DIR_ . 'smartsearch/views/img/banners/';
+
+            foreach ($banners as $banner) {
+                // Check if banner matches query keywords (if keywords set)
+                $showBanner = true;
+                if (!empty($banner['keywords'])) {
+                    $bannerKeywords = array_map('trim', explode(',', mb_strtolower($banner['keywords'])));
+                    $showBanner = false;
+
+                    // Check if any query word matches any banner keyword
+                    foreach ($queryWords as $word) {
+                        if (strlen($word) < 2) continue;
+                        foreach ($bannerKeywords as $keyword) {
+                            if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
+                                $showBanner = true;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+
+                if ($showBanner) {
+                    $result[] = [
+                        'id' => (int)$banner['id_smartsearch_banner'],
+                        'name' => $banner['name'],
+                        'image' => $baseUrl . $banner['image'],
+                        'link' => $banner['link'] ?: null,
+                        'position' => $banner['position'],
+                    ];
+                }
+            }
+        }
+
+        return $result;
     }
 }

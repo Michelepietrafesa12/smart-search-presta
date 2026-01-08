@@ -249,12 +249,15 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         // Form con action esplicita
         $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '" enctype="multipart/form-data">';
         $html .= '<div class="row">';
-        $html .= '<div class="col-md-3"><div class="form-group"><label>Nome</label><input type="text" name="banner_name" class="form-control" required></div></div>';
-        $html .= '<div class="col-md-3"><div class="form-group"><label>Immagine</label><input type="file" name="banner_image" class="form-control" accept="image/*" required></div></div>';
+        $html .= '<div class="col-md-2"><div class="form-group"><label>Nome</label><input type="text" name="banner_name" class="form-control" required></div></div>';
+        $html .= '<div class="col-md-2"><div class="form-group"><label>Immagine</label><input type="file" name="banner_image" class="form-control" accept="image/*" required></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Posizione</label><select name="banner_position" class="form-control"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></div></div>';
+        $html .= '<div class="col-md-2"><div class="form-group"><label>Keywords</label><input type="text" name="banner_keywords" class="form-control" placeholder="es: scarpe, sport"></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Link</label><input type="url" name="banner_link" class="form-control"></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>&nbsp;</label><button type="submit" name="submitBanner" class="btn btn-success btn-block"><i class="icon-plus"></i> Aggiungi</button></div></div>';
-        $html .= '</div></form>';
+        $html .= '</div>';
+        $html .= '<p class="help-block"><small>Keywords: Lascia vuoto per mostrare sempre, oppure inserisci parole chiave separate da virgola per mostrare solo quando la ricerca contiene quelle parole.</small></p>';
+        $html .= '</form>';
 
         // List
         $banners = Db::getInstance()->executeS('SELECT * FROM `' . _DB_PREFIX_ . 'smartsearch_banners` WHERE id_shop = ' . (int)$this->context->shop->id);
@@ -267,7 +270,13 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                 $html .= '<img src="' . $imgUrl . '" style="max-width:100%;max-height:60px;margin-bottom:10px">';
                 $html .= '<h5>' . htmlspecialchars($b['name']) . '</h5>';
                 $html .= '<span class="label label-default">' . $b['position'] . '</span> ';
-                $html .= '<span class="label label-' . ($b['active'] ? 'success' : 'danger') . '">' . ($b['active'] ? 'Attivo' : 'Off') . '</span><br><br>';
+                $html .= '<span class="label label-' . ($b['active'] ? 'success' : 'danger') . '">' . ($b['active'] ? 'Attivo' : 'Off') . '</span>';
+                if (!empty($b['keywords'])) {
+                    $html .= '<br><small class="text-muted"><i class="icon-tag"></i> ' . htmlspecialchars($b['keywords']) . '</small>';
+                } else {
+                    $html .= '<br><small class="text-muted"><i class="icon-globe"></i> Sempre visibile</small>';
+                }
+                $html .= '<br><br>';
                 $html .= '<a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=banners&deleteBanner=' . $b['id_smartsearch_banner'] . '" class="btn btn-danger btn-xs" onclick="return confirm(\'Sicuro?\')"><i class="icon-trash"></i> Elimina</a>';
                 $html .= '</div></div>';
             }

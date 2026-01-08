@@ -1023,6 +1023,11 @@
             return;
         }
 
+        // Update banners from response if available
+        if (data.banners && data.banners.length > 0) {
+            activeBanners = data.banners;
+        }
+
         // Render sidebar filters
         if (config.facets_enabled && data.facets) {
             renderFilters(sidebar, data.facets);
@@ -1059,7 +1064,10 @@
         `;
 
         // Top banners
-        html += renderBanners('top');
+        const topBannersHtml = renderBannersHtml('top');
+        if (topBannersHtml) {
+            html += '<div class="smartsearch-banners-container smartsearch-banners-top" style="padding: 0 24px;">' + topBannersHtml + '</div>';
+        }
 
         // Products grid
         html += '<div class="smartsearch-products-grid">';
@@ -1068,7 +1076,10 @@
             // Middle banner after 4 products
             if (index === 4) {
                 html += '</div>'; // Close grid temporarily
-                html += renderBanners('middle');
+                const middleBannersHtml = renderBannersHtml('middle');
+                if (middleBannersHtml) {
+                    html += '<div class="smartsearch-banners-container smartsearch-banners-middle" style="padding: 0 24px;">' + middleBannersHtml + '</div>';
+                }
                 html += '<div class="smartsearch-products-grid">'; // Reopen grid
             }
 
@@ -1096,12 +1107,39 @@
         html += '</div>';
 
         // Bottom banners
-        html += renderBanners('bottom');
+        const bottomBannersHtml = renderBannersHtml('bottom');
+        if (bottomBannersHtml) {
+            html += '<div class="smartsearch-banners-container smartsearch-banners-bottom" style="padding: 0 24px;">' + bottomBannersHtml + '</div>';
+        }
 
         main.innerHTML = html;
 
         // Bind events
         bindResultEvents();
+    }
+
+    /**
+     * Render banners HTML by position (returns empty string if no banners)
+     */
+    function renderBannersHtml(position) {
+        const banners = activeBanners.filter(b => b.position === position);
+        if (banners.length === 0) return '';
+
+        let html = '';
+        banners.forEach(banner => {
+            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const linkClose = banner.link ? '</a>' : '</div>';
+
+            html += `
+                ${linkOpen}
+                    <div class="smartsearch-banner smartsearch-banner-${position}">
+                        <img src="${banner.image}" alt="${escapeHtml(banner.name)}" loading="lazy">
+                    </div>
+                ${linkClose}
+            `;
+        });
+
+        return html;
     }
 
     /**
