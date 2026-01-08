@@ -755,4 +755,76 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         return $filters;
     }
+
+    /**
+     * AJAX endpoint per ottenere banner attivi
+     */
+    public function displayAjaxBanners()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $query = Tools::getValue('q', '');
+        $queryWords = array_filter(explode(' ', mb_strtolower(trim($query))));
+
+        $idLang = $this->context->language->id;
+        $idShop = $this->context->shop->id;
+
+        // Get active banners
+        $sql = '
+            SELECT
+                id_smartsearch_banner,
+                name,
+                image,
+                link,
+                keywords,
+                position
+            FROM `' . _DB_PREFIX_ . 'smartsearch_banners`
+            WHERE id_shop = ' . (int)$idShop . '
+            AND active = 1
+            AND (date_start IS NULL OR date_start <= NOW())
+            AND (date_end IS NULL OR date_end >= NOW())
+            ORDER BY position ASC, date_add DESC
+        ';
+
+        $banners = Db::getInstance()->executeS($sql);
+        $result = [];
+
+        if ($banners) {
+            $baseUrl = _MODULE_DIR_ . 'smartsearch/views/img/banners/';
+
+            foreach ($banners as $banner) {
+                // Check if banner matches query keywords (if keywords set)
+                $showBanner = true;
+                if (!empty($banner['keywords'])) {
+                    $bannerKeywords = array_map('trim', explode(',', mb_strtolower($banner['keywords'])));
+                    $showBanner = false;
+
+                    // Check if any query word matches any banner keyword
+                    foreach ($queryWords as $word) {
+                        foreach ($bannerKeywords as $keyword) {
+                            if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
+                                $showBanner = true;
+                                break 2;
+                            }
+                        }
+                    }
+                }
+
+                if ($showBanner) {
+                    $result[] = [
+                        'id' => (int)$banner['id_smartsearch_banner'],
+                        'name' => $banner['name'],
+                        'image' => $baseUrl . $banner['image'],
+                        'link' => $banner['link'] ?: null,
+                        'position' => $banner['position'],
+                    ];
+                }
+            }
+        }
+
+        die(json_encode([
+            'success' => true,
+            'banners' => $result
+        ]));
+    }
 }

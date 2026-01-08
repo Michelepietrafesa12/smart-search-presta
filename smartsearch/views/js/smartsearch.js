@@ -18,6 +18,7 @@
     let debounceTimer = null;
     let recentSearches = [];
     let lastResults = null;
+    let activeBanners = [];
 
     // Analytics
     const sessionId = getOrCreateSessionId();
@@ -129,12 +130,60 @@
     };
 
     /**
+     * Load banners from API
+     */
+    function loadBanners(query) {
+        const url = config.ajax_url + '?ajax=1&action=banners&q=' + encodeURIComponent(query || '');
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.banners) {
+                activeBanners = data.banners;
+            } else {
+                activeBanners = [];
+            }
+        })
+        .catch(() => {
+            activeBanners = [];
+        });
+    }
+
+    /**
+     * Render banners by position
+     */
+    function renderBanners(position) {
+        const banners = activeBanners.filter(b => b.position === position);
+        if (banners.length === 0) return '';
+
+        let html = '';
+        banners.forEach(banner => {
+            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const linkClose = banner.link ? '</a>' : '</div>';
+
+            html += `
+                ${linkOpen}
+                    <div class="smartsearch-banner smartsearch-banner-${position}">
+                        <img src="${banner.image}" alt="${escapeHtml(banner.name)}" loading="lazy">
+                    </div>
+                ${linkClose}
+            `;
+        });
+
+        return html;
+    }
+
+    /**
      * Init
      */
     function init() {
         loadRecentSearches();
         createOverlay();
         bindTriggers();
+        loadBanners(''); // Preload banners
     }
 
     /**
@@ -850,6 +899,9 @@
 
         showLoader();
 
+        // Load banners for this query
+        loadBanners(query);
+
         // Aggiungi ajax=1 e action=search per PrestaShop
         let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(query);
 
@@ -991,16 +1043,20 @@
             </button>
         `;
 
-        // Banner
-        if (config.banners_enabled && data.banners && data.banners.length > 0) {
-            const banner = data.banners[0];
-            html += `<a href="${banner.link || '#'}" class="smartsearch-banner">${escapeHtml(banner.name || 'Offerta speciale')}</a>`;
-        }
+        // Top banners
+        html += renderBanners('top');
 
         // Products grid
         html += '<div class="smartsearch-products-grid">';
 
         data.products.forEach((product, index) => {
+            // Middle banner after 4 products
+            if (index === 4) {
+                html += '</div>'; // Close grid temporarily
+                html += renderBanners('middle');
+                html += '<div class="smartsearch-products-grid">'; // Reopen grid
+            }
+
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
@@ -1023,6 +1079,9 @@
         });
 
         html += '</div>';
+
+        // Bottom banners
+        html += renderBanners('bottom');
 
         main.innerHTML = html;
 
