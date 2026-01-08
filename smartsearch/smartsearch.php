@@ -539,36 +539,101 @@ class SmartSearch extends Module
      */
     public function hookActionOrderStatusPostUpdate($params)
     {
-        if (!Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED')) {
-            return;
-        }
-
         $newStatus = $params['newOrderStatus'];
+
+        // Traccia solo quando l'ordine viene pagato
         if (!$newStatus->paid) {
             return;
         }
 
         $orderId = $params['id_order'];
         $order = new Order($orderId);
-        $lastSearch = Context::getContext()->cookie->smartsearch_last_query ?? '';
 
-        if (empty($lastSearch)) {
-            return;
+        // Recupera dati dalla sessione/cookie
+        $cookie = Context::getContext()->cookie;
+        $lastSearch = $cookie->smartsearch_last_query ?? '';
+        $sessionId = $cookie->smartsearch_session_id ?? '';
+
+        // Prepara i dati dei prodotti
+        $products = $order->getProducts();
+        $productsData = [];
+        $totalRevenue = 0;
+
+        foreach ($products as $product) {
+            $productsData[] = [
+                'product_id' => (int)$product['product_id'],
+                'product_name' => $product['product_name'],
+                'quantity' => (int)$product['product_quantity'],
+                'price' => (float)$product['unit_price_tax_incl'],
+                'total' => (float)$product['total_price_tax_incl']
+            ];
+            $totalRevenue += (float)$product['total_price_tax_incl'];
         }
 
-        $analytics = new SmartSearchAnalytics(
-            $this->context->language->id,
-            $this->context->shop->id
-        );
+        // Invia al webhook n8n
+        $this->sendConversionToWebhook([
+            'event_type' => 'conversion',
+            'order_id' => (int)$orderId,
+            'order_reference' => $order->reference,
+            'session_id' => $sessionId,
+            'last_search_query' => $lastSearch,
+            'customer_id' => (int)$order->id_customer,
+            'products' => $productsData,
+            'products_count' => count($productsData),
+            'revenue' => round($totalRevenue, 2),
+            'currency' => Currency::getIsoCodeById($order->id_currency),
+            'shop_id' => (int)$this->context->shop->id,
+            'timestamp' => date('c')
+        ]);
 
-        $products = $order->getProducts();
-        foreach ($products as $product) {
-            $analytics->trackConversion(
-                $lastSearch,
-                $product['product_id'],
-                $orderId,
-                $product['total_price_tax_incl']
+        // Traccia anche internamente se abilitato
+        if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED') && !empty($lastSearch)) {
+            $analytics = new SmartSearchAnalytics(
+                $this->context->language->id,
+                $this->context->shop->id
             );
+
+            foreach ($products as $product) {
+                $analytics->trackConversion(
+                    $lastSearch,
+                    $product['product_id'],
+                    $orderId,
+                    $product['total_price_tax_incl']
+                );
+            }
+        }
+    }
+
+    /**
+     * Invia dati conversione al webhook n8n
+     */
+    protected function sendConversionToWebhook($data)
+    {
+        $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
+
+        if (empty($webhookUrl)) {
+            return false;
+        }
+
+        try {
+            $ch = curl_init($webhookUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($data),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json'
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_CONNECTTIMEOUT => 3
+            ]);
+
+            curl_exec($ch);
+            curl_close($ch);
+            return true;
+        } catch (Exception $e) {
+            return false;
         }
     }
 

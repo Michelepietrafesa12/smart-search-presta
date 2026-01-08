@@ -33,7 +33,17 @@
             sid = 'ss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             sessionStorage.setItem('smartsearch_session_id', sid);
         }
+        // Salva anche in cookie per PHP (conversioni)
+        setCookie('smartsearch_session_id', sid, 30);
         return sid;
+    }
+
+    /**
+     * Set cookie
+     */
+    function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 864e5).toUTCString();
+        document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Lax';
     }
 
     /**
@@ -78,6 +88,11 @@
      * Track search event
      */
     function trackSearch(query, resultsCount) {
+        // Salva ultima ricerca in cookie per tracking conversioni
+        if (query && resultsCount > 0) {
+            setCookie('smartsearch_last_query', query, 7);
+        }
+
         sendAnalyticsEvent(resultsCount > 0 ? 'search' : 'no_results', {
             query: query,
             results_count: resultsCount
@@ -87,12 +102,21 @@
     /**
      * Track product click event
      */
-    function trackClick(productId, productName, position) {
+    function trackClick(productId, productName, position, price) {
+        // Salva ultimo prodotto cliccato per tracking conversioni
+        setCookie('smartsearch_last_click', JSON.stringify({
+            product_id: productId,
+            product_name: productName,
+            price: price,
+            query: currentQuery
+        }), 7);
+
         sendAnalyticsEvent('click', {
             query: currentQuery,
             product_id: productId,
             product_name: productName,
-            position: position
+            position: position,
+            price: price
         });
     }
 
@@ -442,7 +466,7 @@
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
             html += `
-                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
+                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}">
                     ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
                     <div class="smartsearch-product-image">
                         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
@@ -690,7 +714,7 @@
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
             html += `
-                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
+                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}">
                     ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
                     <div class="smartsearch-product-image">
                         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
@@ -904,8 +928,9 @@
                 const productId = parseInt(card.dataset.productId);
                 const position = parseInt(card.dataset.index);
                 const productName = card.querySelector('.smartsearch-product-name')?.textContent || '';
+                const price = parseFloat(card.dataset.price) || 0;
                 // Track click to n8n analytics
-                trackClick(productId, productName, position);
+                trackClick(productId, productName, position, price);
             });
         });
 
