@@ -71,6 +71,129 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * AJAX endpoint per ottenere i filtri disponibili
+     */
+    public function displayAjaxFilters()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+
+        try {
+            $idLang = (int)$this->context->language->id;
+            $idShop = (int)$this->context->shop->id;
+
+            // Ottieni marche con conteggio prodotti
+            $brands = $this->getAvailableBrands($idLang, $idShop);
+
+            // Ottieni categorie con conteggio prodotti
+            $categories = $this->getAvailableCategories($idLang, $idShop);
+
+            // Ottieni range prezzi
+            $priceRange = $this->getPriceRange($idShop);
+
+            die(json_encode([
+                'brands' => $brands,
+                'categories' => $categories,
+                'price_range' => $priceRange
+            ], JSON_UNESCAPED_UNICODE));
+
+        } catch (Exception $e) {
+            die(json_encode([
+                'brands' => [],
+                'categories' => [],
+                'price_range' => ['min' => 0, 'max' => 1000],
+                'error' => $e->getMessage()
+            ], JSON_UNESCAPED_UNICODE));
+        }
+    }
+
+    /**
+     * Ottieni marche disponibili con conteggio prodotti
+     */
+    protected function getAvailableBrands($idLang, $idShop)
+    {
+        $sql = '
+            SELECT m.id_manufacturer, m.name, COUNT(DISTINCT p.id_product) as product_count
+            FROM ' . _DB_PREFIX_ . 'manufacturer m
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_manufacturer = m.id_manufacturer
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = ' . (int)$idShop . '
+            WHERE p.active = 1 AND ps.active = 1
+            GROUP BY m.id_manufacturer
+            HAVING product_count > 0
+            ORDER BY m.name ASC
+            LIMIT 50';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        $brands = [];
+        if ($results) {
+            foreach ($results as $row) {
+                $brands[] = [
+                    'id' => (int)$row['id_manufacturer'],
+                    'name' => $row['name'],
+                    'count' => (int)$row['product_count']
+                ];
+            }
+        }
+        return $brands;
+    }
+
+    /**
+     * Ottieni categorie disponibili con conteggio prodotti
+     */
+    protected function getAvailableCategories($idLang, $idShop)
+    {
+        $sql = '
+            SELECT c.id_category, cl.name, COUNT(DISTINCT cp.id_product) as product_count
+            FROM ' . _DB_PREFIX_ . 'category c
+            INNER JOIN ' . _DB_PREFIX_ . 'category_lang cl ON c.id_category = cl.id_category AND cl.id_lang = ' . (int)$idLang . ' AND cl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'category_shop cs ON c.id_category = cs.id_category AND cs.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'category_product cp ON c.id_category = cp.id_category
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON cp.id_product = p.id_product
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = ' . (int)$idShop . '
+            WHERE c.active = 1 AND p.active = 1 AND ps.active = 1 AND c.id_category > 2
+            GROUP BY c.id_category
+            HAVING product_count > 0
+            ORDER BY cl.name ASC
+            LIMIT 50';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        $categories = [];
+        if ($results) {
+            foreach ($results as $row) {
+                $categories[] = [
+                    'id' => (int)$row['id_category'],
+                    'name' => $row['name'],
+                    'count' => (int)$row['product_count']
+                ];
+            }
+        }
+        return $categories;
+    }
+
+    /**
+     * Ottieni range prezzi disponibili
+     */
+    protected function getPriceRange($idShop)
+    {
+        $sql = '
+            SELECT
+                FLOOR(MIN(ps.price)) as min_price,
+                CEIL(MAX(ps.price)) as max_price
+            FROM ' . _DB_PREFIX_ . 'product_shop ps
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON ps.id_product = p.id_product
+            WHERE ps.id_shop = ' . (int)$idShop . ' AND p.active = 1 AND ps.active = 1';
+
+        $result = Db::getInstance()->getRow($sql);
+
+        return [
+            'min' => (int)($result['min_price'] ?? 0),
+            'max' => (int)($result['max_price'] ?? 1000)
+        ];
+    }
+
+    /**
      * AJAX endpoint per i prodotti più venduti
      */
     public function displayAjaxBestsellers()
@@ -556,31 +679,29 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     protected function sanitizeAnalyticsData($data)
     {
+        // Non filtrare troppo - permetti tutti i campi ma sanitizza i valori
         $sanitized = [];
 
-        // Lista campi permessi
-        $allowedFields = [
-            'event_type', 'shop_id', 'session_id', 'user_agent', 'device_type',
-            'timestamp', 'query', 'results_count', 'product_id', 'product_name',
-            'position', 'price', 'category', 'filters'
-        ];
-
         foreach ($data as $key => $value) {
-            // Solo campi permessi
-            if (!in_array($key, $allowedFields)) {
+            // Sanitizza la chiave
+            $cleanKey = preg_replace('/[^a-zA-Z0-9_]/', '', $key);
+            if (empty($cleanKey) || strlen($cleanKey) > 50) {
                 continue;
             }
 
-            // Sanitizza stringhe
+            // Sanitizza il valore in base al tipo
             if (is_string($value)) {
-                $sanitized[$key] = strip_tags(mb_substr($value, 0, 500));
+                // Rimuovi tag HTML e limita lunghezza
+                $sanitized[$cleanKey] = strip_tags(mb_substr($value, 0, 1000));
             } elseif (is_numeric($value)) {
-                $sanitized[$key] = $value;
+                $sanitized[$cleanKey] = $value;
             } elseif (is_array($value)) {
-                // Limita dimensione array
-                $sanitized[$key] = array_slice($value, 0, 50);
+                // Limita dimensione array e ricorsivamente sanitizza
+                $sanitized[$cleanKey] = array_slice($value, 0, 100);
             } elseif (is_bool($value)) {
-                $sanitized[$key] = $value;
+                $sanitized[$cleanKey] = $value;
+            } elseif (is_null($value)) {
+                $sanitized[$cleanKey] = null;
             }
         }
 

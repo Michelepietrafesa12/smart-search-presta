@@ -339,6 +339,10 @@
         openOverlay();
     }
 
+    // Stato filtri
+    let availableFilters = { brands: [], categories: [], price_range: { min: 0, max: 1000 } };
+    let selectedFilters = { brands: [], categories: [], price_min: null, price_max: null };
+
     /**
      * Open overlay
      */
@@ -347,8 +351,310 @@
         document.body.style.overflow = 'hidden';
         setTimeout(() => searchInput.focus(), 100);
 
-        // Carica i prodotti più venduti all'apertura
+        // Carica filtri e prodotti in parallelo
+        loadFilters();
         loadBestsellers();
+    }
+
+    /**
+     * Carica i filtri disponibili
+     */
+    function loadFilters() {
+        const url = config.ajax_url + '?ajax=1&action=filters';
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            availableFilters = data;
+            renderFilters();
+        })
+        .catch(error => {
+            console.error('SmartSearch: Filters fetch error:', error);
+        });
+    }
+
+    /**
+     * Renderizza i filtri nella sidebar
+     */
+    function renderFilters() {
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        if (!sidebar) return;
+
+        let html = '';
+
+        // Titolo filtri con pulsante mobile
+        html += `
+            <div class="smartsearch-filters-header">
+                <h3>${t.filters || 'Filtri'}</h3>
+                <button class="smartsearch-filters-close-mobile">${icons.close}</button>
+            </div>
+        `;
+
+        // Filtro Prezzo
+        if (availableFilters.price_range) {
+            const pr = availableFilters.price_range;
+            html += `
+                <div class="smartsearch-filter-section smartsearch-filter-price">
+                    <div class="smartsearch-filter-title" data-toggle="price">
+                        <span>${t.price || 'Prezzo'}</span>
+                        ${icons.chevron}
+                    </div>
+                    <div class="smartsearch-filter-content" id="filter-price-content">
+                        <div class="smartsearch-price-inputs">
+                            <div class="smartsearch-price-input">
+                                <input type="number" id="price-min" min="${pr.min}" max="${pr.max}" value="${selectedFilters.price_min || pr.min}" placeholder="${pr.min}€">
+                                <span>€</span>
+                            </div>
+                            <span class="smartsearch-price-separator">-</span>
+                            <div class="smartsearch-price-input">
+                                <input type="number" id="price-max" min="${pr.min}" max="${pr.max}" value="${selectedFilters.price_max || pr.max}" placeholder="${pr.max}€">
+                                <span>€</span>
+                            </div>
+                        </div>
+                        <div class="smartsearch-price-slider">
+                            <div class="smartsearch-price-track"></div>
+                            <input type="range" id="price-slider-min" min="${pr.min}" max="${pr.max}" value="${selectedFilters.price_min || pr.min}" step="1">
+                            <input type="range" id="price-slider-max" min="${pr.min}" max="${pr.max}" value="${selectedFilters.price_max || pr.max}" step="1">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Filtro Marca
+        if (availableFilters.brands && availableFilters.brands.length > 0) {
+            html += `
+                <div class="smartsearch-filter-section smartsearch-filter-brands">
+                    <div class="smartsearch-filter-title" data-toggle="brands">
+                        <span>${t.brand || 'Marca'}</span>
+                        ${icons.chevron}
+                    </div>
+                    <div class="smartsearch-filter-content" id="filter-brands-content">
+                        <div class="smartsearch-filter-search">
+                            <input type="text" placeholder="Cerca marche..." class="smartsearch-filter-search-input" data-filter="brands">
+                        </div>
+                        <div class="smartsearch-filter-list smartsearch-brands-list">
+                            ${availableFilters.brands.map(brand => `
+                                <label class="smartsearch-filter-checkbox">
+                                    <input type="checkbox" value="${brand.id}" data-type="brand" ${selectedFilters.brands.includes(brand.id) ? 'checked' : ''}>
+                                    <span class="smartsearch-checkbox-mark"></span>
+                                    <span class="smartsearch-filter-name">${escapeHtml(brand.name)}</span>
+                                    <span class="smartsearch-filter-count">${brand.count}</span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Filtro Categorie
+        if (availableFilters.categories && availableFilters.categories.length > 0) {
+            html += `
+                <div class="smartsearch-filter-section smartsearch-filter-categories">
+                    <div class="smartsearch-filter-title" data-toggle="categories">
+                        <span>${t.categories || 'Categorie'}</span>
+                        ${icons.chevron}
+                    </div>
+                    <div class="smartsearch-filter-content" id="filter-categories-content">
+                        <div class="smartsearch-filter-tags">
+                            ${availableFilters.categories.map(cat => `
+                                <button class="smartsearch-filter-tag ${selectedFilters.categories.includes(cat.id) ? 'active' : ''}" data-type="category" data-id="${cat.id}">
+                                    ${escapeHtml(cat.name)}
+                                </button>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Pulsante applica filtri (mobile)
+        html += `
+            <div class="smartsearch-filters-actions">
+                <button class="smartsearch-clear-filters">${t.clear_filters || 'Rimuovi filtri'}</button>
+                <button class="smartsearch-apply-filters">${t.apply_filters || 'Applica'}</button>
+            </div>
+        `;
+
+        sidebar.innerHTML = html;
+
+        // Bind eventi filtri
+        bindFilterEvents();
+    }
+
+    /**
+     * Bind eventi filtri
+     */
+    function bindFilterEvents() {
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        if (!sidebar) return;
+
+        // Toggle sezioni filtri
+        sidebar.querySelectorAll('.smartsearch-filter-title').forEach(title => {
+            title.addEventListener('click', () => {
+                const section = title.closest('.smartsearch-filter-section');
+                section.classList.toggle('collapsed');
+            });
+        });
+
+        // Chiudi filtri mobile
+        const closeBtn = sidebar.querySelector('.smartsearch-filters-close-mobile');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                sidebar.classList.remove('mobile-visible');
+            });
+        }
+
+        // Checkbox brand
+        sidebar.querySelectorAll('input[data-type="brand"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const brandId = parseInt(checkbox.value);
+                if (checkbox.checked) {
+                    if (!selectedFilters.brands.includes(brandId)) {
+                        selectedFilters.brands.push(brandId);
+                    }
+                } else {
+                    selectedFilters.brands = selectedFilters.brands.filter(id => id !== brandId);
+                }
+                applyFiltersIfSearching();
+            });
+        });
+
+        // Tag categoria
+        sidebar.querySelectorAll('.smartsearch-filter-tag[data-type="category"]').forEach(tag => {
+            tag.addEventListener('click', () => {
+                const catId = parseInt(tag.dataset.id);
+                tag.classList.toggle('active');
+                if (tag.classList.contains('active')) {
+                    if (!selectedFilters.categories.includes(catId)) {
+                        selectedFilters.categories.push(catId);
+                    }
+                } else {
+                    selectedFilters.categories = selectedFilters.categories.filter(id => id !== catId);
+                }
+                applyFiltersIfSearching();
+            });
+        });
+
+        // Slider prezzo
+        const sliderMin = sidebar.querySelector('#price-slider-min');
+        const sliderMax = sidebar.querySelector('#price-slider-max');
+        const inputMin = sidebar.querySelector('#price-min');
+        const inputMax = sidebar.querySelector('#price-max');
+
+        if (sliderMin && sliderMax) {
+            sliderMin.addEventListener('input', () => {
+                const minVal = parseInt(sliderMin.value);
+                const maxVal = parseInt(sliderMax.value);
+                if (minVal <= maxVal) {
+                    selectedFilters.price_min = minVal;
+                    if (inputMin) inputMin.value = minVal;
+                    updatePriceSliderTrack();
+                }
+            });
+
+            sliderMax.addEventListener('input', () => {
+                const minVal = parseInt(sliderMin.value);
+                const maxVal = parseInt(sliderMax.value);
+                if (maxVal >= minVal) {
+                    selectedFilters.price_max = maxVal;
+                    if (inputMax) inputMax.value = maxVal;
+                    updatePriceSliderTrack();
+                }
+            });
+
+            sliderMin.addEventListener('change', applyFiltersIfSearching);
+            sliderMax.addEventListener('change', applyFiltersIfSearching);
+        }
+
+        if (inputMin && inputMax) {
+            inputMin.addEventListener('change', () => {
+                selectedFilters.price_min = parseInt(inputMin.value) || null;
+                if (sliderMin) sliderMin.value = inputMin.value;
+                updatePriceSliderTrack();
+                applyFiltersIfSearching();
+            });
+
+            inputMax.addEventListener('change', () => {
+                selectedFilters.price_max = parseInt(inputMax.value) || null;
+                if (sliderMax) sliderMax.value = inputMax.value;
+                updatePriceSliderTrack();
+                applyFiltersIfSearching();
+            });
+        }
+
+        // Ricerca marche
+        sidebar.querySelectorAll('.smartsearch-filter-search-input').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                const list = input.closest('.smartsearch-filter-content').querySelector('.smartsearch-filter-list');
+                if (list) {
+                    list.querySelectorAll('.smartsearch-filter-checkbox').forEach(item => {
+                        const name = item.querySelector('.smartsearch-filter-name').textContent.toLowerCase();
+                        item.style.display = name.includes(query) ? '' : 'none';
+                    });
+                }
+            });
+        });
+
+        // Rimuovi filtri
+        const clearBtn = sidebar.querySelector('.smartsearch-clear-filters');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                selectedFilters = { brands: [], categories: [], price_min: null, price_max: null };
+                renderFilters();
+                applyFiltersIfSearching();
+            });
+        }
+
+        // Applica filtri (mobile)
+        const applyBtn = sidebar.querySelector('.smartsearch-apply-filters');
+        if (applyBtn) {
+            applyBtn.addEventListener('click', () => {
+                sidebar.classList.remove('mobile-visible');
+                applyFiltersIfSearching();
+            });
+        }
+
+        updatePriceSliderTrack();
+    }
+
+    /**
+     * Aggiorna lo stile della track del price slider
+     */
+    function updatePriceSliderTrack() {
+        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        if (!sidebar) return;
+
+        const sliderMin = sidebar.querySelector('#price-slider-min');
+        const sliderMax = sidebar.querySelector('#price-slider-max');
+        const track = sidebar.querySelector('.smartsearch-price-track');
+
+        if (sliderMin && sliderMax && track) {
+            const min = parseInt(sliderMin.min);
+            const max = parseInt(sliderMin.max);
+            const minVal = parseInt(sliderMin.value);
+            const maxVal = parseInt(sliderMax.value);
+
+            const leftPercent = ((minVal - min) / (max - min)) * 100;
+            const rightPercent = ((max - maxVal) / (max - min)) * 100;
+
+            track.style.left = leftPercent + '%';
+            track.style.right = rightPercent + '%';
+        }
+    }
+
+    /**
+     * Applica filtri se c'è una ricerca attiva
+     */
+    function applyFiltersIfSearching() {
+        if (currentQuery && currentQuery.length >= (config.min_chars || 2)) {
+            performSearch(currentQuery, selectedFilters);
+        }
     }
 
     /**
