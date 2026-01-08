@@ -1,126 +1,293 @@
 /**
- * SmartSearch - Stili CSS per ricerca dinamica
- * Design moderno simile a Doofinder
+ * SmartSearch 2.0 - CSS per ricerca dinamica intelligente
+ * Con filtri, ricerca vocale, badge e design avanzato
  */
 
-/* Container principale dei risultati */
+/* === BASE === */
 .smartsearch-results {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    min-width: 320px;
-    max-width: 600px;
-    max-height: 80vh;
-    overflow-y: auto;
+    min-width: 350px;
+    max-width: 800px;
+    max-height: 85vh;
+    overflow: hidden;
     background: #ffffff;
     border: 1px solid #e0e0e0;
     border-top: none;
-    border-radius: 0 0 8px 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
     z-index: 9999;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: smartsearch-slideIn 0.2s ease;
 }
 
-/* Scrollbar personalizzata */
-.smartsearch-results::-webkit-scrollbar {
-    width: 6px;
+.smartsearch-results.smartsearch-2 {
+    max-width: 900px;
 }
 
-.smartsearch-results::-webkit-scrollbar-track {
-    background: #f5f5f5;
+@keyframes smartsearch-slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-.smartsearch-results::-webkit-scrollbar-thumb {
-    background: #c0c0c0;
-    border-radius: 3px;
+/* Scrollbar */
+.smartsearch-results ::-webkit-scrollbar { width: 6px; }
+.smartsearch-results ::-webkit-scrollbar-track { background: #f5f5f5; }
+.smartsearch-results ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.smartsearch-results ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+/* === LAYOUT CONTAINER === */
+.smartsearch-container {
+    display: flex;
+    max-height: calc(85vh - 2px);
 }
 
-.smartsearch-results::-webkit-scrollbar-thumb:hover {
-    background: #a0a0a0;
+.smartsearch-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
 }
 
-/* Loader */
-.smartsearch-loader {
-    padding: 30px;
+/* === SIDEBAR FILTRI === */
+.smartsearch-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: #f9fafb;
+    border-right: 1px solid #e5e7eb;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.smartsearch-filters-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    font-size: 13px;
+    color: #374151;
+}
+
+.smartsearch-clear-filters {
+    background: none;
+    border: none;
+    color: #6366f1;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.smartsearch-clear-filters:hover {
+    background: #e0e7ff;
+}
+
+/* Facets */
+.smartsearch-facet {
+    margin-bottom: 16px;
+}
+
+.smartsearch-facet-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.smartsearch-facet-values {
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.smartsearch-facet-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 13px;
+    color: #374151;
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.smartsearch-facet-item:hover {
+    color: #6366f1;
+}
+
+.smartsearch-facet-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #6366f1;
+    cursor: pointer;
+}
+
+.smartsearch-facet-item .count {
+    color: #9ca3af;
+    font-size: 11px;
+    margin-left: auto;
+}
+
+/* Price range */
+.smartsearch-price-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.smartsearch-price-input {
+    width: 60px;
+    padding: 6px 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 12px;
     text-align: center;
 }
 
-.smartsearch-loader .spinner {
+.smartsearch-price-input:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* === LOADER === */
+.smartsearch-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 12px;
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.smartsearch-spinner {
     width: 32px;
     height: 32px;
-    margin: 0 auto;
-    border: 3px solid #f3f3f3;
-    border-top: 3px solid #2fb5d2;
+    border: 3px solid #e5e7eb;
+    border-top-color: #6366f1;
     border-radius: 50%;
     animation: smartsearch-spin 0.8s linear infinite;
 }
 
 @keyframes smartsearch-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    to { transform: rotate(360deg); }
 }
 
-/* Titoli delle sezioni */
+/* === SECTION TITLES === */
 .smartsearch-section-title {
-    padding: 10px 16px 6px;
+    padding: 10px 16px 8px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #888888;
-    background: #fafafa;
-    border-bottom: 1px solid #f0f0f0;
+    color: #9ca3af;
+    background: #f9fafb;
+    border-bottom: 1px solid #f3f4f6;
 }
 
-/* Suggerimenti */
+/* === DID YOU MEAN === */
+.smartsearch-didyoumean {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #fef3c7;
+    border-bottom: 1px solid #fcd34d;
+    font-size: 13px;
+    color: #92400e;
+}
+
+.smartsearch-didyoumean .smartsearch-suggestion {
+    color: #d97706;
+    font-weight: 500;
+    text-decoration: underline;
+}
+
+.smartsearch-didyoumean-inline {
+    margin-top: 16px;
+}
+
+/* === SUGGESTIONS === */
 .smartsearch-suggestions {
-    border-bottom: 1px solid #e8e8e8;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.smartsearch-suggestions-list {
+    padding: 8px 0;
 }
 
 .smartsearch-suggestion {
-    display: block;
-    padding: 10px 16px;
-    color: #333333;
-    text-decoration: none;
-    font-size: 14px;
-    transition: background 0.15s ease;
-}
-
-.smartsearch-suggestion:hover {
-    background: #f5f5f5;
-    color: #2fb5d2;
-}
-
-/* Categorie */
-.smartsearch-categories {
-    border-bottom: 1px solid #e8e8e8;
-}
-
-.smartsearch-category {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 10px 16px;
-    color: #333333;
+    color: #374151;
     text-decoration: none;
     font-size: 14px;
-    transition: background 0.15s ease;
+    transition: background 0.15s;
 }
 
-.smartsearch-category:hover {
-    background: #f5f5f5;
-    color: #2fb5d2;
+.smartsearch-suggestion:hover {
+    background: #f3f4f6;
+    color: #6366f1;
 }
 
-.smartsearch-category i {
-    font-size: 18px;
-    color: #999999;
+.smartsearch-suggestion svg {
+    color: #9ca3af;
+    flex-shrink: 0;
 }
 
-/* Prodotti */
+/* === CATEGORIES === */
+.smartsearch-categories {
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.smartsearch-categories-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+}
+
+.smartsearch-category-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #f3f4f6;
+    border-radius: 20px;
+    color: #374151;
+    text-decoration: none;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+
+.smartsearch-category-item:hover {
+    background: #e0e7ff;
+    color: #4f46e5;
+}
+
+.smartsearch-category-item svg {
+    color: #9ca3af;
+}
+
+/* === PRODUCTS === */
 .smartsearch-products {
-    padding: 8px 0;
+    padding-bottom: 8px;
+}
+
+.smartsearch-products-grid {
+    display: flex;
+    flex-direction: column;
 }
 
 .smartsearch-product {
@@ -128,9 +295,10 @@
     gap: 12px;
     padding: 12px 16px;
     text-decoration: none;
-    color: #333333;
-    transition: background 0.15s ease;
-    border-bottom: 1px solid #f5f5f5;
+    color: #1f2937;
+    border-bottom: 1px solid #f3f4f6;
+    transition: background 0.15s;
+    position: relative;
 }
 
 .smartsearch-product:last-child {
@@ -139,21 +307,33 @@
 
 .smartsearch-product:hover,
 .smartsearch-product.selected {
-    background: #f8f9fa;
+    background: #f9fafb;
 }
 
 .smartsearch-product.selected {
-    background: #e8f4f8;
+    background: #eef2ff;
 }
 
-/* Immagine prodotto */
+/* Badge boost */
+.smartsearch-badge-boost {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Product image */
 .smartsearch-product-image {
     flex-shrink: 0;
-    width: 60px;
-    height: 60px;
-    border-radius: 6px;
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
     overflow: hidden;
-    background: #f5f5f5;
+    background: #f3f4f6;
 }
 
 .smartsearch-product-image img {
@@ -162,7 +342,7 @@
     object-fit: cover;
 }
 
-/* Info prodotto */
+/* Product info */
 .smartsearch-product-info {
     flex: 1;
     min-width: 0;
@@ -171,76 +351,132 @@
     gap: 4px;
 }
 
-/* Nome prodotto */
 .smartsearch-product-name {
     font-size: 14px;
     font-weight: 500;
-    color: #222222;
+    color: #1f2937;
     line-height: 1.3;
-    overflow: hidden;
-    text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-/* Categoria e produttore */
-.smartsearch-product-category {
+.smartsearch-product-meta {
     font-size: 12px;
-    color: #888888;
+    color: #6b7280;
 }
 
-/* Descrizione */
-.smartsearch-product-description {
+.smartsearch-product-desc {
     font-size: 12px;
-    color: #666666;
+    color: #9ca3af;
     line-height: 1.4;
-    overflow: hidden;
-    text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-/* Prezzo */
+.smartsearch-product-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+/* Price */
 .smartsearch-product-price {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 4px;
 }
 
 .smartsearch-product-price .current-price {
     font-size: 15px;
     font-weight: 600;
-    color: #2fb5d2;
+    color: #059669;
 }
 
 .smartsearch-product-price .old-price {
-    font-size: 13px;
-    color: #999999;
+    font-size: 12px;
+    color: #9ca3af;
     text-decoration: line-through;
 }
 
-/* Non disponibile */
-.smartsearch-product-outofstock {
+/* Stock */
+.smartsearch-stock {
     font-size: 11px;
-    color: #e74c3c;
-    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
 }
 
-/* Nessun risultato */
-.smartsearch-no-results {
-    padding: 40px 20px;
-    text-align: center;
-    color: #888888;
+.smartsearch-stock.in-stock {
+    background: #d1fae5;
+    color: #065f46;
 }
 
-.smartsearch-no-results i {
-    font-size: 48px;
-    color: #cccccc;
-    margin-bottom: 12px;
+.smartsearch-stock.out-of-stock {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* === BANNERS === */
+.smartsearch-banners {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.smartsearch-banner {
     display: block;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.smartsearch-banner:last-child {
+    margin-bottom: 0;
+}
+
+.smartsearch-banner img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* === VIEW ALL === */
+.smartsearch-view-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 16px;
+    background: linear-gradient(to top, #f9fafb, #ffffff);
+    color: #6366f1;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    border-top: 1px solid #e5e7eb;
+    transition: background 0.15s;
+}
+
+.smartsearch-view-all:hover {
+    background: #eef2ff;
+}
+
+/* === NO RESULTS === */
+.smartsearch-no-results {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    color: #6b7280;
+}
+
+.smartsearch-no-results svg {
+    color: #d1d5db;
+    margin-bottom: 16px;
 }
 
 .smartsearch-no-results p {
@@ -248,40 +484,86 @@
     font-size: 14px;
 }
 
-/* Link "Vedi tutti i risultati" */
-.smartsearch-view-all {
+/* === VOICE SEARCH === */
+.smartsearch-voice-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #9ca3af;
+    border-radius: 50%;
+    transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 14px 16px;
-    background: #f8f9fa;
-    color: #2fb5d2;
-    text-decoration: none;
+}
+
+.smartsearch-voice-btn:hover {
+    color: #6366f1;
+    background: #eef2ff;
+}
+
+.smartsearch-voice-btn.listening {
+    color: #ef4444;
+    animation: smartsearch-pulse 1s ease infinite;
+}
+
+@keyframes smartsearch-pulse {
+    0%, 100% { transform: translateY(-50%) scale(1); }
+    50% { transform: translateY(-50%) scale(1.1); }
+}
+
+.smartsearch-voice-feedback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+}
+
+.smartsearch-voice-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    margin-bottom: 16px;
+    position: relative;
+}
+
+.smartsearch-voice-icon.listening::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 3px solid #6366f1;
+    animation: smartsearch-ripple 1.5s ease infinite;
+}
+
+@keyframes smartsearch-ripple {
+    0% { transform: scale(0.8); opacity: 1; }
+    100% { transform: scale(1.4); opacity: 0; }
+}
+
+.smartsearch-voice-feedback p {
+    color: #6b7280;
     font-size: 14px;
-    font-weight: 500;
-    border-top: 1px solid #e8e8e8;
-    transition: background 0.15s ease;
+    margin: 0;
 }
 
-.smartsearch-view-all:hover {
-    background: #e8f4f8;
-    color: #1a9ab8;
-}
-
-.smartsearch-view-all i {
-    font-size: 16px;
-}
-
-/* Evidenziazione termini */
+/* === HIGHLIGHT === */
 .smartsearch-results mark {
-    background: #fff3cd;
+    background: #fef08a;
     color: inherit;
     padding: 0 2px;
     border-radius: 2px;
 }
 
-/* Responsive */
+/* === RESPONSIVE === */
 @media (max-width: 768px) {
     .smartsearch-results {
         position: fixed;
@@ -291,91 +573,167 @@
         max-width: none;
         max-height: calc(100vh - 60px);
         border-radius: 0;
-        border-left: none;
+        border: none;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .smartsearch-container {
+        flex-direction: column;
+    }
+
+    .smartsearch-sidebar {
+        width: 100%;
         border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+        max-height: 200px;
+    }
+
+    .smartsearch-facet-values {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-height: none;
+    }
+
+    .smartsearch-facet-item {
+        padding: 6px 12px;
+        background: #f3f4f6;
+        border-radius: 20px;
     }
 
     .smartsearch-product-image {
-        width: 50px;
-        height: 50px;
+        width: 56px;
+        height: 56px;
     }
 
-    .smartsearch-product-name {
-        font-size: 13px;
-    }
-
-    .smartsearch-product-description {
+    .smartsearch-product-desc {
         display: none;
+    }
+
+    .smartsearch-voice-btn {
+        right: 40px;
     }
 }
 
-/* Dark mode support */
+/* === DARK MODE === */
 @media (prefers-color-scheme: dark) {
     .smartsearch-results {
-        background: #1e1e1e;
-        border-color: #333333;
+        background: #1f2937;
+        border-color: #374151;
+        color: #f9fafb;
+    }
+
+    .smartsearch-sidebar {
+        background: #111827;
+        border-color: #374151;
+    }
+
+    .smartsearch-filters-header {
+        color: #f3f4f6;
+        border-color: #374151;
+    }
+
+    .smartsearch-clear-filters {
+        color: #818cf8;
+    }
+
+    .smartsearch-clear-filters:hover {
+        background: #312e81;
+    }
+
+    .smartsearch-facet-title {
+        color: #9ca3af;
+    }
+
+    .smartsearch-facet-item {
+        color: #e5e7eb;
+    }
+
+    .smartsearch-price-input {
+        background: #374151;
+        border-color: #4b5563;
+        color: #f3f4f6;
     }
 
     .smartsearch-section-title {
-        background: #2a2a2a;
-        color: #888888;
-        border-color: #333333;
+        background: #111827;
+        border-color: #374151;
+        color: #9ca3af;
     }
 
-    .smartsearch-suggestion,
-    .smartsearch-category,
+    .smartsearch-didyoumean {
+        background: #78350f;
+        border-color: #92400e;
+        color: #fef3c7;
+    }
+
+    .smartsearch-suggestion {
+        color: #e5e7eb;
+    }
+
+    .smartsearch-suggestion:hover {
+        background: #374151;
+        color: #818cf8;
+    }
+
+    .smartsearch-category-item {
+        background: #374151;
+        color: #e5e7eb;
+    }
+
+    .smartsearch-category-item:hover {
+        background: #4338ca;
+        color: #fff;
+    }
+
     .smartsearch-product {
-        color: #e0e0e0;
+        color: #f3f4f6;
+        border-color: #374151;
     }
 
-    .smartsearch-suggestion:hover,
-    .smartsearch-category:hover,
-    .smartsearch-product:hover {
-        background: #2a2a2a;
-    }
-
+    .smartsearch-product:hover,
     .smartsearch-product.selected {
-        background: #1a3a4a;
+        background: #374151;
+    }
+
+    .smartsearch-product-image {
+        background: #374151;
     }
 
     .smartsearch-product-name {
-        color: #ffffff;
+        color: #f3f4f6;
     }
 
-    .smartsearch-product-description {
-        color: #aaaaaa;
-    }
-
-    .smartsearch-no-results {
-        color: #888888;
+    .smartsearch-product-meta,
+    .smartsearch-product-desc {
+        color: #9ca3af;
     }
 
     .smartsearch-view-all {
-        background: #2a2a2a;
-        border-color: #333333;
+        background: linear-gradient(to top, #111827, #1f2937);
+        border-color: #374151;
+        color: #818cf8;
     }
 
     .smartsearch-view-all:hover {
-        background: #333333;
+        background: #312e81;
+    }
+
+    .smartsearch-no-results {
+        color: #9ca3af;
+    }
+
+    .smartsearch-voice-btn {
+        color: #9ca3af;
+    }
+
+    .smartsearch-voice-btn:hover {
+        color: #818cf8;
+        background: #312e81;
     }
 
     .smartsearch-results mark {
-        background: #5a4a00;
-    }
-}
-
-/* Animazione apertura */
-.smartsearch-results {
-    animation: smartsearch-fadeIn 0.2s ease;
-}
-
-@keyframes smartsearch-fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
+        background: #854d0e;
+        color: #fef08a;
     }
 }
