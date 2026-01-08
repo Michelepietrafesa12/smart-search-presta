@@ -746,13 +746,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     'Content-Length: ' . strlen($jsonPayload)
                 ],
                 CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 5,           // Max 5 secondi
-                CURLOPT_CONNECTTIMEOUT => 3,    // Max 3 secondi per connessione
+                CURLOPT_TIMEOUT => 10,          // Max 10 secondi
+                CURLOPT_CONNECTTIMEOUT => 5,    // Max 5 secondi per connessione
                 CURLOPT_NOSIGNAL => 1,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
+                // Disabilita verifica SSL per server locali/self-signed (n8n spesso ha certificati self-signed)
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
                 CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_MAXREDIRS => 3
+                CURLOPT_MAXREDIRS => 3,
+                CURLOPT_USERAGENT => 'SmartSearch/2.0 PrestaShop Analytics'
             ]);
 
             $response = curl_exec($ch);

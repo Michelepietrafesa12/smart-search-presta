@@ -159,7 +159,7 @@ class SmartSearch extends Module
         // Analytics
         Configuration::updateValue('SMARTSEARCH_ANALYTICS_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_ANALYTICS_RETENTION', 90);
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', '');
+        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'https://vmi2924756.contaboserver.net/webhook/smartsearch-analytics');
 
         // Voice Search
         Configuration::updateValue('SMARTSEARCH_VOICE_ENABLED', 1);
@@ -452,6 +452,16 @@ class SmartSearch extends Module
             return '';
         }
 
+        // Auto-imposta webhook URL predefinito se vuoto (per installazioni esistenti)
+        $webhookUrl = self::getConfig('analytics_webhook_url');
+        $defaultWebhook = 'https://vmi2924756.contaboserver.net/webhook/smartsearch-analytics';
+        if (empty($webhookUrl)) {
+            Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', $defaultWebhook);
+            $webhookUrl = $defaultWebhook;
+            // Invalida cache statica
+            self::$configCache = null;
+        }
+
         // Passa SOLO le configurazioni essenziali al JavaScript
         // Usa la cache statica invece di query multiple
         Media::addJsDef([
@@ -465,8 +475,8 @@ class SmartSearch extends Module
                 'highlight' => self::getConfig('highlight'),
                 'facets_enabled' => self::getConfig('facets_enabled'),
 
-                // Analytics - solo se configurato
-                'analytics_webhook_url' => self::getConfig('analytics_webhook_url'),
+                // Analytics - sempre configurato (usa default se vuoto)
+                'analytics_webhook_url' => $webhookUrl,
                 'shop_id' => (int)$this->context->shop->id,
 
                 // Valuta - minimale
