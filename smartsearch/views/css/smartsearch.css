@@ -20,7 +20,7 @@
     right: 0;
     bottom: 0;
     background: #fff;
-    z-index: 99999;
+    z-index: 2147483647; /* Massimo z-index possibile - copre WhatsApp, chat widgets, etc */
     display: none;
     flex-direction: column;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -723,37 +723,6 @@
 .smartsearch-initial p {
     font-size: 14px;
     color: #666;
-}
-
-/* === VOICE SEARCH === */
-.smartsearch-voice-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    background: #f5f5f5;
-    border: none;
-    border-radius: 10px;
-    color: #666;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.smartsearch-voice-btn:hover {
-    background: #f97316;
-    color: #fff;
-}
-
-.smartsearch-voice-btn.listening {
-    background: #fee2e2;
-    color: #ef4444;
-    animation: pulse 1s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.1); }
 }
 
 /* === HIGHLIGHT === */
