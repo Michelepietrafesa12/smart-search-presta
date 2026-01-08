@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <module>
     <name>smartsearch</name>
-    <displayName><![CDATA[Smart Search]]></displayName>
-    <version><![CDATA[1.0.0]]></version>
-    <description><![CDATA[Ricerca dinamica avanzata con suggerimenti istantanei, simile a Doofinder]]></description>
-    <author><![CDATA[Smart Search Team]]></author>
+    <displayName><![CDATA[Smart Search 2.0]]></displayName>
+    <version><![CDATA[2.0.0]]></version>
+    <description><![CDATA[Ricerca dinamica intelligente con AI, fuzzy search, sinonimi, filtri avanzati, boosting prodotti, banner promozionali e analytics - simile a Doofinder]]></description>
+    <author><![CDATA[Michele Pietrafesa]]></author>
     <tab><![CDATA[search_filter]]></tab>
     <is_configurable>1</is_configurable>
     <need_instance>0</need_instance>

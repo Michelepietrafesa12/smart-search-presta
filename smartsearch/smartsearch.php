@@ -3,7 +3,7 @@
  * SmartSearch 2.0 - Modulo di ricerca dinamica intelligente per PrestaShop
  * Simile a Doofinder con AI, fuzzy search, sinonimi, filtri e analytics
  *
- * @author Smart Search Team
+ * @author Michele Pietrafesa
  * @copyright 2024
  * @license MIT
  * @version 2.0.0
@@ -60,7 +60,7 @@ class SmartSearch extends Module
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
         $this->version = '2.0.0';
-        $this->author = 'Smart Search Team';
+        $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
             'min' => '1.7.0.0',

@@ -1,0 +1,259 @@
+/**
+ * SmartSearch 2.0 - Admin Dashboard Styles
+ * Author: Michele Pietrafesa
+ */
+
+/* Dashboard Container */
+.smartsearch-dashboard {
+    margin: -15px;
+}
+
+/* Header Panel */
+.smartsearch-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff;
+    padding: 25px 30px;
+    margin-bottom: 0;
+    border-radius: 4px 4px 0 0;
+}
+
+.smartsearch-header h2 {
+    margin: 0 0 5px 0;
+    font-weight: 600;
+}
+
+.smartsearch-header h2 small {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.smartsearch-header p {
+    margin: 0;
+    opacity: 0.9;
+}
+
+.smartsearch-header .text-muted {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.smartsearch-header .badge {
+    padding: 8px 15px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.smartsearch-header .badge-success {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+/* Tabs Navigation */
+.smartsearch-tabs {
+    background: #f8f9fa;
+    border-bottom: none;
+    padding: 0 20px;
+    margin: 0;
+}
+
+.smartsearch-tabs > li > a {
+    border: none;
+    border-radius: 0;
+    padding: 15px 25px;
+    color: #666;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.smartsearch-tabs > li > a:hover {
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.smartsearch-tabs > li.active > a,
+.smartsearch-tabs > li.active > a:hover,
+.smartsearch-tabs > li.active > a:focus {
+    background: #fff;
+    color: #667eea;
+    border: none;
+    border-bottom: 3px solid #667eea;
+}
+
+.smartsearch-tabs > li > a i {
+    margin-right: 8px;
+}
+
+/* Tab Content */
+.smartsearch-tab-content {
+    background: #fff;
+    padding: 25px;
+    border: 1px solid #ddd;
+    border-top: none;
+}
+
+.smartsearch-tab-content .tab-pane {
+    display: none;
+}
+
+.smartsearch-tab-content .tab-pane.active {
+    display: block;
+}
+
+/* Panel Styles Override */
+.smartsearch-tab-content .panel {
+    box-shadow: none;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.smartsearch-tab-content .panel-heading {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 8px 8px 0 0;
+    padding: 15px 20px;
+    font-weight: 600;
+}
+
+.smartsearch-tab-content .panel-heading .badge {
+    font-weight: 400;
+    margin-left: 10px;
+}
+
+/* Form Styles */
+.smartsearch-tab-content .form-group label {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.smartsearch-tab-content .form-control {
+    border-radius: 6px;
+    border-color: #ddd;
+    transition: border-color 0.2s ease;
+}
+
+.smartsearch-tab-content .form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+/* Button Styles */
+.smartsearch-tab-content .btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    padding: 10px 25px;
+    font-weight: 500;
+    border-radius: 6px;
+}
+
+.smartsearch-tab-content .btn-primary:hover {
+    background: linear-gradient(135deg, #5a6fd6 0%, #693d91 100%);
+}
+
+.smartsearch-tab-content .btn-success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    border: none;
+}
+
+.smartsearch-tab-content .btn-success:hover {
+    background: linear-gradient(135deg, #0f8a7f 0%, #2ed970 100%);
+}
+
+/* Table Styles */
+.smartsearch-tab-content .table {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.smartsearch-tab-content .table thead th {
+    background: #f8f9fa;
+    border-bottom: 2px solid #e9ecef;
+    font-weight: 600;
+    color: #333;
+    padding: 12px 15px;
+}
+
+.smartsearch-tab-content .table tbody td {
+    padding: 15px;
+    vertical-align: middle;
+}
+
+.smartsearch-tab-content .table tbody tr:hover {
+    background: rgba(102, 126, 234, 0.05);
+}
+
+/* Badge Styles */
+.smartsearch-tab-content .badge-primary,
+.smartsearch-tab-content .badge {
+    background: #667eea;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.smartsearch-tab-content .label-success {
+    background: #38ef7d;
+}
+
+.smartsearch-tab-content .label-danger {
+    background: #f85149;
+}
+
+/* Banner Cards */
+.smartsearch-tab-content .panel-default {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.smartsearch-tab-content .panel-default:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Alert Styles */
+.smartsearch-tab-content .alert-info {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border: none;
+    color: #1565c0;
+    border-radius: 8px;
+}
+
+/* Footer */
+.smartsearch-footer {
+    background: #f8f9fa;
+    padding: 15px 25px;
+    margin: 0;
+    border: 1px solid #ddd;
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .smartsearch-header {
+        text-align: center;
+    }
+
+    .smartsearch-header .text-right {
+        text-align: center !important;
+        margin-top: 15px;
+    }
+
+    .smartsearch-tabs > li > a {
+        padding: 12px 15px;
+        font-size: 13px;
+    }
+
+    .smartsearch-tabs > li > a i {
+        display: none;
+    }
+}
+
+/* Switch Toggle Custom */
+.smartsearch-tab-content .bootstrap-switch {
+    border-radius: 20px;
+}
+
+/* Input Group Addon */
+.smartsearch-tab-content .input-group-addon {
+    background: #f8f9fa;
+    border-color: #ddd;
+    font-weight: 600;
+}
