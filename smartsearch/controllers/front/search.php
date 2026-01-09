@@ -690,7 +690,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         });
 
         // 6. Limita risultati
-        $results = array_slice($results, 0, 20);
+        $results = array_slice($results, 0, 100);
 
         return $this->formatProducts($results, $idLang);
     }
@@ -1415,7 +1415,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             AND ps.active = 1
             AND (' . $whereCondition . ')
             ORDER BY pl.name ASC
-            LIMIT 20';
+            LIMIT 100';
 
         return Db::getInstance()->executeS($sql);
     }
@@ -1991,7 +1991,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE pl.id_lang = ' . (int)$idLang . '
             AND ps.active = 1
             AND (' . implode(' OR ', $likeConditions) . ')
-            LIMIT 20';
+            LIMIT 100';
 
         $results = Db::getInstance()->executeS($sql);
 
