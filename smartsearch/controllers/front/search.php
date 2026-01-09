@@ -52,51 +52,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni banner attivi per questa query
             $banners = $this->getBannersForQuery($query, $idShop);
 
-            // Debug: ottieni regole boost attive con dettagli
-            $boostRules = Db::getInstance()->executeS('
-                SELECT b.*, pl.name as product_name
-                FROM `' . _DB_PREFIX_ . 'smartsearch_boost` b
-                LEFT JOIN `' . _DB_PREFIX_ . 'product_lang` pl ON b.id_product = pl.id_product AND pl.id_lang = ' . (int)$idLang . '
-                WHERE b.id_shop = ' . (int)$idShop . ' AND b.active = 1
-            ');
-
-            // Debug: IDs dei prodotti nei risultati
-            $resultProductIds = array_map(function($p) { return $p['id']; }, $products);
-
-            // Debug dettagliato: controlla se ogni prodotto boostato esiste e è attivo
-            $boostDebugDetails = [];
-            foreach ($boostRules ?: [] as $rule) {
-                $productId = (int)$rule['id_product'];
-
-                // Verifica se il prodotto esiste e perché potrebbe non caricarsi
-                $productCheck = Db::getInstance()->getRow('
-                    SELECT
-                        p.id_product,
-                        p.active as product_active,
-                        pl.name,
-                        ps.active as shop_active
-                    FROM `' . _DB_PREFIX_ . 'product` p
-                    LEFT JOIN `' . _DB_PREFIX_ . 'product_lang` pl
-                        ON p.id_product = pl.id_product
-                        AND pl.id_lang = ' . (int)$idLang . '
-                    LEFT JOIN `' . _DB_PREFIX_ . 'product_shop` ps
-                        ON p.id_product = ps.id_product
-                        AND ps.id_shop = ' . (int)$idShop . '
-                    WHERE p.id_product = ' . $productId . '
-                ');
-
-                $boostDebugDetails[] = [
-                    'id_product' => $productId,
-                    'rule_keywords' => $rule['keywords'] ?: '(sempre attivo)',
-                    'boost_value' => (float)$rule['boost_value'],
-                    'product_exists' => $productCheck ? true : false,
-                    'product_name' => $productCheck['name'] ?? 'NOT FOUND',
-                    'product_active' => $productCheck ? (int)$productCheck['product_active'] : 'N/A',
-                    'shop_active' => $productCheck ? ($productCheck['shop_active'] !== null ? (int)$productCheck['shop_active'] : 'NO SHOP ASSOCIATION') : 'N/A',
-                    'in_results' => in_array($productId, $resultProductIds),
-                ];
-            }
-
             die(json_encode([
                 'products' => $products,
                 'categories' => $categories,
@@ -104,39 +59,19 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'query' => $query,
                 'facets' => [],
                 'banners' => $banners,
-                'did_you_mean' => [],
-                '_debug' => [
-                    'boost_rules' => array_map(function($r) {
-                        return [
-                            'id_product' => (int)$r['id_product'],
-                            'product_name' => $r['product_name'] ?? 'N/A',
-                            'boost_value' => (float)$r['boost_value'],
-                            'keywords' => $r['keywords'] ?: '(sempre attivo)'
-                        ];
-                    }, $boostRules ?: []),
-                    'result_product_ids' => $resultProductIds,
-                    'boosted_products' => array_values(array_filter(array_map(function($p) {
-                        if (isset($p['boost_score']) && $p['boost_score'] > 1) {
-                            return [
-                                'id' => $p['id'],
-                                'name' => $p['name'],
-                                'boost' => $p['boost_score'],
-                                'injected' => isset($p['injected']) && $p['injected'] ? true : false
-                            ];
-                        }
-                        return null;
-                    }, $products))),
-                    'boost_details' => $boostDebugDetails
-                ]
+                'did_you_mean' => []
             ], JSON_UNESCAPED_UNICODE));
 
         } catch (Exception $e) {
+            // Log error only in dev mode, never expose to frontend
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog('SmartSearch error: ' . $e->getMessage(), 3, null, 'SmartSearch');
+            }
             die(json_encode([
                 'products' => [],
                 'categories' => [],
                 'total' => 0,
-                'query' => Tools::getValue('q', ''),
-                'error' => $e->getMessage()
+                'query' => Tools::getValue('q', '')
             ], JSON_UNESCAPED_UNICODE));
         }
     }
@@ -169,11 +104,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             ], JSON_UNESCAPED_UNICODE));
 
         } catch (Exception $e) {
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog('SmartSearch filters error: ' . $e->getMessage(), 3, null, 'SmartSearch');
+            }
             die(json_encode([
                 'brands' => [],
                 'categories' => [],
-                'price_range' => ['min' => 0, 'max' => 1000],
-                'error' => $e->getMessage()
+                'price_range' => ['min' => 0, 'max' => 1000]
             ], JSON_UNESCAPED_UNICODE));
         }
     }
@@ -290,10 +227,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             ], JSON_UNESCAPED_UNICODE));
 
         } catch (Exception $e) {
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog('SmartSearch filtered search error: ' . $e->getMessage(), 3, null, 'SmartSearch');
+            }
             die(json_encode([
                 'products' => [],
-                'total' => 0,
-                'error' => $e->getMessage()
+                'total' => 0
             ], JSON_UNESCAPED_UNICODE));
         }
     }
@@ -884,19 +823,19 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         try {
             // Verifica che cURL sia disponibile
             if (!function_exists('curl_init')) {
-                die(json_encode(['success' => false, 'error' => 'cURL not available', 'debug' => 'curl_init not found']));
+                die(json_encode(['success' => false, 'error' => 'Server configuration error']));
             }
 
             // Leggi il body JSON della richiesta
             $inputJSON = file_get_contents('php://input');
             if (empty($inputJSON)) {
-                die(json_encode(['success' => false, 'error' => 'Empty request body', 'debug' => 'No POST data received']));
+                die(json_encode(['success' => false, 'error' => 'Invalid request']));
             }
 
             $data = json_decode($inputJSON, true);
 
             if (!$data || !is_array($data)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid JSON', 'debug' => 'JSON decode failed: ' . json_last_error_msg()]));
+                die(json_encode(['success' => false, 'error' => 'Invalid request']));
             }
 
             // Sanitizza i dati (rimuovi potenziali script injection)
@@ -905,20 +844,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni URL webhook dalla configurazione
             $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
 
-            if (empty($webhookUrl)) {
-                die(json_encode(['success' => false, 'error' => 'Webhook URL not configured', 'debug' => 'SMARTSEARCH_ANALYTICS_WEBHOOK_URL is empty in PrestaShop configuration']));
-            }
-
-            // Valida URL webhook
-            if (!filter_var($webhookUrl, FILTER_VALIDATE_URL)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid webhook URL', 'debug' => 'URL validation failed for: ' . substr($webhookUrl, 0, 50)]));
+            if (empty($webhookUrl) || !filter_var($webhookUrl, FILTER_VALIDATE_URL)) {
+                // Silently fail - analytics shouldn't block user experience
+                die(json_encode(['success' => true]));
             }
 
             // Inoltra i dati a n8n con timeout basso
             $ch = curl_init($webhookUrl);
 
             if ($ch === false) {
-                die(json_encode(['success' => false, 'error' => 'cURL init failed', 'debug' => 'curl_init returned false']));
+                die(json_encode(['success' => false, 'error' => 'Server error']));
             }
 
             $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
@@ -950,11 +885,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             curl_close($ch);
 
             if ($error) {
+                if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                    PrestaShopLogger::addLog('SmartSearch webhook error: ' . $error, 2, null, 'SmartSearch');
+                }
                 die(json_encode([
                     'success' => false,
-                    'error' => 'Connection error',
-                    'debug' => 'cURL error (' . $errno . '): ' . $error,
-                    'webhook_url' => substr($webhookUrl, 0, 50) . '...'
+                    'error' => 'Connection error'
                 ]));
             }
 
@@ -962,17 +898,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $success = $httpCode >= 200 && $httpCode < 300;
 
             die(json_encode([
-                'success' => $success,
-                'http_code' => $httpCode,
-                'debug' => $success ? 'Data forwarded successfully' : 'Webhook returned non-2xx status',
-                'response_preview' => substr($response, 0, 200)
+                'success' => $success
             ]));
 
         } catch (Exception $e) {
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog('SmartSearch analytics error: ' . $e->getMessage(), 3, null, 'SmartSearch');
+            }
             die(json_encode([
                 'success' => false,
-                'error' => 'Server error',
-                'debug' => 'Exception: ' . $e->getMessage()
+                'error' => 'Server error'
             ]));
         }
     }

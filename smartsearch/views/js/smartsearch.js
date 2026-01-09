@@ -61,7 +61,6 @@
     function sendAnalyticsEvent(eventType, data) {
         // Skip if webhook not configured
         if (!config.analytics_webhook_url) {
-            console.log('[SmartSearch] Analytics skipped - no webhook URL configured');
             return;
         }
 
@@ -76,33 +75,14 @@
             ...data
         };
 
-        console.log('[SmartSearch] Sending analytics:', eventType, payload);
-
         // Send to PrestaShop proxy (non-blocking)
         fetch(config.ajax_url + '?ajax=1&action=analytics', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
             keepalive: true
-        })
-        .then(response => {
-            console.log('[SmartSearch] Analytics HTTP status:', response.status);
-            return response.text(); // Get raw text first
-        })
-        .then(text => {
-            console.log('[SmartSearch] Analytics raw response:', text.substring(0, 500));
-            try {
-                const result = JSON.parse(text);
-                console.log('[SmartSearch] Analytics parsed:', result);
-                if (!result.success) {
-                    console.warn('[SmartSearch] Analytics failed:', result.error || 'no error', result.debug || 'no debug', result.http_code || 'no http_code');
-                }
-            } catch (e) {
-                console.error('[SmartSearch] Analytics JSON parse error:', e.message, 'Raw:', text.substring(0, 200));
-            }
-        })
-        .catch(err => {
-            console.error('[SmartSearch] Analytics fetch error:', err);
+        }).catch(() => {
+            // Silently ignore analytics errors - never block user experience
         });
     }
 
