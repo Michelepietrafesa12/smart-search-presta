@@ -1666,7 +1666,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
 
                 // Ordina per score e prendi i termini
-                usort($suggestions, fn($a, $b) => $b['score'] <=> $a['score']);
+                usort($suggestions, function($a, $b) { return $b['score'] <=> $a['score']; });
                 $suggestions = array_column(array_slice($suggestions, 0, 3), 'term');
             }
         } catch (Exception $e) {
@@ -1684,7 +1684,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $suggestions = [];
 
         // Estrai parole dalla query
-        $words = array_filter(explode(' ', $query), fn($w) => strlen($w) >= 3);
+        $words = array_filter(explode(' ', $query), function($w) { return strlen($w) >= 3; });
 
         if (empty($words)) {
             return [];
