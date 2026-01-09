@@ -517,26 +517,34 @@
 .smartsearch-products-grid {
     display: grid;
     /* auto-fit invece di auto-fill per collassare colonne vuote */
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
     padding: 20px 24px;
     align-items: stretch;
     align-content: start;
-    /* Limita larghezza massima delle card su schermi grandi */
     max-width: 100%;
 }
 
-/* Su desktop grande, forza 4 colonne max per evitare card troppo grandi */
-@media (min-width: 1200px) {
+/* Su desktop grande, forza 8 colonne */
+@media (min-width: 1400px) {
     .smartsearch-products-grid {
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(8, 1fr);
+        gap: 12px;
     }
 }
 
-/* Su schermi medi, 3 colonne */
+/* Su desktop medio, 6 colonne */
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .smartsearch-products-grid {
+        grid-template-columns: repeat(6, 1fr);
+        gap: 14px;
+    }
+}
+
+/* Su schermi medi, 4 colonne */
 @media (min-width: 900px) and (max-width: 1199px) {
     .smartsearch-products-grid {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
     }
 }
 
@@ -555,7 +563,7 @@
 /* Product card - MIGLIORATO senza carrello */
 .smartsearch-product-card {
     background: #fff;
-    border-radius: 16px;
+    border-radius: 12px;
     overflow: hidden;
     text-decoration: none;
     color: inherit;
@@ -564,9 +572,9 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    min-height: 320px; /* Altezza minima più grande per uniformità */
-    height: 100%; /* Riempi la cella del grid */
-    width: 100%; /* Larghezza piena della cella */
+    min-height: 240px;
+    height: 100%;
+    width: 100%;
 }
 
 .smartsearch-product-card:hover {
