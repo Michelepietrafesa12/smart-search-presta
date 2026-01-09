@@ -609,6 +609,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $wordSafe = pSQL($word);
             $orConditions[] = "pl.name LIKE '%{$wordSafe}%'";
             $orConditions[] = "pl.description_short LIKE '%{$wordSafe}%'";
+            $orConditions[] = "pl.description LIKE '%{$wordSafe}%'";
             $orConditions[] = "p.reference LIKE '%{$wordSafe}%'";
             $orConditions[] = "m.name LIKE '%{$wordSafe}%'";
         }
@@ -619,6 +620,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 pl.name,
                 pl.link_rewrite,
                 pl.description_short,
+                pl.description,
                 p.reference,
                 p.ean13,
                 p.id_category_default,
@@ -668,7 +670,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         $score = 0;
         $nameLower = mb_strtolower($product['name'] ?? '');
-        $descLower = mb_strtolower($product['description_short'] ?? '');
+        $descShortLower = mb_strtolower($product['description_short'] ?? '');
+        $descFullLower = mb_strtolower(strip_tags($product['description'] ?? ''));
         $refLower = mb_strtolower($product['reference'] ?? '');
         $brandLower = mb_strtolower($product['manufacturer_name'] ?? '');
 
@@ -731,10 +734,18 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // === MATCH NELLA DESCRIZIONE (peso più basso) ===
+        // === MATCH NELLA DESCRIZIONE BREVE ===
         foreach ($words as $word) {
-            if (strpos($descLower, $word) !== false) {
+            if (strpos($descShortLower, $word) !== false) {
                 $score += 10;
+            }
+        }
+
+        // === MATCH NELLA DESCRIZIONE COMPLETA (peso più basso) ===
+        foreach ($words as $word) {
+            // Solo se non già matchato nella descrizione breve
+            if (strpos($descShortLower, $word) === false && strpos($descFullLower, $word) !== false) {
+                $score += 5;
             }
         }
 
