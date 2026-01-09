@@ -52,11 +52,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni banner attivi per questa query
             $banners = $this->getBannersForQuery($query, $idShop);
 
-            // Debug: conta regole boost attive
-            $boostCount = (int)Db::getInstance()->getValue('
-                SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_boost`
-                WHERE id_shop = ' . (int)$idShop . ' AND active = 1
+            // Debug: ottieni regole boost attive con dettagli
+            $boostRules = Db::getInstance()->executeS('
+                SELECT b.*, pl.name as product_name
+                FROM `' . _DB_PREFIX_ . 'smartsearch_boost` b
+                LEFT JOIN `' . _DB_PREFIX_ . 'product_lang` pl ON b.id_product = pl.id_product AND pl.id_lang = ' . (int)$idLang . '
+                WHERE b.id_shop = ' . (int)$idShop . ' AND b.active = 1
             ');
+
+            // Debug: IDs dei prodotti nei risultati
+            $resultProductIds = array_map(function($p) { return $p['id']; }, $products);
 
             die(json_encode([
                 'products' => $products,
@@ -67,7 +72,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'banners' => $banners,
                 'did_you_mean' => [],
                 '_debug' => [
-                    'boost_rules_active' => $boostCount,
+                    'boost_rules' => array_map(function($r) {
+                        return [
+                            'id_product' => (int)$r['id_product'],
+                            'product_name' => $r['product_name'] ?? 'N/A',
+                            'boost_value' => (float)$r['boost_value'],
+                            'keywords' => $r['keywords'] ?: '(sempre attivo)'
+                        ];
+                    }, $boostRules ?: []),
+                    'result_product_ids' => $resultProductIds,
                     'boosted_products' => array_values(array_filter(array_map(function($p) {
                         if (isset($p['boost_score']) && $p['boost_score'] > 1) {
                             return ['id' => $p['id'], 'name' => $p['name'], 'boost' => $p['boost_score']];
