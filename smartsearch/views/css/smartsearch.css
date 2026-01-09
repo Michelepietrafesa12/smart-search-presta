@@ -1011,7 +1011,22 @@ mark {
     margin: 12px;
     border-radius: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-    overflow: hidden;
+    overflow: visible;
+}
+
+/* Overflow hidden solo per i titoli (border-radius) */
+.smartsearch-filter-section .smartsearch-filter-title {
+    border-radius: 12px 12px 0 0;
+}
+
+.smartsearch-filter-section.collapsed .smartsearch-filter-title {
+    border-radius: 12px;
+}
+
+/* Il filtro prezzo ha bisogno di più spazio per i cursori */
+.smartsearch-filter-price .smartsearch-filter-content {
+    padding-bottom: 24px;
+    overflow: visible;
 }
 
 .smartsearch-filter-title {
@@ -1101,19 +1116,20 @@ mark {
 /* Range slider doppio - FIXED */
 .smartsearch-price-slider {
     position: relative;
-    height: 40px;
-    margin-top: 10px;
-    padding: 0 10px;
+    height: 50px;
+    margin-top: 16px;
+    margin-bottom: 10px;
+    padding: 12px 14px;
 }
 
 .smartsearch-price-track {
     position: absolute;
     top: 50%;
-    left: 10px;
-    right: 10px;
-    height: 6px;
-    background: #e8e8e8;
-    border-radius: 3px;
+    left: 14px;
+    right: 14px;
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
     transform: translateY(-50%);
     z-index: 1;
 }
@@ -1132,8 +1148,8 @@ mark {
 
 .smartsearch-price-slider input[type="range"] {
     position: absolute;
-    width: calc(100% - 20px);
-    left: 10px;
+    width: calc(100% - 28px);
+    left: 14px;
     top: 50%;
     transform: translateY(-50%);
     -webkit-appearance: none;
@@ -1141,7 +1157,7 @@ mark {
     background: transparent;
     pointer-events: none;
     z-index: 2;
-    height: 6px;
+    height: 8px;
     margin: 0;
     padding: 0;
 }
@@ -1165,18 +1181,18 @@ mark {
 
 .smartsearch-price-slider input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 24px;
-    height: 24px;
-    background: #fff;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(145deg, #fff, #f5f5f5);
     border: 3px solid #f97316;
     border-radius: 50%;
     cursor: grab;
     pointer-events: auto;
-    box-shadow: 0 2px 10px rgba(249,115,22,0.4);
-    margin-top: -9px;
+    box-shadow: 0 3px 12px rgba(249,115,22,0.5), 0 0 0 3px rgba(249,115,22,0.1);
+    margin-top: -10px;
     position: relative;
     z-index: 10;
-    transition: transform 0.1s, box-shadow 0.1s;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .smartsearch-price-slider input[type="range"]::-webkit-slider-thumb:hover {
@@ -1198,14 +1214,14 @@ mark {
 }
 
 .smartsearch-price-slider input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-    background: #fff;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(145deg, #fff, #f5f5f5);
     border: 3px solid #f97316;
     border-radius: 50%;
     cursor: grab;
     pointer-events: auto;
-    box-shadow: 0 2px 10px rgba(249,115,22,0.4);
+    box-shadow: 0 3px 12px rgba(249,115,22,0.5), 0 0 0 3px rgba(249,115,22,0.1);
     position: relative;
     z-index: 10;
 }

@@ -10,6 +10,135 @@ if (!defined('_PS_VERSION_')) {
 
 class SmartsearchSearchModuleFrontController extends ModuleFrontController
 {
+    /**
+     * Ottiene variazioni italiane di una parola (singolare/plurale)
+     * Es: barretta -> [barretta, barrette], prodotto -> [prodotto, prodotti]
+     */
+    protected function getItalianWordVariations($word)
+    {
+        $word = mb_strtolower(trim($word));
+        $variations = [$word];
+        $len = mb_strlen($word);
+
+        if ($len < 3) {
+            return $variations;
+        }
+
+        // Ottieni le ultime lettere
+        $last1 = mb_substr($word, -1);
+        $last2 = mb_substr($word, -2);
+        $last3 = mb_substr($word, -3);
+        $base = mb_substr($word, 0, -1);
+        $base2 = mb_substr($word, 0, -2);
+        $base3 = mb_substr($word, 0, -3);
+
+        // === REGOLE PLURALE -> SINGOLARE ===
+
+        // -i -> -o (prodotti -> prodotto, integratori -> integratore)
+        if ($last1 === 'i') {
+            $variations[] = $base . 'o';
+            $variations[] = $base . 'e'; // alcuni plurali in -i vengono da singolari in -e
+        }
+
+        // -e -> -a (barrette -> barretta, proteine -> proteina)
+        if ($last1 === 'e') {
+            $variations[] = $base . 'a';
+            $variations[] = $base . 'o'; // energie -> energio? no, ma copre casi strani
+        }
+
+        // -he -> -a (bottiglie -> bottiglia, confezioni -> confezione)
+        if ($last2 === 'he') {
+            $variations[] = $base2 . 'a';
+            $variations[] = $base2 . 'ia';
+        }
+
+        // -ie -> -ia (energie -> energia, calorie -> caloria)
+        if ($last2 === 'ie') {
+            $variations[] = $base2 . 'ia';
+        }
+
+        // -chi -> -co (pacchi -> pacco)
+        if ($last3 === 'chi') {
+            $variations[] = $base3 . 'co';
+        }
+
+        // -ghi -> -go (funghi -> fungo)
+        if ($last3 === 'ghi') {
+            $variations[] = $base3 . 'go';
+        }
+
+        // -ni -> -ne o -no (azioni -> azione)
+        if ($last2 === 'ni') {
+            $variations[] = $base2 . 'ne';
+            $variations[] = $base2 . 'no';
+        }
+
+        // -zi -> -za o -zo (razzi -> razzo)
+        if ($last2 === 'zi') {
+            $variations[] = $base2 . 'za';
+            $variations[] = $base2 . 'zo';
+        }
+
+        // === REGOLE SINGOLARE -> PLURALE ===
+
+        // -o -> -i (prodotto -> prodotti)
+        if ($last1 === 'o') {
+            $variations[] = $base . 'i';
+        }
+
+        // -a -> -e (barretta -> barrette)
+        if ($last1 === 'a') {
+            $variations[] = $base . 'e';
+            // -ia -> -ie (energia -> energie)
+            if ($last2 === 'ia') {
+                $variations[] = $base2 . 'ie';
+            }
+            // -ca -> -che (amica -> amiche)
+            if ($last2 === 'ca') {
+                $variations[] = $base2 . 'che';
+            }
+            // -ga -> -ghe (bottega -> botteghe)
+            if ($last2 === 'ga') {
+                $variations[] = $base2 . 'ghe';
+            }
+        }
+
+        // -e -> -i (azione -> azioni, integratore -> integratori)
+        if ($last1 === 'e') {
+            $variations[] = $base . 'i';
+        }
+
+        // -co -> -chi (pacco -> pacchi)
+        if ($last2 === 'co') {
+            $variations[] = $base2 . 'chi';
+        }
+
+        // -go -> -ghi (fungo -> funghi)
+        if ($last2 === 'go') {
+            $variations[] = $base2 . 'ghi';
+        }
+
+        // Rimuovi duplicati e ritorna
+        return array_unique($variations);
+    }
+
+    /**
+     * Espande le parole della query con variazioni singolare/plurale
+     */
+    protected function expandQueryWords($words)
+    {
+        $expanded = [];
+        foreach ($words as $word) {
+            $variations = $this->getItalianWordVariations($word);
+            foreach ($variations as $var) {
+                if (!in_array($var, $expanded)) {
+                    $expanded[] = $var;
+                }
+            }
+        }
+        return $expanded;
+    }
+
     public function displayAjaxSearch()
     {
         header('Content-Type: application/json; charset=utf-8');
@@ -707,9 +836,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return [];
         }
 
-        // Costruisci condizioni OR (trova prodotti che matchano ALMENO una parola)
+        // Espandi le parole con variazioni singolare/plurale italiano
+        $expandedWords = $this->expandQueryWords($words);
+
+        // Costruisci condizioni OR (trova prodotti che matchano ALMENO una parola o variazione)
         $orConditions = [];
-        foreach ($words as $word) {
+        foreach ($expandedWords as $word) {
             $wordSafe = pSQL($word);
             $orConditions[] = "pl.name LIKE '%{$wordSafe}%'";
             $orConditions[] = "pl.description_short LIKE '%{$wordSafe}%'";
