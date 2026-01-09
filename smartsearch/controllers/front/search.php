@@ -981,85 +981,96 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $refLower = mb_strtolower($product['reference'] ?? '');
         $brandLower = mb_strtolower($product['manufacturer_name'] ?? '');
 
-        // === MATCH NEL NOME (peso più alto) ===
+        // =============================================================
+        // PRIORITÀ 1: MATCH QUERY COMPLETA (es: "net integratori")
+        // Questi prodotti devono apparire SEMPRE per primi
+        // =============================================================
+        $hasFullQueryMatch = false;
 
-        // Match esatto della query completa nel nome
+        // Query completa nel NOME
         if (strpos($nameLower, $query) !== false) {
-            $score += 100;
-
-            // Bonus se il nome INIZIA con la query
+            $hasFullQueryMatch = true;
+            $score += 500;
+            // Bonus se inizia con la query
             if (strpos($nameLower, $query) === 0) {
-                $score += 50;
+                $score += 100;
             }
         }
 
-        // Match per singole parole nel nome
-        $nameWordMatches = 0;
-        foreach ($words as $word) {
-            if (strpos($nameLower, $word) !== false) {
-                $score += 30;
-                $nameWordMatches++;
-
-                // Bonus se la parola è all'inizio del nome
-                if (strpos($nameLower, $word) === 0) {
-                    $score += 15;
-                }
-            }
-        }
-
-        // Bonus per match di TUTTE le parole nel nome
-        if ($nameWordMatches === count($words) && count($words) > 1) {
-            $score += 40;
-        }
-
-        // === MATCH NEL REFERENCE/SKU ===
-        if (!empty($refLower)) {
-            if ($refLower === $query) {
-                $score += 120; // Match esatto reference
-            } elseif (strpos($refLower, $query) !== false) {
-                $score += 80;
-            } else {
-                foreach ($words as $word) {
-                    if (strpos($refLower, $word) !== false) {
-                        $score += 40;
-                    }
-                }
-            }
-        }
-
-        // === MATCH NELLA MARCA (peso MOLTO alto) ===
-        if (!empty($brandLower)) {
-            // Match esatto del nome marca con la query
+        // Query completa nella MARCA
+        if (strpos($brandLower, $query) !== false) {
+            $hasFullQueryMatch = true;
+            $score += 400;
+            // Bonus se marca = query esatta
             if ($brandLower === $query) {
-                $score += 200; // Boost massimo per match esatto marca
-            }
-            // Query contenuta nella marca (es: "net integratori" in "Net Integratori")
-            elseif (strpos($brandLower, $query) !== false) {
-                $score += 150;
-            }
-            // Marca contenuta nella query (es: brand "Net" in query "net integratori")
-            elseif (strpos($query, $brandLower) !== false) {
-                $score += 120;
-            }
-            else {
-                // Match per singole parole nella marca
-                $brandWordMatches = 0;
-                foreach ($words as $word) {
-                    if (strpos($brandLower, $word) !== false) {
-                        $score += 40;
-                        $brandWordMatches++;
-                    }
-                }
-                // Bonus se TUTTE le parole matchano nella marca
-                if ($brandWordMatches === count($words) && count($words) > 1) {
-                    $score += 80;
-                }
+                $score += 100;
             }
         }
 
-        // === PENALITÀ per match parziale ===
-        // Se ci sono più parole nella query ma il prodotto matcha solo alcune
-        if (count($words) > 1) {
+        // Query completa nel REFERENCE
+        if (strpos($refLower, $query) !== false) {
+            $hasFullQueryMatch = true;
+            $score += 450;
+            if ($refLower === $query) {
+                $score += 100;
+            }
+        }
+
+        // Query completa nella DESCRIZIONE BREVE
+        if (strpos($descShortLower, $query) !== false) {
+            $hasFullQueryMatch = true;
+            $score += 200;
+        }
+
+        // =============================================================
+        // PRIORITÀ 2: MATCH PARZIALE (solo se NON c'è match completo)
+        // Prodotti che matchano solo parti della query
+        // =============================================================
+        if (!$hasFullQueryMatch && count($words) > 0) {
+            // Match per singole parole nel nome
+            $nameWordMatches = 0;
+            foreach ($words as $word) {
+                if (strpos($nameLower, $word) !== false) {
+                    $score += 30;
+                    $nameWordMatches++;
+                    if (strpos($nameLower, $word) === 0) {
+                        $score += 15;
+                    }
+                }
+            }
+
+            // Bonus se TUTTE le parole sono nel nome (ma non come query completa)
+            if ($nameWordMatches === count($words) && count($words) > 1) {
+                $score += 100; // Buon match, tutte le parole presenti
+            }
+
+            // Match per singole parole nella marca
+            $brandWordMatches = 0;
+            foreach ($words as $word) {
+                if (strpos($brandLower, $word) !== false) {
+                    $score += 25;
+                    $brandWordMatches++;
+                }
+            }
+            if ($brandWordMatches === count($words) && count($words) > 1) {
+                $score += 80;
+            }
+
+            // Match nel reference
+            foreach ($words as $word) {
+                if (strpos($refLower, $word) !== false) {
+                    $score += 35;
+                }
+            }
+
+            // Match nella descrizione breve
+            foreach ($words as $word) {
+                if (strpos($descShortLower, $word) !== false) {
+                    $score += 10;
+                }
+            }
+
+            // === PENALITÀ per match molto parziale ===
             $totalMatches = 0;
             foreach ($words as $word) {
                 if (strpos($nameLower, $word) !== false ||
@@ -1069,27 +1080,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
             }
             // Penalizza prodotti che matchano meno del 50% delle parole
-            if ($totalMatches < count($words) * 0.5) {
-                $score *= 0.5; // Dimezza lo score
-            }
-            // Penalizza prodotti che matchano meno del 75% delle parole
-            elseif ($totalMatches < count($words) * 0.75) {
-                $score *= 0.75;
+            if (count($words) > 1 && $totalMatches < count($words) * 0.5) {
+                $score *= 0.4;
             }
         }
 
-        // === MATCH NELLA DESCRIZIONE BREVE ===
-        foreach ($words as $word) {
-            if (strpos($descShortLower, $word) !== false) {
-                $score += 10;
-            }
-        }
+        // =============================================================
+        // BONUS AGGIUNTIVI (per entrambe le priorità)
+        // =============================================================
 
-        // === MATCH NELLA DESCRIZIONE COMPLETA (peso più basso) ===
+        // === MATCH NELLA DESCRIZIONE COMPLETA (peso basso) ===
         foreach ($words as $word) {
-            // Solo se non già matchato nella descrizione breve
-            if (strpos($descShortLower, $word) === false && strpos($descFullLower, $word) !== false) {
-                $score += 5;
+            // Solo se non già matchato altrove
+            if (strpos($descFullLower, $word) !== false) {
+                $score += 3;
             }
         }
 
