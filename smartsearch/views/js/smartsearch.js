@@ -1081,14 +1081,14 @@
         // Products grid
         html += '<div class="smartsearch-products-grid">';
 
+        // Pre-calcola se c'è un banner middle
+        const middleBannersHtml = renderBannersHtml('middle');
+
         data.products.forEach((product, index) => {
-            // Middle banner after 4 products
-            if (index === 4) {
+            // Middle banner after 8 products (1 full row) - only if there's a banner
+            if (index === 8 && middleBannersHtml) {
                 html += '</div>'; // Close grid temporarily
-                const middleBannersHtml = renderBannersHtml('middle');
-                if (middleBannersHtml) {
-                    html += '<div class="smartsearch-banners-container smartsearch-banners-middle" style="padding: 0 24px;">' + middleBannersHtml + '</div>';
-                }
+                html += '<div class="smartsearch-banners-container smartsearch-banners-middle" style="padding: 0 24px;">' + middleBannersHtml + '</div>';
                 html += '<div class="smartsearch-products-grid">'; // Reopen grid
             }
 
