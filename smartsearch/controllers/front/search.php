@@ -984,112 +984,109 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $refLower = mb_strtolower($product['reference'] ?? '');
         $brandLower = mb_strtolower($product['manufacturer_name'] ?? '');
 
-        // =============================================================
-        // PRIORITÀ 1: MATCH QUERY COMPLETA (es: "net integratori")
-        // Questi prodotti devono apparire SEMPRE per primi
-        // =============================================================
-        $hasFullQueryMatch = false;
+        // Combina nome + marca per match completo
+        $nameAndBrand = $nameLower . ' ' . $brandLower;
 
-        // Query completa nel NOME
-        if (strpos($nameLower, $query) !== false) {
-            $hasFullQueryMatch = true;
-            $score += 500;
-            // Bonus se inizia con la query
+        // =============================================================
+        // PRIORITÀ 0: TUTTE LE PAROLE TROVATE (nome + marca)
+        // Questa è la priorità ASSOLUTA - es: "Scitec Nutrition Cla"
+        // =============================================================
+        $allWordsFound = true;
+        $wordsInName = 0;
+        $wordsInBrand = 0;
+        $wordsInRef = 0;
+
+        foreach ($words as $word) {
+            $inName = strpos($nameLower, $word) !== false;
+            $inBrand = strpos($brandLower, $word) !== false;
+            $inRef = strpos($refLower, $word) !== false;
+
+            if ($inName) $wordsInName++;
+            if ($inBrand) $wordsInBrand++;
+            if ($inRef) $wordsInRef++;
+
+            if (!$inName && !$inBrand && !$inRef) {
+                $allWordsFound = false;
+            }
+        }
+
+        $totalWordsFound = 0;
+        foreach ($words as $word) {
+            if (strpos($nameAndBrand, $word) !== false || strpos($refLower, $word) !== false) {
+                $totalWordsFound++;
+            }
+        }
+
+        // Se TUTTE le parole sono trovate -> MASSIMA priorità
+        if ($allWordsFound && count($words) > 0) {
+            $score += 1000; // Base altissima per match completo
+
+            // Bonus extra se tutte le parole sono nel nome
+            if ($wordsInName === count($words)) {
+                $score += 300;
+            }
+
+            // Bonus se query esatta nel nome
+            if (strpos($nameLower, $query) !== false) {
+                $score += 200;
+                if (strpos($nameLower, $query) === 0) {
+                    $score += 100; // Inizia con la query
+                }
+            }
+
+            // Bonus per parole nel brand
+            $score += $wordsInBrand * 50;
+
+            // Bonus per parole nel reference
+            $score += $wordsInRef * 40;
+        }
+        // =============================================================
+        // PRIORITÀ 1: MATCH QUERY ESATTA (stringa completa)
+        // =============================================================
+        elseif (strpos($nameLower, $query) !== false) {
+            $score += 800;
             if (strpos($nameLower, $query) === 0) {
                 $score += 100;
             }
         }
-
-        // Query completa nella MARCA
-        if (strpos($brandLower, $query) !== false) {
-            $hasFullQueryMatch = true;
-            $score += 400;
-            // Bonus se marca = query esatta
-            if ($brandLower === $query) {
-                $score += 100;
-            }
+        elseif (strpos($brandLower, $query) !== false) {
+            $score += 700;
         }
-
-        // Query completa nel REFERENCE
-        if (strpos($refLower, $query) !== false) {
-            $hasFullQueryMatch = true;
-            $score += 450;
-            if ($refLower === $query) {
-                $score += 100;
-            }
+        elseif (strpos($refLower, $query) !== false) {
+            $score += 750;
         }
-
-        // Query completa nella DESCRIZIONE BREVE
-        if (strpos($descShortLower, $query) !== false) {
-            $hasFullQueryMatch = true;
-            $score += 200;
-        }
-
         // =============================================================
-        // PRIORITÀ 2: MATCH PARZIALE (solo se NON c'è match completo)
-        // Prodotti che matchano solo parti della query
+        // PRIORITÀ 2: MATCH PARZIALE - alcune parole trovate
         // =============================================================
-        if (!$hasFullQueryMatch && count($words) > 0) {
-            // Match per singole parole nel nome
-            $nameWordMatches = 0;
-            foreach ($words as $word) {
-                if (strpos($nameLower, $word) !== false) {
-                    $score += 30;
-                    $nameWordMatches++;
-                    if (strpos($nameLower, $word) === 0) {
-                        $score += 15;
-                    }
-                }
+        else {
+            // Punteggio base per ogni parola trovata
+            $score += $wordsInName * 40;
+            $score += $wordsInBrand * 30;
+            $score += $wordsInRef * 35;
+
+            // Bonus se molte parole matchano
+            $matchRatio = $totalWordsFound / count($words);
+            if ($matchRatio >= 0.75) {
+                $score += 100;
+            } elseif ($matchRatio >= 0.5) {
+                $score += 50;
             }
 
-            // Bonus se TUTTE le parole sono nel nome (ma non come query completa)
-            if ($nameWordMatches === count($words) && count($words) > 1) {
-                $score += 100; // Buon match, tutte le parole presenti
-            }
-
-            // Match per singole parole nella marca
-            $brandWordMatches = 0;
-            foreach ($words as $word) {
-                if (strpos($brandLower, $word) !== false) {
-                    $score += 25;
-                    $brandWordMatches++;
-                }
-            }
-            if ($brandWordMatches === count($words) && count($words) > 1) {
-                $score += 80;
-            }
-
-            // Match nel reference
-            foreach ($words as $word) {
-                if (strpos($refLower, $word) !== false) {
-                    $score += 35;
-                }
-            }
-
-            // Match nella descrizione breve
+            // Match nella descrizione breve (peso basso)
             foreach ($words as $word) {
                 if (strpos($descShortLower, $word) !== false) {
-                    $score += 10;
+                    $score += 5;
                 }
             }
 
-            // === PENALITÀ per match molto parziale ===
-            $totalMatches = 0;
-            foreach ($words as $word) {
-                if (strpos($nameLower, $word) !== false ||
-                    strpos($brandLower, $word) !== false ||
-                    strpos($refLower, $word) !== false) {
-                    $totalMatches++;
-                }
-            }
-            // Penalizza prodotti che matchano meno del 50% delle parole
-            if (count($words) > 1 && $totalMatches < count($words) * 0.5) {
-                $score *= 0.4;
+            // PENALITÀ FORTE per match molto parziale
+            if (count($words) > 1 && $matchRatio < 0.5) {
+                $score *= 0.3; // Riduce molto lo score
             }
         }
 
         // =============================================================
-        // BONUS AGGIUNTIVI (per entrambe le priorità)
+        // BONUS AGGIUNTIVI (per tutti)
         // =============================================================
 
         // === MATCH NELLA DESCRIZIONE COMPLETA (peso basso) ===
