@@ -516,11 +516,28 @@
 /* Products grid - MIGLIORATO - Fix spazi vuoti */
 .smartsearch-products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    /* auto-fit invece di auto-fill per collassare colonne vuote */
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 20px;
     padding: 20px 24px;
-    align-items: stretch; /* Card tutte della stessa altezza */
-    align-content: start; /* Allinea le righe all'inizio */
+    align-items: stretch;
+    align-content: start;
+    /* Limita larghezza massima delle card su schermi grandi */
+    max-width: 100%;
+}
+
+/* Su desktop grande, forza 4 colonne max per evitare card troppo grandi */
+@media (min-width: 1200px) {
+    .smartsearch-products-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* Su schermi medi, 3 colonne */
+@media (min-width: 900px) and (max-width: 1199px) {
+    .smartsearch-products-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
 }
 
 /* Assicura che le card vuote o nascoste non occupino spazio */
@@ -530,14 +547,9 @@
     display: none !important;
 }
 
-/* Fix per evitare spazi extra tra le card */
-.smartsearch-products-grid::after {
-    content: none;
-}
-
 /* Assicura grid items abbiano altezza uniforme */
 .smartsearch-products-grid > * {
-    min-width: 0; /* Previene overflow */
+    min-width: 0;
 }
 
 /* Product card - MIGLIORATO senza carrello */
