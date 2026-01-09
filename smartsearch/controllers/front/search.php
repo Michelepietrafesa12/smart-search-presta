@@ -83,7 +83,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     'result_product_ids' => $resultProductIds,
                     'boosted_products' => array_values(array_filter(array_map(function($p) {
                         if (isset($p['boost_score']) && $p['boost_score'] > 1) {
-                            return ['id' => $p['id'], 'name' => $p['name'], 'boost' => $p['boost_score']];
+                            return [
+                                'id' => $p['id'],
+                                'name' => $p['name'],
+                                'boost' => $p['boost_score'],
+                                'injected' => isset($p['injected']) && $p['injected'] ? true : false
+                            ];
                         }
                         return null;
                     }, $products)))
@@ -347,7 +352,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'reference' => $row['reference'] ?? '',
                 'in_stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product']) > 0,
                 'total_sold' => isset($row['total_sold']) ? (int)$row['total_sold'] : 0,
-                'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0
+                'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0,
+                'injected' => isset($row['_injected']) && $row['_injected'] ? true : false
             ];
         }
         return $products;
@@ -467,12 +473,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      * LOGICA:
      * - Se la regola ha KEYWORDS: il boost si applica solo se la query contiene quelle keyword
      * - Se la regola NON ha keywords: il boost si applica sempre al prodotto specificato
+     * - I prodotti boostati vengono INIETTATI nei risultati anche se non matchano la ricerca
      */
     protected function applyBoosting($products, $query, $idShop)
     {
-        if (empty($products)) {
-            return $products;
-        }
+        $idLang = (int)$this->context->language->id;
 
         // Ottieni le regole di boosting attive
         $boostRules = Db::getInstance()->executeS('
@@ -489,13 +494,67 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $queryLower = mb_strtolower(trim($query));
         $queryWords = array_filter(explode(' ', $queryLower));
 
-        // Calcola score per ogni prodotto
+        // IDs dei prodotti già nei risultati
+        $existingIds = [];
+        foreach ($products as $p) {
+            if (isset($p['id_product'])) {
+                $existingIds[(int)$p['id_product']] = true;
+            }
+        }
+
+        // Prima: inietta prodotti boostati che NON sono nei risultati
+        foreach ($boostRules as $rule) {
+            $ruleProductId = (int)$rule['id_product'];
+            $boostValue = (float)$rule['boost_value'];
+            $ruleKeywords = trim($rule['keywords'] ?? '');
+
+            // Salta se il prodotto è già nei risultati
+            if (isset($existingIds[$ruleProductId])) {
+                continue;
+            }
+
+            // Verifica se questa regola deve attivarsi
+            $shouldInject = false;
+
+            if (empty($ruleKeywords)) {
+                // Nessuna keyword = sempre attivo
+                $shouldInject = true;
+            } else {
+                // Verifica match keywords
+                $keywords = array_map('trim', explode(',', mb_strtolower($ruleKeywords)));
+                foreach ($keywords as $keyword) {
+                    if (empty($keyword)) continue;
+                    foreach ($queryWords as $word) {
+                        if (strlen($word) < 2) continue;
+                        if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
+                            $shouldInject = true;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            if ($shouldInject) {
+                // Carica il prodotto dal database
+                $injectedProduct = $this->loadProductById($ruleProductId, $idLang, $idShop);
+                if ($injectedProduct) {
+                    $injectedProduct['_boost_score'] = $boostValue;
+                    $injectedProduct['_injected'] = true; // Flag per debug
+                    $products[] = $injectedProduct;
+                    $existingIds[$ruleProductId] = true;
+                }
+            }
+        }
+
+        // Poi: applica boost ai prodotti esistenti
         foreach ($products as &$product) {
-            $product['_boost_score'] = 1.0;
+            if (!isset($product['_boost_score'])) {
+                $product['_boost_score'] = 1.0;
+            }
             $productId = isset($product['id_product']) ? (int)$product['id_product'] : 0;
 
-            if (!$productId) {
-                continue;
+            if (!$productId || isset($product['_injected'])) {
+                continue; // I prodotti iniettati hanno già il boost
             }
 
             // Controlla ogni regola di boost
@@ -504,9 +563,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $boostValue = (float)$rule['boost_value'];
                 $ruleKeywords = trim($rule['keywords'] ?? '');
 
-                // Questa regola si applica a questo prodotto?
                 if ($ruleProductId != $productId) {
-                    continue; // Regola per un altro prodotto
+                    continue;
                 }
 
                 // Se la regola ha keywords, verifica che la query le contenga
@@ -516,11 +574,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
                     foreach ($keywords as $keyword) {
                         if (empty($keyword)) continue;
-
-                        // Verifica se la query contiene questa keyword
                         foreach ($queryWords as $word) {
                             if (strlen($word) < 2) continue;
-                            // Match parziale in entrambe le direzioni
                             if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
                                 $keywordMatches = true;
                                 break 2;
@@ -528,13 +583,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                         }
                     }
 
-                    // Se ha keywords ma non matchano, non applicare il boost
                     if (!$keywordMatches) {
                         continue;
                     }
                 }
 
-                // Applica il boost (solo una volta per regola)
                 $product['_boost_score'] *= $boostValue;
             }
         }
@@ -545,16 +598,54 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $scoreB = isset($b['_boost_score']) ? $b['_boost_score'] : 1.0;
 
             if ($scoreA != $scoreB) {
-                return ($scoreB > $scoreA) ? 1 : -1; // Ordine decrescente per score
+                return ($scoreB > $scoreA) ? 1 : -1;
             }
 
-            // A parità di score, ordina per nome
             $nameA = isset($a['name']) ? $a['name'] : '';
             $nameB = isset($b['name']) ? $b['name'] : '';
             return strcmp($nameA, $nameB);
         });
 
         return $products;
+    }
+
+    /**
+     * Carica un singolo prodotto dal database per iniezione boost
+     */
+    protected function loadProductById($idProduct, $idLang, $idShop)
+    {
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.reference,
+                p.id_category_default,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                cl.name as category_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl
+                ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . '
+                AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps
+                ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m
+                ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl
+                ON p.id_category_default = cl.id_category
+                AND cl.id_lang = ' . (int)$idLang . '
+            WHERE p.id_product = ' . (int)$idProduct . '
+            AND p.active = 1
+            AND ps.active = 1
+            LIMIT 1';
+
+        $result = Db::getInstance()->getRow($sql);
+        return $result ?: null;
     }
 
     /**
