@@ -85,15 +85,24 @@
             body: JSON.stringify(payload),
             keepalive: true
         })
-        .then(response => response.json())
-        .then(result => {
-            console.log('[SmartSearch] Analytics response:', result);
-            if (!result.success) {
-                console.warn('[SmartSearch] Analytics failed:', result.error, result.debug);
+        .then(response => {
+            console.log('[SmartSearch] Analytics HTTP status:', response.status);
+            return response.text(); // Get raw text first
+        })
+        .then(text => {
+            console.log('[SmartSearch] Analytics raw response:', text.substring(0, 500));
+            try {
+                const result = JSON.parse(text);
+                console.log('[SmartSearch] Analytics parsed:', result);
+                if (!result.success) {
+                    console.warn('[SmartSearch] Analytics failed:', result.error || 'no error', result.debug || 'no debug', result.http_code || 'no http_code');
+                }
+            } catch (e) {
+                console.error('[SmartSearch] Analytics JSON parse error:', e.message, 'Raw:', text.substring(0, 200));
             }
         })
         .catch(err => {
-            console.error('[SmartSearch] Analytics error:', err);
+            console.error('[SmartSearch] Analytics fetch error:', err);
         });
     }
 

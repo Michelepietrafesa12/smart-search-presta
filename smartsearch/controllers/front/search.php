@@ -692,8 +692,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     public function displayAjaxAnalytics()
     {
+        // Pulisci qualsiasi output precedente
+        if (ob_get_level()) {
+            ob_end_clean();
+        }
+
         header('Content-Type: application/json; charset=utf-8');
         header('Access-Control-Allow-Origin: *');
+        header('Cache-Control: no-cache, no-store, must-revalidate');
 
         try {
             // Verifica che cURL sia disponibile
