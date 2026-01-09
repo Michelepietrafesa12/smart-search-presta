@@ -1072,26 +1072,22 @@
             </button>
         `;
 
-        // Top banners
+        // Top banners (sopra i prodotti)
         const topBannersHtml = renderBannersHtml('top');
         if (topBannersHtml) {
             html += '<div class="smartsearch-banners-container smartsearch-banners-top" style="padding: 0 24px;">' + topBannersHtml + '</div>';
         }
 
-        // Products grid
+        // Middle banners (anche sopra i prodotti, dopo top)
+        const middleBannersHtml = renderBannersHtml('middle');
+        if (middleBannersHtml) {
+            html += '<div class="smartsearch-banners-container smartsearch-banners-middle" style="padding: 0 24px;">' + middleBannersHtml + '</div>';
+        }
+
+        // Products grid - MAI interrotto dai banner
         html += '<div class="smartsearch-products-grid">';
 
-        // Pre-calcola se c'è un banner middle
-        const middleBannersHtml = renderBannersHtml('middle');
-
         data.products.forEach((product, index) => {
-            // Middle banner after 8 products (1 full row) - only if there's a banner
-            if (index === 8 && middleBannersHtml) {
-                html += '</div>'; // Close grid temporarily
-                html += '<div class="smartsearch-banners-container smartsearch-banners-middle" style="padding: 0 24px;">' + middleBannersHtml + '</div>';
-                html += '<div class="smartsearch-products-grid">'; // Reopen grid
-            }
-
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
