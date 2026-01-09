@@ -945,13 +945,29 @@
         const main = overlay.querySelector('.smartsearch-main');
         // NON toccare la sidebar - i filtri sono già renderizzati
 
+        // Pulsante filtri mobile
+        const activeFilterCount = getActiveFilterCount();
         main.innerHTML = `
+            <button type="button" class="smartsearch-filter-toggle-mobile">
+                ${icons.filter}
+                <span>${t.filters || 'Filtri'}</span>
+                ${activeFilterCount > 0 ? `<span class="smartsearch-filter-badge">${activeFilterCount}</span>` : ''}
+            </button>
             <div class="smartsearch-initial">
                 ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
                 <h3>${t.search_placeholder || 'Cerca prodotti...'}</h3>
                 <p>Inizia a digitare per cercare nel catalogo</p>
             </div>
         `;
+
+        // Bind evento pulsante filtri mobile
+        const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', () => {
+                const sidebar = overlay.querySelector('.smartsearch-sidebar');
+                sidebar.classList.toggle('mobile-visible');
+            });
+        }
     }
 
     /**
@@ -961,7 +977,17 @@
         const main = overlay.querySelector('.smartsearch-main');
         // NON toccare la sidebar - i filtri sono già renderizzati
 
+        // Pulsante filtri mobile
+        const activeFilterCount = getActiveFilterCount();
         let html = `
+            <button type="button" class="smartsearch-filter-toggle-mobile">
+                ${icons.filter}
+                <span>${t.filters || 'Filtri'}</span>
+                ${activeFilterCount > 0 ? `<span class="smartsearch-filter-badge">${activeFilterCount}</span>` : ''}
+            </button>
+        `;
+
+        html += `
             <div class="smartsearch-section-title">
                 <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
                 <span>${t.featured_products || 'Prodotti in evidenza'}</span>
@@ -995,6 +1021,15 @@
         html += '</div>';
 
         main.innerHTML = html;
+
+        // Bind evento pulsante filtri mobile
+        const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', () => {
+                const sidebar = overlay.querySelector('.smartsearch-sidebar');
+                sidebar.classList.toggle('mobile-visible');
+            });
+        }
     }
 
     /**
@@ -1646,7 +1681,17 @@
 
         // NON svuotare sidebar - mantieni i filtri
 
+        // Pulsante filtri mobile
+        const activeFilterCount = getActiveFilterCount();
         let html = `
+            <button type="button" class="smartsearch-filter-toggle-mobile">
+                ${icons.filter}
+                <span>${t.filters || 'Filtri'}</span>
+                ${activeFilterCount > 0 ? `<span class="smartsearch-filter-badge">${activeFilterCount}</span>` : ''}
+            </button>
+        `;
+
+        html += `
             <div class="smartsearch-no-results-header">
                 ${icons.noResults}
                 <h3>${t.no_results || 'Nessun risultato trovato'}</h3>
@@ -1681,6 +1726,15 @@
         `;
 
         main.innerHTML = html;
+
+        // Bind evento pulsante filtri mobile
+        const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', () => {
+                const sidebar = overlay.querySelector('.smartsearch-sidebar');
+                sidebar.classList.toggle('mobile-visible');
+            });
+        }
 
         // Bind suggestion clicks
         main.querySelectorAll('.smartsearch-suggestion').forEach(el => {
