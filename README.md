@@ -3,55 +3,186 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente simile a Doofinder, con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.0.0
+**Versione:** 2.1.0
 **Compatibilita:** PrestaShop 1.7.0.0+
 
 ---
 
 ## Caratteristiche Principali
 
-### Ricerca Intelligente
-- **Overlay Fullscreen**: Interfaccia di ricerca moderna a schermo intero
-- **Fuzzy Search**: Trova risultati anche con errori di battitura
-- **Sinonimi**: Espansione automatica della ricerca (es. "smartphone" trova anche "cellulare")
-- **Stemming e Fonetica**: Algoritmi avanzati per matching intelligente
-- **Ricerca nelle descrizioni**: Cerca anche nel contenuto delle descrizioni prodotto
+### Ricerca Intelligente con Sistema di Scoring
+
+Il motore di ricerca utilizza un sistema di scoring a 3 livelli di priorita:
+
+#### Priorita 0 - Match Completo (1000+ punti)
+Quando **TUTTE** le parole cercate sono presenti nel **nome del prodotto**:
+- Base: **1000 punti**
+- Bonus query esatta nel nome: **+300 punti**
+- Bonus nome inizia con query: **+100 punti**
+- Bonus parole nel brand: **+10 punti** per parola
+- Bonus parole nel reference: **+10 punti** per parola
+
+**Esempio:** Cerca "scitec nutrition cla" → Prodotto "Scitec Nutrition Cla Acido Linoleico..." = 1300+ punti
+
+#### Priorita 1 - Match Query Esatta (700-900 punti)
+Quando la query esatta (come stringa) appare in:
+- Nome prodotto: **800 punti** (+100 se inizia con query)
+- Reference/SKU: **750 punti**
+- Brand: **700 punti**
+
+#### Priorita 2 - Match Parziale (<200 punti)
+Quando solo alcune parole matchano:
+- Parola nel nome: **+40 punti**
+- Parola nel reference: **+35 punti**
+- Parola nel brand: **+30 punti**
+- Bonus 75%+ match: **+100 punti**
+- Bonus 50%+ match: **+50 punti**
+- **PENALITA** <50% match: **x0.3** (riduce drasticamente)
+
+#### Bonus Aggiuntivi (tutti i livelli)
+- Match in descrizione: **+3 punti** per parola
+- Bestseller (>100 vendite): **+20 punti**
+- Bestseller (>50 vendite): **+15 punti**
+- Bestseller (>10 vendite): **+10 punti**
+- Prodotto nuovo (<7 giorni): **+15 punti**
+- Prodotto recente (<30 giorni): **+10 punti**
+
+### Ottimizzazione SQL
+La query SQL pre-ordina i risultati per numero di parole matchate nel nome, garantendo che i prodotti con match completo siano sempre inclusi prima del LIMIT.
+
+---
+
+### Variazioni Linguistiche Italiane
+
+Il motore espande automaticamente le parole cercate con variazioni singolare/plurale:
+
+| Ricerca | Trova anche |
+|---------|-------------|
+| barretta | barrette |
+| prodotto | prodotti |
+| integratore | integratori |
+| proteina | proteine |
+| energia | energie |
+
+**Regole implementate:**
+- -o ↔ -i (prodotto/prodotti)
+- -a ↔ -e (barretta/barrette)
+- -e ↔ -i (azione/azioni)
+- -ia ↔ -ie (energia/energie)
+- -co ↔ -chi (pacco/pacchi)
+- -go ↔ -ghi (fungo/funghi)
+
+---
+
+### Normalizzazione Unita di Misura
+
+Il motore riconosce e normalizza le unita di misura:
+
+| Ricerca | Trova anche |
+|---------|-------------|
+| 350g | 350 g, 350gr, 350 gr |
+| 500ml | 500 ml |
+| 1kg | 1 kg |
+| 100caps | 100 caps, 100cps, 100 capsule |
+| 60tab | 60 tab, 60tabs, 60 compresse |
+
+---
+
+### Ricerca Dinamica AJAX
+
+- **Debounce**: Attende 300ms dopo l'ultima digitazione
+- **Minimo caratteri**: 2 caratteri per attivare la ricerca
+- **Infinite Scroll**: Carica 24 prodotti per volta
+- **Massimo risultati**: 200 prodotti totali
+- **Cache**: Risultati memorizzati per 5 minuti
+
+---
+
+### Suggerimenti di Ricerca (Autocomplete)
+
+Mentre l'utente digita, vengono mostrati suggerimenti basati su:
+
+1. **Ricerche popolari** che iniziano con la query
+2. **Ricerche popolari** che contengono la query
+3. **Nomi prodotti** che matchano
+4. **Nomi brand** che matchano
+
+Navigazione con tastiera: Frecce Su/Giu, Enter per selezionare, Escape per chiudere.
+
+---
+
+### "Forse Cercavi..." (Did You Mean)
+
+Se la ricerca restituisce pochi risultati (<3), il sistema suggerisce alternative usando:
+- Distanza Levenshtein per query simili
+- Nomi prodotti correlati
+- Brand simili
+
+---
+
+### Fuzzy Search
+
+Se i risultati sono insufficienti (<5), attiva ricerca tollerante:
+- **SOUNDEX**: Match fonetico
+- **Pattern fuzzy**: Wildcard tra lettere
+- **Consonanti**: Ignora vocali per typo comuni
+- **Troncamento**: Ricerca senza prima/ultima lettera
+
+---
 
 ### Filtri Dinamici
+
 - **Filtro Prezzo**: Range slider per prezzo min/max
-- **Filtro Marca**: Selezione brand/manufacturer
-- **Filtro Categorie**: Navigazione per categoria
+- **Filtro Marca**: Checkbox per brand (senza limite, mostra tutti)
+- **Filtro Categorie**: Checkbox per categoria (senza limite, mostra tutte)
 - **Mobile Ottimizzato**: Pannello filtri dedicato per dispositivi mobili
 
+---
+
 ### Product Boosting
+
 - **Boost Prodotti**: Aumenta la visibilita di prodotti specifici nei risultati
 - **Keywords Target**: Applica boost solo per ricerche specifiche
 - **Scheduling**: Programma boost con date di inizio/fine
+- **Iniezione**: Prodotti boostati appaiono anche se non matchano direttamente
 - **Pannello Admin**: Gestione semplice dal back-office
 
+---
+
 ### Banner Promozionali
+
 - **Banner nei Risultati**: Mostra promozioni durante la ricerca
 - **3 Posizioni**: Top, Middle (dopo 4 prodotti), Bottom
 - **Keywords Target**: Banner contestuali basati sulla ricerca
 - **Upload Immagini**: Carica banner personalizzati
 - **Responsive**: Ottimizzati per mobile e desktop
 
+---
+
 ### Analytics e Tracking
-- **Statistiche Ricerche**: Traccia query, click e conversioni
+
+- **Statistiche Ricerche**: Traccia query, risultati, frequenza
 - **Webhook n8n**: Integrazione con workflow esterni
 - **Conversion Tracking**: Traccia ordini originati da ricerche
 - **Session Tracking**: Segui il percorso utente
 
+---
+
 ### Performance Ottimizzate
+
 - **Cache Statica Config**: Zero query DB per configurazioni
-- **Cache Risultati**: Risultati ricerche memorizzati
+- **Cache Risultati**: Risultati ricerche memorizzati 5 minuti
+- **SQL Ottimizzato**: Pre-ordinamento per relevanza prima del LIMIT
 - **JS Defer**: Caricamento non bloccante
 - **Impatto Minimo**: ~310KB totali, ~53KB JS, ~26KB CSS
 
+---
+
 ### Compatibilita
+
 - **Payment Methods Safe**: Hook fail-safe che non bloccano mai checkout/pagamenti
 - **Multi-shop**: Supporto completo multi-negozio
-- **Multi-lingua**: Supporto complete multilingua
+- **Multi-lingua**: Supporto completo multilingua
 
 ---
 
@@ -149,7 +280,53 @@ smartsearch/
 
 ### Endpoint Ricerca
 ```
-GET /module/smartsearch/search?q={query}&filters={json}
+GET /module/smartsearch/search?ajax=1&action=search&q={query}&offset={0}&limit={24}
+```
+
+**Parametri:**
+- `q`: Query di ricerca
+- `offset`: Offset paginazione (default: 0)
+- `limit`: Risultati per pagina (default: 24, max: 50)
+- `category`: ID categorie (comma-separated)
+- `manufacturer`: ID brand (comma-separated)
+- `price_min`: Prezzo minimo
+- `price_max`: Prezzo massimo
+
+**Risposta:**
+```json
+{
+  "products": [...],
+  "total": 24,
+  "total_count": 150,
+  "offset": 0,
+  "limit": 24,
+  "has_more": true,
+  "facets": {...},
+  "banners": [...],
+  "did_you_mean": [...]
+}
+```
+
+### Endpoint Suggerimenti
+```
+GET /module/smartsearch/search?ajax=1&action=suggestions&q={query}
+```
+
+**Risposta:**
+```json
+{
+  "success": true,
+  "suggestions": [
+    {"query": "...", "count": 10, "results": 25, "type": "popular"},
+    {"query": "...", "count": 0, "results": 0, "type": "product"},
+    {"query": "...", "count": 0, "results": 0, "type": "brand"}
+  ]
+}
+```
+
+### Endpoint Filtri
+```
+GET /module/smartsearch/search?ajax=1&action=filters
 ```
 
 ### Endpoint Banners
@@ -173,6 +350,22 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.1.0 (Gennaio 2025)
+- **NEW**: Sistema di scoring a 3 livelli di priorita
+- **NEW**: Priorita assoluta per match completo nel nome prodotto
+- **NEW**: Pre-ordinamento SQL per numero parole matchate
+- **NEW**: Variazioni singolare/plurale italiano
+- **NEW**: Normalizzazione unita di misura (350g = 350 g)
+- **NEW**: Infinite scroll AJAX (24 prodotti per volta)
+- **NEW**: Suggerimenti autocomplete da ricerche popolari
+- **NEW**: Endpoint AJAX per suggerimenti
+- **NEW**: Navigazione tastiera per suggerimenti
+- **FIX**: Filtri brand/categorie senza limite (rimosso LIMIT 50)
+- **FIX**: Prodotti con match completo sempre inclusi nei risultati
+- **FIX**: CSS checkbox filtri su mobile
+- **IMPROVEMENT**: Limite risultati aumentato a 200
+- **IMPROVEMENT**: Query SQL ottimizzata con ORDER BY relevanza
 
 ### v2.0.0 (Gennaio 2025)
 - **NEW**: Overlay fullscreen per ricerca
