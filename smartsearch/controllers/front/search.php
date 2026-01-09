@@ -374,8 +374,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE p.active = 1 AND ps.active = 1
             GROUP BY m.id_manufacturer
             HAVING product_count > 0
-            ORDER BY m.name ASC
-            LIMIT 50';
+            ORDER BY m.name ASC';
 
         $results = Db::getInstance()->executeS($sql);
 
@@ -408,8 +407,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE c.active = 1 AND p.active = 1 AND ps.active = 1 AND c.id_category > 2
             GROUP BY c.id_category
             HAVING product_count > 0
-            ORDER BY cl.name ASC
-            LIMIT 50';
+            ORDER BY cl.name ASC';
 
         $results = Db::getInstance()->executeS($sql);
 
@@ -1080,58 +1078,38 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $nameAndBrand = $nameLower . ' ' . $brandLower;
 
         // =============================================================
-        // PRIORITÀ 0: TUTTE LE PAROLE TROVATE (nome + marca)
-        // Questa è la priorità ASSOLUTA - es: "Scitec Nutrition Cla"
+        // PRIORITÀ 0: TUTTE LE PAROLE NEL NOME PRODOTTO
+        // Cerca SOLO nel nome - la marca è secondaria
         // =============================================================
-        $allWordsFound = true;
         $wordsInName = 0;
         $wordsInBrand = 0;
         $wordsInRef = 0;
 
         foreach ($words as $word) {
             // Usa wordFoundIn per gestire variazioni unità (350g, 350 g, etc.)
-            $inName = $this->wordFoundIn($word, $nameLower);
-            $inBrand = $this->wordFoundIn($word, $brandLower);
-            $inRef = $this->wordFoundIn($word, $refLower);
-
-            if ($inName) $wordsInName++;
-            if ($inBrand) $wordsInBrand++;
-            if ($inRef) $wordsInRef++;
-
-            if (!$inName && !$inBrand && !$inRef) {
-                $allWordsFound = false;
-            }
+            if ($this->wordFoundIn($word, $nameLower)) $wordsInName++;
+            if ($this->wordFoundIn($word, $brandLower)) $wordsInBrand++;
+            if ($this->wordFoundIn($word, $refLower)) $wordsInRef++;
         }
 
-        $totalWordsFound = 0;
-        foreach ($words as $word) {
-            if ($this->wordFoundIn($word, $nameAndBrand) || $this->wordFoundIn($word, $refLower)) {
-                $totalWordsFound++;
-            }
-        }
+        $allWordsInName = ($wordsInName === count($words));
+        $totalWordsFound = $wordsInName; // Conta solo parole nel nome per priorità
 
-        // Se TUTTE le parole sono trovate -> MASSIMA priorità
-        if ($allWordsFound && count($words) > 0) {
-            $score += 1000; // Base altissima per match completo
+        // Se TUTTE le parole sono nel NOME -> MASSIMA priorità
+        if ($allWordsInName && count($words) > 0) {
+            $score += 1000; // Base altissima per match completo nel nome
 
-            // Bonus extra se tutte le parole sono nel nome
-            if ($wordsInName === count($words)) {
-                $score += 300;
-            }
-
-            // Bonus se query esatta nel nome
+            // Bonus se query esatta nel nome (come stringa continua)
             if (strpos($nameLower, $query) !== false) {
-                $score += 200;
+                $score += 300;
                 if (strpos($nameLower, $query) === 0) {
                     $score += 100; // Inizia con la query
                 }
             }
 
-            // Bonus per parole nel brand
-            $score += $wordsInBrand * 50;
-
-            // Bonus per parole nel reference
-            $score += $wordsInRef * 40;
+            // Bonus minore per match anche in brand/reference
+            $score += $wordsInBrand * 10;
+            $score += $wordsInRef * 10;
         }
         // =============================================================
         // PRIORITÀ 1: MATCH QUERY ESATTA (stringa completa)
