@@ -935,6 +935,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         // Costruisci condizioni OR (trova prodotti che matchano ALMENO una parola o variazione)
         $orConditions = [];
+        $nameMatchCases = [];
         foreach ($expandedWords as $word) {
             $wordSafe = pSQL($word);
             $orConditions[] = "pl.name LIKE '%{$wordSafe}%'";
@@ -942,7 +943,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $orConditions[] = "pl.description LIKE '%{$wordSafe}%'";
             $orConditions[] = "p.reference LIKE '%{$wordSafe}%'";
             $orConditions[] = "m.name LIKE '%{$wordSafe}%'";
+            // Per ordinamento SQL: conta quante parole matchano nel nome
+            $nameMatchCases[] = "(CASE WHEN pl.name LIKE '%{$wordSafe}%' THEN 1 ELSE 0 END)";
         }
+        // Campo calcolato per ordinare per numero di parole matchate nel nome
+        $nameMatchScore = '(' . implode(' + ', $nameMatchCases) . ')';
 
         // Costruisci condizioni filtro
         $filterConditions = $this->buildFilterConditions($filters, $idShop);
@@ -964,7 +969,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
                 COALESCE((SELECT SUM(od.product_quantity) FROM ' . _DB_PREFIX_ . 'order_detail od
                     INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order AND o.valid = 1
-                    WHERE od.product_id = p.id_product), 0) as sales_count
+                    WHERE od.product_id = p.id_product), 0) as sales_count,
+                ' . $nameMatchScore . ' as name_match_count
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
@@ -977,7 +983,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE p.active = 1 AND ps.active = 1
             AND (' . implode(' OR ', $orConditions) . ')
             ' . $filterConditions . '
-            LIMIT 250';
+            ORDER BY name_match_count DESC, pl.name ASC
+            LIMIT 300';
 
         $results = Db::getInstance()->executeS($sql);
 
