@@ -632,12 +632,39 @@ class SmartSearch extends Module
             $cookie = Context::getContext()->cookie;
             $lastSearch = '';
             $sessionId = '';
+            $searchHistory = [];
+            $clickHistory = [];
+            $lastClick = null;
 
             if (isset($cookie->smartsearch_last_query)) {
                 $lastSearch = (string)$cookie->smartsearch_last_query;
             }
             if (isset($cookie->smartsearch_session_id)) {
                 $sessionId = (string)$cookie->smartsearch_session_id;
+            }
+
+            // Recupera storico ricerche (nuovo sistema di attribuzione)
+            if (isset($_COOKIE['smartsearch_search_history'])) {
+                $decoded = json_decode(urldecode($_COOKIE['smartsearch_search_history']), true);
+                if (is_array($decoded)) {
+                    $searchHistory = $decoded;
+                }
+            }
+
+            // Recupera storico click (nuovo sistema di attribuzione)
+            if (isset($_COOKIE['smartsearch_click_history'])) {
+                $decoded = json_decode(urldecode($_COOKIE['smartsearch_click_history']), true);
+                if (is_array($decoded)) {
+                    $clickHistory = $decoded;
+                }
+            }
+
+            // Recupera ultimo click
+            if (isset($_COOKIE['smartsearch_last_click'])) {
+                $decoded = json_decode(urldecode($_COOKIE['smartsearch_last_click']), true);
+                if (is_array($decoded)) {
+                    $lastClick = $decoded;
+                }
             }
 
             // Prepara i dati dei prodotti
@@ -672,6 +699,27 @@ class SmartSearch extends Module
                 }
             }
 
+            // Calcola attribuzione - cerca se i prodotti ordinati sono stati cliccati dalla ricerca
+            $attributedProducts = [];
+            foreach ($productsData as $product) {
+                $productId = $product['product_id'];
+                // Cerca nel click history se questo prodotto è stato cliccato
+                foreach ($clickHistory as $click) {
+                    if (isset($click['product_id']) && (int)$click['product_id'] === $productId) {
+                        $attributedProducts[] = [
+                            'product_id' => $productId,
+                            'product_name' => $product['product_name'],
+                            'search_query' => isset($click['query']) ? $click['query'] : '',
+                            'click_position' => isset($click['position']) ? $click['position'] : 0,
+                            'click_timestamp' => isset($click['timestamp']) ? $click['timestamp'] : null,
+                            'quantity' => $product['quantity'],
+                            'revenue' => $product['total']
+                        ];
+                        break;
+                    }
+                }
+            }
+
             // Invia al webhook n8n (non bloccante, con timeout basso)
             $this->sendConversionToWebhook([
                 'event_type' => 'conversion',
@@ -679,13 +727,24 @@ class SmartSearch extends Module
                 'order_reference' => $order->reference ?? '',
                 'session_id' => $sessionId,
                 'last_search_query' => $lastSearch,
+                'last_click' => $lastClick,
                 'customer_id' => (int)$order->id_customer,
                 'products' => $productsData,
                 'products_count' => count($productsData),
                 'revenue' => round($totalRevenue, 2),
                 'currency' => $currency,
                 'shop_id' => (int)$this->context->shop->id,
-                'timestamp' => date('c')
+                'timestamp' => date('c'),
+                // Nuovo sistema di attribuzione
+                'search_history' => $searchHistory,
+                'click_history' => $clickHistory,
+                'attributed_products' => $attributedProducts,
+                'attribution' => [
+                    'total_searches' => count($searchHistory),
+                    'total_clicks' => count($clickHistory),
+                    'attributed_revenue' => array_sum(array_column($attributedProducts, 'revenue')),
+                    'attribution_rate' => count($productsData) > 0 ? round(count($attributedProducts) / count($productsData) * 100, 2) : 0
+                ]
             ]);
 
             // Traccia anche internamente se abilitato

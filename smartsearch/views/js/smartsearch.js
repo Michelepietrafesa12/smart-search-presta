@@ -108,11 +108,23 @@
 
     /**
      * Track search event
+     * Salva storico completo delle ricerche per attribuzione conversioni
      */
     function trackSearch(query, resultsCount) {
-        // Salva ultima ricerca in cookie per tracking conversioni
         if (query && resultsCount > 0) {
+            // Salva ultima ricerca (retrocompatibilità)
             setCookie('smartsearch_last_query', query, 7);
+
+            // Salva storico ricerche della sessione (max 10)
+            const searchHistory = getSearchHistory();
+            searchHistory.push({
+                query: query,
+                results: resultsCount,
+                timestamp: Date.now()
+            });
+            // Mantieni solo le ultime 10 ricerche
+            if (searchHistory.length > 10) searchHistory.shift();
+            setCookie('smartsearch_search_history', JSON.stringify(searchHistory), 7);
         }
 
         sendAnalyticsEvent(resultsCount > 0 ? 'search' : 'no_results', {
@@ -123,15 +135,27 @@
 
     /**
      * Track product click event
+     * Salva storico completo dei click per attribuzione conversioni
      */
     function trackClick(productId, productName, position, price) {
-        // Salva ultimo prodotto cliccato per tracking conversioni
-        setCookie('smartsearch_last_click', JSON.stringify({
+        const clickData = {
             product_id: productId,
             product_name: productName,
             price: price,
-            query: currentQuery
-        }), 7);
+            query: currentQuery,
+            position: position,
+            timestamp: Date.now()
+        };
+
+        // Salva ultimo click (retrocompatibilità)
+        setCookie('smartsearch_last_click', JSON.stringify(clickData), 7);
+
+        // Salva storico click della sessione (max 20)
+        const clickHistory = getClickHistory();
+        clickHistory.push(clickData);
+        // Mantieni solo gli ultimi 20 click
+        if (clickHistory.length > 20) clickHistory.shift();
+        setCookie('smartsearch_click_history', JSON.stringify(clickHistory), 7);
 
         sendAnalyticsEvent('click', {
             query: currentQuery,
@@ -140,6 +164,40 @@
             position: position,
             price: price
         });
+    }
+
+    /**
+     * Get search history from cookie
+     */
+    function getSearchHistory() {
+        try {
+            const cookie = getCookie('smartsearch_search_history');
+            return cookie ? JSON.parse(cookie) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get click history from cookie
+     */
+    function getClickHistory() {
+        try {
+            const cookie = getCookie('smartsearch_click_history');
+            return cookie ? JSON.parse(cookie) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * Get cookie value
+     */
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+        return null;
     }
 
     // Icons SVG
