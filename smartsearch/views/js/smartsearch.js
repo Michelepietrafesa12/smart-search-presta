@@ -1182,12 +1182,9 @@
             activeBanners = data.banners;
         }
 
-        // Render sidebar filters
-        if (config.facets_enabled && data.facets) {
-            renderFilters(sidebar, data.facets);
-        } else {
-            sidebar.innerHTML = '';
-        }
+        // Mantieni i filtri esistenti - NON sovrascrivere con renderFilters(sidebar, data.facets)
+        // I filtri sono già renderizzati da renderFilters() all'apertura dell'overlay
+        // e lo stato è preservato in selectedFilters
 
         // Render main content
         let html = '';
@@ -1646,16 +1643,15 @@
     }
 
     /**
-     * Render no results
+     * Render no results - mostra suggerimenti e prodotti in evidenza
      */
     function renderNoResults(data) {
         const main = overlay.querySelector('.smartsearch-main');
-        const sidebar = overlay.querySelector('.smartsearch-sidebar');
 
-        sidebar.innerHTML = '';
+        // NON svuotare sidebar - mantieni i filtri
 
         let html = `
-            <div class="smartsearch-no-results">
+            <div class="smartsearch-no-results-header">
                 ${icons.noResults}
                 <h3>${t.no_results || 'Nessun risultato trovato'}</h3>
                 <p>${t.try_different || 'Prova con termini di ricerca diversi'}</p>
@@ -1665,7 +1661,6 @@
             html += `<p style="margin-top: 16px;">${t.did_you_mean || 'Forse cercavi'}:</p>`;
             html += '<div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px;">';
             data.did_you_mean.forEach(s => {
-                // Supporta sia stringhe che oggetti {term: ...}
                 const term = typeof s === 'string' ? s : (s.term || s);
                 html += `<span class="smartsearch-tag smartsearch-suggestion" data-query="${escapeHtml(term)}">${escapeHtml(term)}</span>`;
             });
@@ -1673,6 +1668,22 @@
         }
 
         html += '</div>';
+
+        // Aggiungi sezione prodotti in evidenza
+        html += `
+            <div class="smartsearch-featured-section">
+                <div class="smartsearch-section-title">
+                    <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                    <span>${t.featured_products || 'Prodotti in evidenza'}</span>
+                </div>
+                <div class="smartsearch-products-grid smartsearch-featured-products">
+                    <div class="smartsearch-loader">
+                        <div class="smartsearch-spinner"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+
         main.innerHTML = html;
 
         // Bind suggestion clicks
@@ -1683,6 +1694,54 @@
                 overlay.querySelector('.smartsearch-clear-input').classList.add('visible');
                 performSearch(query);
             });
+        });
+
+        // Carica prodotti in evidenza
+        loadFeaturedProductsForNoResults();
+    }
+
+    /**
+     * Carica prodotti in evidenza per pagina nessun risultato
+     */
+    function loadFeaturedProductsForNoResults() {
+        const container = overlay.querySelector('.smartsearch-featured-products');
+        if (!container) return;
+
+        const url = config.ajax_url + '?ajax=1&action=bestsellers';
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.products && data.products.length > 0) {
+                let html = '';
+                data.products.slice(0, 8).forEach((product, index) => {
+                    const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+                    html += `
+                        <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}">
+                            ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                            <div class="smartsearch-product-image">
+                                <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                            </div>
+                            <div class="smartsearch-product-info">
+                                <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
+                                <div class="smartsearch-product-prices">
+                                    ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                                    <span class="smartsearch-product-price">${product.price}</span>
+                                </div>
+                            </div>
+                        </a>
+                    `;
+                });
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<p style="text-align: center; color: #666; padding: 20px;">Nessun prodotto disponibile</p>';
+            }
+        })
+        .catch(() => {
+            container.innerHTML = '';
         });
     }
 
