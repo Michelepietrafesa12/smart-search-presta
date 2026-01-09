@@ -20,6 +20,13 @@
     let lastResults = null;
     let activeBanners = [];
 
+    // Pagination state
+    let currentOffset = 0;
+    let isLoadingMore = false;
+    let hasMoreResults = false;
+    let totalResultsCount = 0;
+    const RESULTS_PER_PAGE = 24;
+
     // Analytics
     const sessionId = getOrCreateSessionId();
 
@@ -1097,6 +1104,11 @@
         currentQuery = query;
         currentFilters = filters;
 
+        // Reset pagination state for new search
+        currentOffset = 0;
+        hasMoreResults = false;
+        totalResultsCount = 0;
+
         showLoader();
 
         // Load banners for this query
@@ -1104,6 +1116,7 @@
 
         // Aggiungi ajax=1 e action=search per PrestaShop
         let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(query);
+        url += '&offset=0&limit=' + RESULTS_PER_PAGE;
 
         if (filters.category && filters.category.length) url += '&category=' + filters.category.join(',');
         if (filters.manufacturer && filters.manufacturer.length) url += '&manufacturer=' + filters.manufacturer.join(',');
@@ -1124,14 +1137,130 @@
         })
         .then(data => {
             lastResults = data;
+            // Update pagination state
+            currentOffset = data.offset + data.products.length;
+            hasMoreResults = data.has_more || false;
+            totalResultsCount = data.total_count || data.total || 0;
+
             renderResults(data);
             saveRecentSearch(query);
             // Track search analytics
-            trackSearch(query, data.total || (data.products ? data.products.length : 0));
+            trackSearch(query, totalResultsCount);
         })
         .catch(error => {
             renderNoResults();
         });
+    }
+
+    /**
+     * Load more results (for infinite scroll)
+     */
+    function loadMoreResults() {
+        if (isLoadingMore || !hasMoreResults || !currentQuery) return;
+
+        isLoadingMore = true;
+
+        // Show loading indicator at bottom
+        const main = overlay.querySelector('.smartsearch-main');
+        const loadMoreIndicator = document.createElement('div');
+        loadMoreIndicator.className = 'smartsearch-load-more';
+        loadMoreIndicator.innerHTML = `
+            <div class="smartsearch-spinner" style="width:30px;height:30px;border-width:3px;margin:0 auto 10px;"></div>
+            <span>${t.loading_more || 'Caricamento...'}</span>
+        `;
+        main.appendChild(loadMoreIndicator);
+
+        let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(currentQuery);
+        url += '&offset=' + currentOffset + '&limit=' + RESULTS_PER_PAGE;
+
+        if (currentFilters.category && currentFilters.category.length) url += '&category=' + currentFilters.category.join(',');
+        if (currentFilters.manufacturer && currentFilters.manufacturer.length) url += '&manufacturer=' + currentFilters.manufacturer.join(',');
+        if (currentFilters.price_min) url += '&price_min=' + currentFilters.price_min;
+        if (currentFilters.price_max) url += '&price_max=' + currentFilters.price_max;
+        if (currentFilters.in_stock) url += '&in_stock=1';
+
+        fetch(url, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Remove loading indicator
+            loadMoreIndicator.remove();
+
+            if (data.products && data.products.length > 0) {
+                // Update pagination state
+                currentOffset += data.products.length;
+                hasMoreResults = data.has_more || false;
+
+                // Append new products to grid
+                appendProductsToGrid(data.products);
+
+                // Update results count display
+                updateResultsCount();
+            }
+
+            isLoadingMore = false;
+        })
+        .catch(error => {
+            loadMoreIndicator.remove();
+            isLoadingMore = false;
+        });
+    }
+
+    /**
+     * Append products to existing grid
+     */
+    function appendProductsToGrid(products) {
+        const grid = overlay.querySelector('.smartsearch-products-grid');
+        if (!grid) return;
+
+        const startIndex = grid.querySelectorAll('.smartsearch-product-card').length;
+
+        products.forEach((product, index) => {
+            const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+            const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
+
+            const card = document.createElement('a');
+            card.href = product.url;
+            card.className = 'smartsearch-product-card';
+            card.dataset.productId = product.id;
+            card.dataset.index = startIndex + index;
+            card.dataset.price = product.price_raw || 0;
+
+            card.innerHTML = `
+                ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                <div class="smartsearch-product-image">
+                    <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                </div>
+                <div class="smartsearch-product-info">
+                    <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
+                    <div class="smartsearch-product-prices">
+                        ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                        <span class="smartsearch-product-price">${product.price}</span>
+                    </div>
+                    ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
+                </div>
+            `;
+
+            // Bind click event for analytics
+            card.addEventListener('click', () => {
+                trackProductClick(product.id, currentQuery, startIndex + index);
+            });
+
+            grid.appendChild(card);
+        });
+    }
+
+    /**
+     * Update results count display
+     */
+    function updateResultsCount() {
+        const countEl = overlay.querySelector('.smartsearch-results-count');
+        if (countEl) {
+            const loadedCount = overlay.querySelectorAll('.smartsearch-product-card').length;
+            countEl.innerHTML = `<strong>${loadedCount}</strong> di ${totalResultsCount} ${t.products_found || 'risultati'}`;
+        }
     }
 
     /**
@@ -1220,11 +1349,17 @@
         // Render main content
         let html = '';
 
-        // Results header
+        // Results header with pagination info
+        const displayedCount = data.products.length;
+        const totalCount = data.total_count || data.total || displayedCount;
+        const countText = hasMoreResults
+            ? `<strong>${displayedCount}</strong> di ${totalCount} ${t.products_found || 'risultati'}`
+            : `<strong>${totalCount}</strong> ${t.products_found || 'risultati trovati'}`;
+
         html += `
             <div class="smartsearch-results-header">
                 <div class="smartsearch-results-count">
-                    <strong>${data.total || data.products.length}</strong> ${t.products_found || 'risultati trovati'}
+                    ${countText}
                 </div>
                 <div class="smartsearch-results-sort">
                     <span>${t.sort_by || 'Ordinato per'}:</span>
@@ -1308,6 +1443,36 @@
 
         // Bind events
         bindResultEvents();
+
+        // Setup infinite scroll
+        setupInfiniteScroll();
+    }
+
+    /**
+     * Setup infinite scroll listener
+     */
+    function setupInfiniteScroll() {
+        const main = overlay.querySelector('.smartsearch-main');
+        if (!main) return;
+
+        // Remove existing listener to avoid duplicates
+        main.removeEventListener('scroll', handleInfiniteScroll);
+        main.addEventListener('scroll', handleInfiniteScroll);
+    }
+
+    /**
+     * Handle infinite scroll
+     */
+    function handleInfiniteScroll(e) {
+        const main = e.target;
+        const scrollTop = main.scrollTop;
+        const scrollHeight = main.scrollHeight;
+        const clientHeight = main.clientHeight;
+
+        // Trigger load more when user scrolls to 80% of the page
+        if (scrollTop + clientHeight >= scrollHeight * 0.8) {
+            loadMoreResults();
+        }
     }
 
     /**

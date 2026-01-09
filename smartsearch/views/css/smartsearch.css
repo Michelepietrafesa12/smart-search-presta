@@ -1582,3 +1582,19 @@ mark {
         margin: 16px 0 0 0;
     }
 }
+
+/* === INFINITE SCROLL LOAD MORE === */
+.smartsearch-load-more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 20px;
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+}
+
+.smartsearch-load-more .smartsearch-spinner {
+    margin-bottom: 10px;
+}

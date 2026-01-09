@@ -172,8 +172,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 ], JSON_UNESCAPED_UNICODE));
             }
 
-            // Controlla cache per query popolari
-            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop);
+            // Ottieni filtri dalla richiesta
+            $filters = $this->getFiltersFromRequest();
+
+            // Parametri paginazione
+            $offset = max(0, (int)Tools::getValue('offset', 0));
+            $limit = min(50, max(10, (int)Tools::getValue('limit', 24))); // min 10, max 50, default 24
+
+            // Controlla cache per query popolari (include offset/limit nella chiave)
+            $filterHash = md5(json_encode($filters));
+            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop . '_' . $offset . '_' . $limit . '_' . $filterHash);
             $cachedResult = $this->getFromCache($cacheKey);
 
             if ($cachedResult !== false) {
@@ -182,24 +190,26 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 die(json_encode($cachedResult, JSON_UNESCAPED_UNICODE));
             }
 
-            // Ottieni filtri dalla richiesta
-            $filters = $this->getFiltersFromRequest();
-
             // Ricerca prodotti con filtri
-            $products = $this->searchProducts($query, $idLang, $idShop, $filters);
+            $allProducts = $this->searchProducts($query, $idLang, $idShop, $filters);
+            $totalCount = count($allProducts);
 
-            // Ricerca categorie
-            $categories = $this->searchCategories($query, $idLang, $idShop);
+            // Applica paginazione
+            $products = array_slice($allProducts, $offset, $limit);
+            $hasMore = ($offset + $limit) < $totalCount;
 
-            // Ottieni banner attivi per questa query
-            $banners = $this->getBannersForQuery($query, $idShop);
+            // Ricerca categorie (solo alla prima richiesta)
+            $categories = ($offset === 0) ? $this->searchCategories($query, $idLang, $idShop) : [];
 
-            // Costruisci facets per i filtri
-            $facets = $this->buildFacets($idLang, $idShop);
+            // Ottieni banner attivi per questa query (solo alla prima richiesta)
+            $banners = ($offset === 0) ? $this->getBannersForQuery($query, $idShop) : [];
 
-            // Genera suggerimenti "Forse cercavi..." se pochi risultati
+            // Costruisci facets per i filtri (solo alla prima richiesta)
+            $facets = ($offset === 0) ? $this->buildFacets($idLang, $idShop) : [];
+
+            // Genera suggerimenti "Forse cercavi..." se pochi risultati (solo alla prima richiesta)
             $didYouMean = [];
-            if (count($products) < 3) {
+            if ($offset === 0 && $totalCount < 3) {
                 $didYouMean = $this->getDidYouMeanSuggestions($query, $idLang, $idShop);
             }
 
@@ -207,6 +217,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'products' => $products,
                 'categories' => $categories,
                 'total' => count($products),
+                'total_count' => $totalCount,
+                'offset' => $offset,
+                'limit' => $limit,
+                'has_more' => $hasMore,
                 'query' => $query,
                 'facets' => $facets,
                 'banners' => $banners,
@@ -689,8 +703,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return strcmp($a['name'] ?? '', $b['name'] ?? '');
         });
 
-        // 6. Limita risultati
-        $results = array_slice($results, 0, 100);
+        // 6. Limita risultati totali a 200
+        $results = array_slice($results, 0, 200);
 
         return $this->formatProducts($results, $idLang);
     }
@@ -1415,7 +1429,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             AND ps.active = 1
             AND (' . $whereCondition . ')
             ORDER BY pl.name ASC
-            LIMIT 100';
+            LIMIT 200';
 
         return Db::getInstance()->executeS($sql);
     }
@@ -1991,7 +2005,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE pl.id_lang = ' . (int)$idLang . '
             AND ps.active = 1
             AND (' . implode(' OR ', $likeConditions) . ')
-            LIMIT 100';
+            LIMIT 200';
 
         $results = Db::getInstance()->executeS($sql);
 
