@@ -455,26 +455,337 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Ricerca prodotti con supporto fuzzy/tollerante e boosting
+     * Ricerca prodotti con SISTEMA DI SCORING INTELLIGENTE
+     *
+     * Punteggi:
+     * - Match esatto query nel nome: 100 punti
+     * - Nome inizia con la query: 50 punti
+     * - Match parola nel nome: 30 punti per parola
+     * - Match EAN/SKU esatto: 150 punti (priorità massima)
+     * - Match reference parziale: 80 punti
+     * - Match marca: 25 punti
+     * - Match descrizione: 10 punti per parola
+     * - Bonus bestseller: +20 punti
+     * - Bonus recensioni 4+: +15 punti
+     * - Bonus prodotto recente (< 30 giorni): +10 punti
      */
     protected function searchProducts($query, $idLang, $idShop)
     {
-        // Prima prova ricerca esatta
-        $results = $this->searchProductsExact($query, $idLang, $idShop);
-
-        // Se non trova nulla, prova ricerca fuzzy
-        if (empty($results)) {
-            $results = $this->searchProductsFuzzy($query, $idLang, $idShop);
+        $query = trim($query);
+        if (empty($query)) {
+            return [];
         }
+
+        // 1. Prima controlla match esatto EAN/SKU (priorità massima)
+        $exactMatch = $this->searchByExactCode($query, $idLang, $idShop);
+        if (!empty($exactMatch)) {
+            return $this->formatProducts($exactMatch, $idLang);
+        }
+
+        // 2. Ricerca con scoring
+        $results = $this->searchProductsWithScoring($query, $idLang, $idShop);
+
+        // 3. Se pochi risultati, aggiungi fuzzy search
+        if (count($results) < 5) {
+            $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop);
+            $results = $this->mergeResultsWithScoring($results, $fuzzyResults, $query);
+        }
+
+        if (empty($results)) {
+            return [];
+        }
+
+        // 4. Applica boosting configurato
+        $results = $this->applyBoosting($results, $query, $idShop);
+
+        // 5. Ordina per score totale (relevance_score * boost_score)
+        usort($results, function($a, $b) {
+            $scoreA = ($a['_relevance_score'] ?? 0) * ($a['_boost_score'] ?? 1);
+            $scoreB = ($b['_relevance_score'] ?? 0) * ($b['_boost_score'] ?? 1);
+            if ($scoreA !== $scoreB) {
+                return $scoreB <=> $scoreA;
+            }
+            return strcmp($a['name'] ?? '', $b['name'] ?? '');
+        });
+
+        // 6. Limita risultati
+        $results = array_slice($results, 0, 20);
+
+        return $this->formatProducts($results, $idLang);
+    }
+
+    /**
+     * Cerca per codice esatto (EAN, SKU, Reference)
+     */
+    protected function searchByExactCode($query, $idLang, $idShop)
+    {
+        // Rimuovi spazi e normalizza
+        $code = preg_replace('/\s+/', '', $query);
+
+        // Solo se sembra un codice (alfanumerico senza spazi)
+        if (strlen($code) < 4 || !preg_match('/^[a-zA-Z0-9\-_]+$/', $code)) {
+            return [];
+        }
+
+        $sql = '
+            SELECT DISTINCT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.reference,
+                p.ean13,
+                p.upc,
+                p.id_category_default,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                cl.name as category_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
+                COALESCE(ps_sales.quantity, 0) as sales_count,
+                150 as _relevance_score
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
+                AND cl.id_lang = ' . (int)$idLang . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'product_sale ps_sales ON p.id_product = ps_sales.id_product
+            WHERE p.active = 1 AND ps.active = 1
+            AND (
+                p.reference = \'' . pSQL($code) . '\'
+                OR p.ean13 = \'' . pSQL($code) . '\'
+                OR p.upc = \'' . pSQL($code) . '\'
+            )
+            LIMIT 1';
+
+        $result = Db::getInstance()->executeS($sql);
+        return $result ?: [];
+    }
+
+    /**
+     * Ricerca prodotti con calcolo score di rilevanza
+     */
+    protected function searchProductsWithScoring($query, $idLang, $idShop)
+    {
+        $queryLower = mb_strtolower(trim($query));
+        $words = array_filter(explode(' ', $queryLower), function($w) {
+            return mb_strlen($w) >= 2;
+        });
+
+        if (empty($words)) {
+            return [];
+        }
+
+        // Costruisci condizioni OR (trova prodotti che matchano ALMENO una parola)
+        $orConditions = [];
+        foreach ($words as $word) {
+            $wordSafe = pSQL($word);
+            $orConditions[] = "pl.name LIKE '%{$wordSafe}%'";
+            $orConditions[] = "pl.description_short LIKE '%{$wordSafe}%'";
+            $orConditions[] = "p.reference LIKE '%{$wordSafe}%'";
+            $orConditions[] = "m.name LIKE '%{$wordSafe}%'";
+        }
+
+        $sql = '
+            SELECT DISTINCT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.reference,
+                p.ean13,
+                p.id_category_default,
+                p.id_manufacturer,
+                p.date_add,
+                m.name as manufacturer_name,
+                cl.name as category_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
+                COALESCE(ps_sales.quantity, 0) as sales_count,
+                COALESCE(
+                    (SELECT AVG(grade) FROM ' . _DB_PREFIX_ . 'product_comment pc
+                     WHERE pc.id_product = p.id_product AND pc.validate = 1), 0
+                ) as avg_rating
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
+                AND cl.id_lang = ' . (int)$idLang . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'product_sale ps_sales ON p.id_product = ps_sales.id_product
+            WHERE p.active = 1 AND ps.active = 1
+            AND (' . implode(' OR ', $orConditions) . ')
+            LIMIT 100';
+
+        $results = Db::getInstance()->executeS($sql);
 
         if (!$results) {
             return [];
         }
 
-        // Applica boosting ai risultati
-        $results = $this->applyBoosting($results, $query, $idShop);
+        // Calcola score per ogni prodotto
+        foreach ($results as &$product) {
+            $product['_relevance_score'] = $this->calculateRelevanceScore($product, $queryLower, $words);
+        }
 
-        return $this->formatProducts($results, $idLang);
+        // Ordina per score
+        usort($results, function($a, $b) {
+            return ($b['_relevance_score'] ?? 0) <=> ($a['_relevance_score'] ?? 0);
+        });
+
+        return $results;
+    }
+
+    /**
+     * Calcola lo score di rilevanza per un prodotto
+     */
+    protected function calculateRelevanceScore($product, $query, $words)
+    {
+        $score = 0;
+        $nameLower = mb_strtolower($product['name'] ?? '');
+        $descLower = mb_strtolower($product['description_short'] ?? '');
+        $refLower = mb_strtolower($product['reference'] ?? '');
+        $brandLower = mb_strtolower($product['manufacturer_name'] ?? '');
+
+        // === MATCH NEL NOME (peso più alto) ===
+
+        // Match esatto della query completa nel nome
+        if (strpos($nameLower, $query) !== false) {
+            $score += 100;
+
+            // Bonus se il nome INIZIA con la query
+            if (strpos($nameLower, $query) === 0) {
+                $score += 50;
+            }
+        }
+
+        // Match per singole parole nel nome
+        $nameWordMatches = 0;
+        foreach ($words as $word) {
+            if (strpos($nameLower, $word) !== false) {
+                $score += 30;
+                $nameWordMatches++;
+
+                // Bonus se la parola è all'inizio del nome
+                if (strpos($nameLower, $word) === 0) {
+                    $score += 15;
+                }
+            }
+        }
+
+        // Bonus per match di TUTTE le parole nel nome
+        if ($nameWordMatches === count($words) && count($words) > 1) {
+            $score += 40;
+        }
+
+        // === MATCH NEL REFERENCE/SKU ===
+        if (!empty($refLower)) {
+            if ($refLower === $query) {
+                $score += 120; // Match esatto reference
+            } elseif (strpos($refLower, $query) !== false) {
+                $score += 80;
+            } else {
+                foreach ($words as $word) {
+                    if (strpos($refLower, $word) !== false) {
+                        $score += 40;
+                    }
+                }
+            }
+        }
+
+        // === MATCH NELLA MARCA ===
+        if (!empty($brandLower)) {
+            if (strpos($brandLower, $query) !== false) {
+                $score += 35;
+            } else {
+                foreach ($words as $word) {
+                    if (strpos($brandLower, $word) !== false) {
+                        $score += 25;
+                    }
+                }
+            }
+        }
+
+        // === MATCH NELLA DESCRIZIONE (peso più basso) ===
+        foreach ($words as $word) {
+            if (strpos($descLower, $word) !== false) {
+                $score += 10;
+            }
+        }
+
+        // === BONUS BESTSELLER ===
+        $salesCount = (int)($product['sales_count'] ?? 0);
+        if ($salesCount > 100) {
+            $score += 20;
+        } elseif ($salesCount > 50) {
+            $score += 15;
+        } elseif ($salesCount > 10) {
+            $score += 10;
+        } elseif ($salesCount > 0) {
+            $score += 5;
+        }
+
+        // === BONUS RECENSIONI ===
+        $avgRating = (float)($product['avg_rating'] ?? 0);
+        if ($avgRating >= 4.5) {
+            $score += 15;
+        } elseif ($avgRating >= 4.0) {
+            $score += 10;
+        } elseif ($avgRating >= 3.5) {
+            $score += 5;
+        }
+
+        // === BONUS PRODOTTO RECENTE ===
+        if (!empty($product['date_add'])) {
+            $daysOld = (time() - strtotime($product['date_add'])) / 86400;
+            if ($daysOld <= 7) {
+                $score += 15; // Novità ultima settimana
+            } elseif ($daysOld <= 30) {
+                $score += 10; // Novità ultimo mese
+            }
+        }
+
+        return $score;
+    }
+
+    /**
+     * Unisce risultati rimuovendo duplicati e mantenendo score migliore
+     */
+    protected function mergeResultsWithScoring($primary, $secondary, $query)
+    {
+        $queryLower = mb_strtolower(trim($query));
+        $words = array_filter(explode(' ', $queryLower), function($w) {
+            return mb_strlen($w) >= 2;
+        });
+
+        $merged = [];
+        $ids = [];
+
+        // Aggiungi risultati primari
+        foreach ($primary as $product) {
+            $id = $product['id_product'];
+            $merged[$id] = $product;
+            $ids[$id] = true;
+        }
+
+        // Aggiungi risultati secondari se non già presenti
+        foreach ($secondary as $product) {
+            $id = $product['id_product'];
+            if (!isset($ids[$id])) {
+                // Calcola score se non presente
+                if (!isset($product['_relevance_score'])) {
+                    $product['_relevance_score'] = $this->calculateRelevanceScore($product, $queryLower, $words);
+                    // Penalità per risultati fuzzy (sono meno precisi)
+                    $product['_relevance_score'] *= 0.7;
+                }
+                $merged[$id] = $product;
+            }
+        }
+
+        return array_values($merged);
     }
 
     /**
@@ -548,8 +859,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 // Carica il prodotto dal database
                 $injectedProduct = $this->loadProductById($ruleProductId, $idLang, $idShop);
                 if ($injectedProduct) {
+                    // Calcola relevance score per il prodotto iniettato
+                    $words = array_filter($queryWords, function($w) { return strlen($w) >= 2; });
+                    $injectedProduct['_relevance_score'] = $this->calculateRelevanceScore($injectedProduct, $queryLower, $words);
+                    // Aggiungi bonus base per prodotti boostati (sono stati selezionati manualmente)
+                    $injectedProduct['_relevance_score'] += 50;
                     $injectedProduct['_boost_score'] = $boostValue;
-                    $injectedProduct['_injected'] = true; // Flag per debug
+                    $injectedProduct['_injected'] = true;
                     $products[] = $injectedProduct;
                     $existingIds[$ruleProductId] = true;
                 }
@@ -558,9 +874,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         // Poi: applica boost ai prodotti esistenti
         foreach ($products as &$product) {
+            // Inizializza score se non presenti
             if (!isset($product['_boost_score'])) {
                 $product['_boost_score'] = 1.0;
             }
+            if (!isset($product['_relevance_score'])) {
+                $product['_relevance_score'] = 50; // Score base
+            }
+
             $productId = isset($product['id_product']) ? (int)$product['id_product'] : 0;
 
             if (!$productId || isset($product['_injected'])) {
@@ -602,20 +923,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // Ordina per boost score (più alto prima), poi per nome
-        usort($products, function($a, $b) {
-            $scoreA = isset($a['_boost_score']) ? $a['_boost_score'] : 1.0;
-            $scoreB = isset($b['_boost_score']) ? $b['_boost_score'] : 1.0;
-
-            if ($scoreA != $scoreB) {
-                return ($scoreB > $scoreA) ? 1 : -1;
-            }
-
-            $nameA = isset($a['name']) ? $a['name'] : '';
-            $nameB = isset($b['name']) ? $b['name'] : '';
-            return strcmp($nameA, $nameB);
-        });
-
+        // Il sort finale viene fatto in searchProducts() usando relevance_score * boost_score
         return $products;
     }
 
