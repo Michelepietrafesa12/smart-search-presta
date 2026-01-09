@@ -224,7 +224,7 @@
     flex-shrink: 0;
     padding: 0;
     scrollbar-width: thin;
-    scrollbar-color: #f97316 #f0f0f0;
+    scrollbar-color: var(--ss-accent) #f0f0f0;
 }
 
 .smartsearch-filter-section {
@@ -262,7 +262,7 @@
 .smartsearch-filter-toggle {
     width: 20px;
     height: 20px;
-    color: #f97316;
+    color: var(--ss-accent);
     transition: transform 0.2s;
 }
 
@@ -282,7 +282,7 @@
 
 /* Price badge per i valori min/max (se usati) */
 .smartsearch-price-badge {
-    background: linear-gradient(135deg, #f97316, #fb923c);
+    background: var(--ss-accent);
     color: #fff;
     padding: 6px 14px;
     border-radius: 8px;
@@ -303,7 +303,7 @@
 }
 
 .smartsearch-filter-search:focus-within {
-    border-color: #f97316;
+    border-color: var(--ss-accent);
     background: #fff;
 }
 
@@ -359,12 +359,12 @@
 }
 
 .smartsearch-filter-option:hover .smartsearch-filter-checkbox {
-    border-color: #f97316;
+    border-color: var(--ss-accent);
 }
 
 .smartsearch-filter-option.selected .smartsearch-filter-checkbox {
-    background: #f97316;
-    border-color: #f97316;
+    background: var(--ss-accent);
+    border-color: var(--ss-accent);
 }
 
 .smartsearch-filter-checkbox svg {
@@ -414,14 +414,14 @@
 }
 
 .smartsearch-filter-tag:hover {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--ss-accent);
+    color: var(--ss-accent);
     background: #fff7ed;
 }
 
 .smartsearch-filter-tag.selected {
-    background: #f97316;
-    border-color: #f97316;
+    background: var(--ss-accent);
+    border-color: var(--ss-accent);
     color: #fff;
 }
 
@@ -452,7 +452,7 @@
 }
 
 .smartsearch-results-count strong {
-    color: #f97316;
+    color: var(--ss-accent);
     font-weight: 700;
 }
 
@@ -475,7 +475,7 @@
 }
 
 .smartsearch-results-sort select:focus {
-    border-color: #f97316;
+    border-color: var(--ss-accent);
     outline: none;
 }
 
@@ -683,7 +683,7 @@
     width: 50px;
     height: 50px;
     border: 4px solid #e0e0e0;
-    border-top-color: #f97316;
+    border-top-color: var(--ss-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin-bottom: 20px;
@@ -709,7 +709,7 @@
 .smartsearch-no-results-header svg {
     width: 60px;
     height: 60px;
-    color: #f97316;
+    color: var(--ss-accent);
     opacity: 0.5;
     margin-bottom: 16px;
 }
@@ -861,12 +861,12 @@ mark {
         gap: 8px;
         padding: 14px;
         background: #fff;
-        border: 2px solid #f97316;
+        border: 2px solid var(--ss-accent);
         border-radius: 10px;
         margin: 16px;
         font-size: 14px;
         font-weight: 600;
-        color: #f97316;
+        color: var(--ss-accent);
         cursor: pointer;
     }
 
@@ -915,7 +915,7 @@ mark {
     justify-content: center;
     min-width: 22px;
     height: 22px;
-    background: #f97316;
+    background: var(--ss-accent);
     color: #fff;
     font-size: 12px;
     font-weight: 700;
@@ -953,7 +953,7 @@ mark {
 .smartsearch-sidebar::-webkit-scrollbar-thumb:hover,
 .smartsearch-main::-webkit-scrollbar-thumb:hover,
 .smartsearch-filter-options::-webkit-scrollbar-thumb:hover {
-    background: #f97316;
+    background: var(--ss-accent);
 }
 
 /* === NUOVI FILTRI === */
@@ -984,7 +984,7 @@ mark {
     height: 44px;
     min-width: 44px;
     border: none;
-    background: #f97316;
+    background: var(--ss-accent);
     border-radius: 50%;
     cursor: pointer;
     align-items: center;
@@ -1057,7 +1057,7 @@ mark {
 .smartsearch-filter-title svg {
     width: 20px;
     height: 20px;
-    color: #f97316;
+    color: var(--ss-accent);
     transition: transform 0.2s;
 }
 
@@ -1147,7 +1147,7 @@ mark {
     left: var(--track-left, 0%);
     right: var(--track-right, 0%);
     height: 100%;
-    background: linear-gradient(90deg, #f97316, #fb923c);
+    background: var(--ss-accent);
     border-radius: 3px;
 }
 
@@ -1189,7 +1189,7 @@ mark {
     width: 26px;
     height: 26px;
     background: #fff;
-    border: 4px solid #f97316;
+    border: 4px solid var(--ss-accent);
     border-radius: 50%;
     cursor: grab;
     pointer-events: auto;
@@ -1222,7 +1222,7 @@ mark {
     width: 26px;
     height: 26px;
     background: #fff;
-    border: 4px solid #f97316;
+    border: 4px solid var(--ss-accent);
     border-radius: 50%;
     cursor: grab;
     pointer-events: auto;
@@ -1267,8 +1267,8 @@ mark {
 }
 
 .smartsearch-filter-checkbox input:checked + .smartsearch-checkbox-mark {
-    background: #f97316;
-    border-color: #f97316;
+    background: var(--ss-accent);
+    border-color: var(--ss-accent);
 }
 
 .smartsearch-filter-checkbox input:checked + .smartsearch-checkbox-mark::after {
@@ -1279,7 +1279,7 @@ mark {
 }
 
 .smartsearch-filter-checkbox:hover .smartsearch-checkbox-mark {
-    border-color: #f97316;
+    border-color: var(--ss-accent);
 }
 
 .smartsearch-filter-name {
@@ -1312,7 +1312,7 @@ mark {
 }
 
 .smartsearch-filter-search-input:focus {
-    border-color: #f97316;
+    border-color: var(--ss-accent);
     background: #fff;
 }
 
@@ -1335,13 +1335,13 @@ mark {
 }
 
 .smartsearch-filter-tag:hover {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--ss-accent);
+    color: var(--ss-accent);
 }
 
 .smartsearch-filter-tag.active {
-    background: #f97316;
-    border-color: #f97316;
+    background: var(--ss-accent);
+    border-color: var(--ss-accent);
     color: #fff;
 }
 
@@ -1370,14 +1370,14 @@ mark {
 }
 
 .smartsearch-clear-filters:hover {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--ss-accent);
+    color: var(--ss-accent);
 }
 
 .smartsearch-apply-filters {
     flex: 1;
     padding: 14px;
-    background: linear-gradient(135deg, #f97316, #fb923c);
+    background: var(--ss-accent);
     border: none;
     border-radius: 10px;
     font-size: 14px;
@@ -1422,7 +1422,7 @@ mark {
         top: 0;
         z-index: 10;
         background: #fff;
-        border-bottom: 2px solid #f97316;
+        border-bottom: 2px solid var(--ss-accent);
         display: flex;
         align-items: center;
         justify-content: space-between;
