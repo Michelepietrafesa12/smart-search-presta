@@ -1157,6 +1157,16 @@
     function renderFilters(container, facets) {
         let html = '';
 
+        // Header con pulsante chiudi per mobile
+        html += `
+            <div class="smartsearch-filters-header">
+                <h3>${t.filters || 'Filtri'}</h3>
+                <button type="button" class="smartsearch-filters-close-mobile" onclick="this.closest('.smartsearch-sidebar').classList.remove('mobile-visible')">
+                    ${icons.close}
+                </button>
+            </div>
+        `;
+
         // Price filter
         if (facets.price_range && facets.price_range.max > 0) {
             const min = Math.floor(facets.price_range.min);
