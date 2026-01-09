@@ -209,6 +209,46 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
         $html = '<div class="panel"><div class="panel-heading"><i class="icon-rocket"></i> Product Boosting</div>';
 
+        // Guida al boosting
+        $html .= '<div class="alert alert-info">';
+        $html .= '<h4><i class="icon-info-circle"></i> Come funziona il Product Boosting</h4>';
+        $html .= '<p>Il boosting permette di aumentare la visibilità di specifici prodotti nei risultati di ricerca.</p>';
+        $html .= '<hr style="margin: 10px 0; border-color: rgba(0,0,0,0.1);">';
+        $html .= '<div class="row">';
+
+        // Colonna 1: Valore Boost
+        $html .= '<div class="col-md-4">';
+        $html .= '<h5><i class="icon-star"></i> Valore Boost</h5>';
+        $html .= '<ul style="padding-left: 20px; margin-bottom: 0;">';
+        $html .= '<li><strong>1.0</strong> = Priorità normale (nessun boost)</li>';
+        $html .= '<li><strong>1.5</strong> = Priorità aumentata del 50%</li>';
+        $html .= '<li><strong>2.0</strong> = Doppia priorità</li>';
+        $html .= '<li><strong>5.0+</strong> = Prodotto sempre in cima</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        // Colonna 2: Keywords
+        $html .= '<div class="col-md-4">';
+        $html .= '<h5><i class="icon-key"></i> Keywords (Opzionale)</h5>';
+        $html .= '<ul style="padding-left: 20px; margin-bottom: 0;">';
+        $html .= '<li><strong>Vuoto</strong> = Boost sempre attivo</li>';
+        $html .= '<li><strong>Con keywords</strong> = Boost attivo solo quando la ricerca contiene quelle parole</li>';
+        $html .= '<li>Separa più keywords con virgola</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        // Colonna 3: Esempi
+        $html .= '<div class="col-md-4">';
+        $html .= '<h5><i class="icon-lightbulb-o"></i> Esempi</h5>';
+        $html .= '<ul style="padding-left: 20px; margin-bottom: 0;">';
+        $html .= '<li><em>"Scarpe Nike"</em> + boost 3.0 + keywords "scarpe" → Appare in cima quando si cerca "scarpe"</li>';
+        $html .= '<li><em>"Offerta Speciale"</em> + boost 5.0 + (vuoto) → Sempre visibile in cima a qualsiasi ricerca</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // chiude row
+        $html .= '</div>'; // chiude alert
+
         // Form con action esplicita
         $products = Product::getProducts($this->context->language->id, 0, 100, 'name', 'ASC', false, true);
 
