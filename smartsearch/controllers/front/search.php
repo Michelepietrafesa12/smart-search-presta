@@ -43,7 +43,17 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 ], JSON_UNESCAPED_UNICODE));
             }
 
-            // Ricerca prodotti semplice
+            // Controlla cache per query popolari
+            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop);
+            $cachedResult = $this->getFromCache($cacheKey);
+
+            if ($cachedResult !== false) {
+                // Aggiungi flag cache hit per debug
+                $cachedResult['_cached'] = true;
+                die(json_encode($cachedResult, JSON_UNESCAPED_UNICODE));
+            }
+
+            // Ricerca prodotti
             $products = $this->searchProducts($query, $idLang, $idShop);
 
             // Ricerca categorie
@@ -55,15 +65,31 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Costruisci facets per i filtri
             $facets = $this->buildFacets($idLang, $idShop);
 
-            die(json_encode([
+            // Genera suggerimenti "Forse cercavi..." se pochi risultati
+            $didYouMean = [];
+            if (count($products) < 3) {
+                $didYouMean = $this->getDidYouMeanSuggestions($query, $idLang, $idShop);
+            }
+
+            $response = [
                 'products' => $products,
                 'categories' => $categories,
                 'total' => count($products),
                 'query' => $query,
                 'facets' => $facets,
                 'banners' => $banners,
-                'did_you_mean' => []
-            ], JSON_UNESCAPED_UNICODE));
+                'did_you_mean' => $didYouMean
+            ];
+
+            // Salva in cache se ha risultati (cache per 5 minuti)
+            if (count($products) > 0) {
+                $this->saveToCache($cacheKey, $response, 300);
+            }
+
+            // Traccia ricerca per statistiche (per "forse cercavi" futuro)
+            $this->trackSearchQuery($query, count($products), $idLang, $idShop);
+
+            die(json_encode($response, JSON_UNESCAPED_UNICODE));
 
         } catch (Exception $e) {
             // Log error only in dev mode, never expose to frontend
@@ -1455,5 +1481,335 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         return $result;
+    }
+
+    // =========================================================================
+    // CACHE SYSTEM
+    // =========================================================================
+
+    /**
+     * Recupera risultati dalla cache
+     * Cache valida per 5 minuti (300 secondi)
+     */
+    protected function getFromCache($key)
+    {
+        // Usa la cache di PrestaShop se disponibile
+        if (class_exists('Cache') && method_exists('Cache', 'getInstance')) {
+            $cache = Cache::getInstance();
+            if ($cache->exists($key)) {
+                $data = $cache->get($key);
+                if ($data !== false) {
+                    return json_decode($data, true);
+                }
+            }
+        }
+
+        // Fallback: cache su database (cache valida per 5 minuti)
+        $sql = 'SELECT result_data FROM `' . _DB_PREFIX_ . 'smartsearch_cache`
+                WHERE cache_key = \'' . pSQL($key) . '\'
+                AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                LIMIT 1';
+
+        try {
+            $result = Db::getInstance()->getRow($sql);
+            if ($result && !empty($result['result_data'])) {
+                return json_decode($result['result_data'], true);
+            }
+        } catch (Exception $e) {
+            // Table might not exist
+        }
+
+        return false;
+    }
+
+    /**
+     * Salva risultati in cache
+     */
+    protected function saveToCache($key, $data, $ttl = 300)
+    {
+        $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE);
+
+        // Usa la cache di PrestaShop se disponibile
+        if (class_exists('Cache') && method_exists('Cache', 'getInstance')) {
+            $cache = Cache::getInstance();
+            $cache->set($key, $jsonData, $ttl);
+        }
+
+        // Salva anche su database
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+        $query = Tools::getValue('q', '');
+
+        // Usa REPLACE per aggiornare se esiste
+        $sql = 'REPLACE INTO `' . _DB_PREFIX_ . 'smartsearch_cache`
+                (cache_key, result_data, query, id_lang, id_shop, created_at)
+                VALUES (
+                    \'' . pSQL($key) . '\',
+                    \'' . pSQL($jsonData) . '\',
+                    \'' . pSQL($query) . '\',
+                    ' . $idLang . ',
+                    ' . $idShop . ',
+                    NOW()
+                )';
+
+        try {
+            Db::getInstance()->execute($sql);
+        } catch (Exception $e) {
+            // Cache table might not exist, ignore
+        }
+    }
+
+    /**
+     * Pulisce la cache scaduta (più di 10 minuti)
+     */
+    public static function cleanExpiredCache()
+    {
+        $sql = 'DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_cache`
+                WHERE created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
+        try {
+            Db::getInstance()->execute($sql);
+        } catch (Exception $e) {
+            // Ignore
+        }
+    }
+
+    // =========================================================================
+    // "FORSE CERCAVI..." (Did You Mean)
+    // =========================================================================
+
+    /**
+     * Genera suggerimenti "Forse cercavi..." per query con pochi risultati
+     */
+    protected function getDidYouMeanSuggestions($query, $idLang, $idShop)
+    {
+        $suggestions = [];
+        $queryLower = mb_strtolower(trim($query));
+
+        // 1. Cerca query popolari simili (basate su ricerche precedenti con risultati)
+        $popularSuggestions = $this->getSimilarPopularQueries($queryLower, $idLang, $idShop);
+        $suggestions = array_merge($suggestions, $popularSuggestions);
+
+        // 2. Cerca nomi prodotti simili
+        $productSuggestions = $this->getSimilarProductNames($queryLower, $idLang, $idShop);
+        $suggestions = array_merge($suggestions, $productSuggestions);
+
+        // 3. Cerca marche simili
+        $brandSuggestions = $this->getSimilarBrands($queryLower);
+        $suggestions = array_merge($suggestions, $brandSuggestions);
+
+        // Rimuovi duplicati e limita
+        $suggestions = array_unique($suggestions);
+        $suggestions = array_filter($suggestions, function($s) use ($queryLower) {
+            return mb_strtolower($s) !== $queryLower; // Escludi la query originale
+        });
+
+        return array_slice(array_values($suggestions), 0, 5);
+    }
+
+    /**
+     * Trova query popolari simili usando Levenshtein
+     */
+    protected function getSimilarPopularQueries($query, $idLang, $idShop)
+    {
+        $suggestions = [];
+
+        // Ottieni ricerche popolari con risultati
+        $sql = 'SELECT search_query, search_count
+                FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+                WHERE id_lang = ' . (int)$idLang . '
+                AND id_shop = ' . (int)$idShop . '
+                AND results_count > 0
+                AND search_count >= 3
+                ORDER BY search_count DESC
+                LIMIT 200';
+
+        try {
+            $popularQueries = Db::getInstance()->executeS($sql);
+
+            if ($popularQueries) {
+                foreach ($popularQueries as $row) {
+                    $popular = mb_strtolower($row['search_query']);
+
+                    // Calcola distanza Levenshtein
+                    $distance = levenshtein($query, $popular);
+                    $maxLen = max(strlen($query), strlen($popular));
+
+                    // Suggerisci se simile (distanza <= 30% della lunghezza)
+                    if ($distance > 0 && $distance <= ceil($maxLen * 0.3)) {
+                        $suggestions[] = [
+                            'term' => $row['search_query'],
+                            'score' => $row['search_count'] - ($distance * 10)
+                        ];
+                    }
+
+                    // Controlla anche se una contiene l'altra
+                    if (strpos($popular, $query) !== false || strpos($query, $popular) !== false) {
+                        if ($popular !== $query) {
+                            $suggestions[] = [
+                                'term' => $row['search_query'],
+                                'score' => $row['search_count']
+                            ];
+                        }
+                    }
+                }
+
+                // Ordina per score e prendi i termini
+                usort($suggestions, fn($a, $b) => $b['score'] <=> $a['score']);
+                $suggestions = array_column(array_slice($suggestions, 0, 3), 'term');
+            }
+        } catch (Exception $e) {
+            // Table might not exist
+        }
+
+        return $suggestions;
+    }
+
+    /**
+     * Trova nomi prodotti simili
+     */
+    protected function getSimilarProductNames($query, $idLang, $idShop)
+    {
+        $suggestions = [];
+
+        // Estrai parole dalla query
+        $words = array_filter(explode(' ', $query), fn($w) => strlen($w) >= 3);
+
+        if (empty($words)) {
+            return [];
+        }
+
+        // Cerca prodotti con nomi simili
+        $likeConditions = [];
+        foreach ($words as $word) {
+            $likeConditions[] = "pl.name LIKE '%" . pSQL($word) . "%'";
+        }
+
+        $sql = '
+            SELECT DISTINCT pl.name
+            FROM ' . _DB_PREFIX_ . 'product_lang pl
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON pl.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            WHERE pl.id_lang = ' . (int)$idLang . '
+            AND ps.active = 1
+            AND (' . implode(' OR ', $likeConditions) . ')
+            LIMIT 20';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if ($results) {
+            foreach ($results as $row) {
+                $name = $row['name'];
+                $nameLower = mb_strtolower($name);
+
+                // Estrai le prime 2-3 parole significative come suggerimento
+                $nameWords = explode(' ', $name);
+                $suggestion = implode(' ', array_slice($nameWords, 0, 3));
+
+                if (strlen($suggestion) >= 4 && $nameLower !== $query) {
+                    $suggestions[] = $suggestion;
+                }
+            }
+        }
+
+        return array_slice(array_unique($suggestions), 0, 2);
+    }
+
+    /**
+     * Trova marche simili
+     */
+    protected function getSimilarBrands($query)
+    {
+        $suggestions = [];
+
+        $sql = '
+            SELECT DISTINCT m.name
+            FROM ' . _DB_PREFIX_ . 'manufacturer m
+            WHERE m.active = 1
+            AND m.name LIKE \'%' . pSQL($query) . '%\'
+            LIMIT 5';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if ($results) {
+            foreach ($results as $row) {
+                $brand = $row['name'];
+                if (mb_strtolower($brand) !== $query) {
+                    $suggestions[] = $brand;
+                }
+            }
+        }
+
+        // Prova anche fuzzy match su brand
+        if (empty($suggestions) && strlen($query) >= 3) {
+            $sql = 'SELECT name FROM ' . _DB_PREFIX_ . 'manufacturer WHERE active = 1 LIMIT 50';
+            $brands = Db::getInstance()->executeS($sql);
+
+            if ($brands) {
+                foreach ($brands as $row) {
+                    $brand = $row['name'];
+                    $brandLower = mb_strtolower($brand);
+                    $distance = levenshtein($query, $brandLower);
+
+                    if ($distance > 0 && $distance <= 2) {
+                        $suggestions[] = $brand;
+                    }
+                }
+            }
+        }
+
+        return array_slice($suggestions, 0, 2);
+    }
+
+    // =========================================================================
+    // SEARCH TRACKING (per statistiche e "forse cercavi")
+    // =========================================================================
+
+    /**
+     * Traccia la query di ricerca per statistiche
+     */
+    protected function trackSearchQuery($query, $resultsCount, $idLang, $idShop)
+    {
+        $query = trim($query);
+        if (strlen($query) < 2) {
+            return;
+        }
+
+        try {
+            // Controlla se esiste già
+            $sql = 'SELECT id_smartsearch_stats, search_count
+                    FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+                    WHERE search_query = \'' . pSQL($query) . '\'
+                    AND id_lang = ' . (int)$idLang . '
+                    AND id_shop = ' . (int)$idShop . '
+                    LIMIT 1';
+
+            $existing = Db::getInstance()->getRow($sql);
+
+            if ($existing) {
+                // Aggiorna contatore
+                $sql = 'UPDATE `' . _DB_PREFIX_ . 'smartsearch_stats`
+                        SET search_count = search_count + 1,
+                            results_count = ' . (int)$resultsCount . ',
+                            last_search = NOW()
+                        WHERE id_smartsearch_stats = ' . (int)$existing['id_smartsearch_stats'];
+            } else {
+                // Inserisci nuovo
+                $sql = 'INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_stats`
+                        (search_query, search_count, results_count, id_lang, id_shop, last_search, date_add)
+                        VALUES (
+                            \'' . pSQL($query) . '\',
+                            1,
+                            ' . (int)$resultsCount . ',
+                            ' . (int)$idLang . ',
+                            ' . (int)$idShop . ',
+                            NOW(),
+                            NOW()
+                        )';
+            }
+
+            Db::getInstance()->execute($sql);
+        } catch (Exception $e) {
+            // Ignore - table might not exist
+        }
     }
 }

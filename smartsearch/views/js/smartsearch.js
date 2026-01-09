@@ -1174,6 +1174,18 @@
             </div>
         `;
 
+        // "Forse cercavi..." per pochi risultati
+        if (data.did_you_mean && data.did_you_mean.length > 0 && data.products.length < 5) {
+            html += '<div class="smartsearch-did-you-mean" style="padding: 12px 24px; background: #fef3c7; border-radius: 8px; margin: 0 24px 16px;">';
+            html += `<span style="color: #92400e; font-size: 14px;">${t.did_you_mean || 'Forse cercavi'}: </span>`;
+            data.did_you_mean.forEach((s, i) => {
+                const term = typeof s === 'string' ? s : (s.term || s);
+                if (i > 0) html += ', ';
+                html += `<a href="#" class="smartsearch-suggestion-link" data-query="${escapeHtml(term)}" style="color: #d97706; text-decoration: underline;">${escapeHtml(term)}</a>`;
+            });
+            html += '</div>';
+        }
+
         // Mobile filter toggle
         html += `
             <button type="button" class="smartsearch-filter-toggle-mobile">
@@ -1583,6 +1595,17 @@
                 // Sort logic here
             });
         }
+
+        // "Forse cercavi" suggestion links
+        main.querySelectorAll('.smartsearch-suggestion-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const query = link.dataset.query;
+                searchInput.value = query;
+                overlay.querySelector('.smartsearch-clear-input')?.classList.add('visible');
+                performSearch(query);
+            });
+        });
     }
 
     /**
@@ -1605,7 +1628,9 @@
             html += `<p style="margin-top: 16px;">${t.did_you_mean || 'Forse cercavi'}:</p>`;
             html += '<div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px;">';
             data.did_you_mean.forEach(s => {
-                html += `<span class="smartsearch-tag smartsearch-suggestion" data-query="${escapeHtml(s.term)}">${escapeHtml(s.term)}</span>`;
+                // Supporta sia stringhe che oggetti {term: ...}
+                const term = typeof s === 'string' ? s : (s.term || s);
+                html += `<span class="smartsearch-tag smartsearch-suggestion" data-query="${escapeHtml(term)}">${escapeHtml(term)}</span>`;
             });
             html += '</div>';
         }
