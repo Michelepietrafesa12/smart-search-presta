@@ -248,20 +248,19 @@ class SmartSearch extends Module
     {
         $sql = [];
 
-        // Tabella statistiche ricerche
+        // Tabella statistiche ricerche (aggregata per query)
         $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_stats` (
-            `id_smartsearch_stat` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `id_smartsearch_stats` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
             `search_query` VARCHAR(255) NOT NULL,
+            `search_count` INT(11) NOT NULL DEFAULT 1,
             `results_count` INT(11) NOT NULL DEFAULT 0,
-            `filters_used` TEXT,
-            `id_customer` INT(11) UNSIGNED DEFAULT NULL,
             `id_lang` INT(11) UNSIGNED NOT NULL,
             `id_shop` INT(11) UNSIGNED NOT NULL,
-            `session_id` VARCHAR(64),
+            `last_search` DATETIME NOT NULL,
             `date_add` DATETIME NOT NULL,
-            PRIMARY KEY (`id_smartsearch_stat`),
-            INDEX `search_query` (`search_query`),
-            INDEX `date_add` (`date_add`),
+            PRIMARY KEY (`id_smartsearch_stats`),
+            UNIQUE KEY `query_lang_shop` (`search_query`(191), `id_lang`, `id_shop`),
+            INDEX `search_count` (`search_count`),
             INDEX `id_shop` (`id_shop`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
