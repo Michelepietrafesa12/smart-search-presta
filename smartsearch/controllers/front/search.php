@@ -378,12 +378,33 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Compatibilità: se chiamato senza action=search
+     * Gestisce le richieste AJAX in base al parametro action
      */
     public function initContent()
     {
         if (Tools::getValue('ajax') || Tools::isSubmit('ajax')) {
-            $this->displayAjaxSearch();
+            $action = Tools::getValue('action', 'search');
+
+            switch ($action) {
+                case 'analytics':
+                    $this->displayAjaxAnalytics();
+                    break;
+                case 'filters':
+                    $this->displayAjaxFilters();
+                    break;
+                case 'bestsellers':
+                    $this->displayAjaxBestsellers();
+                    break;
+                case 'banners':
+                    $this->displayAjaxBanners();
+                    break;
+                case 'search':
+                default:
+                    $this->displayAjaxSearch();
+                    break;
+            }
+            // Non continuare dopo una risposta AJAX
+            return;
         }
         parent::initContent();
     }
