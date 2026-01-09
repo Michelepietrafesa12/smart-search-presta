@@ -454,25 +454,40 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         if (Tools::getValue('ajax') || Tools::isSubmit('ajax')) {
-            $action = Tools::getValue('action', 'search');
+            // Catch ALL errors including TypeError, etc.
+            try {
+                $action = Tools::getValue('action', 'search');
 
-            switch ($action) {
-                case 'analytics':
-                    $this->displayAjaxAnalytics();
-                    break;
-                case 'filters':
-                    $this->displayAjaxFilters();
-                    break;
-                case 'bestsellers':
-                    $this->displayAjaxBestsellers();
-                    break;
-                case 'banners':
-                    $this->displayAjaxBanners();
-                    break;
-                case 'search':
-                default:
-                    $this->displayAjaxSearch();
-                    break;
+                switch ($action) {
+                    case 'analytics':
+                        $this->displayAjaxAnalytics();
+                        break;
+                    case 'filters':
+                        $this->displayAjaxFilters();
+                        break;
+                    case 'bestsellers':
+                        $this->displayAjaxBestsellers();
+                        break;
+                    case 'banners':
+                        $this->displayAjaxBanners();
+                        break;
+                    case 'search':
+                    default:
+                        $this->displayAjaxSearch();
+                        break;
+                }
+            } catch (Throwable $e) {
+                // Log error for debugging
+                if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                    PrestaShopLogger::addLog('SmartSearch FATAL: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine(), 3, null, 'SmartSearch');
+                }
+                header('Content-Type: application/json; charset=utf-8');
+                die(json_encode([
+                    'error' => true,
+                    'message' => 'Internal error',
+                    'products' => [],
+                    'total' => 0
+                ], JSON_UNESCAPED_UNICODE));
             }
             // Non continuare dopo una risposta AJAX
             return;
