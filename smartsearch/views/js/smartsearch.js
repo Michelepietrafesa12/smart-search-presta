@@ -1289,7 +1289,7 @@
                                 <span class="smartsearch-price-badge">${min} ${config.currency_sign || '€'}</span>
                                 <span class="smartsearch-price-badge">${max} ${config.currency_sign || '€'}</span>
                             </div>
-                            <div class="smartsearch-price-range">
+                            <div class="smartsearch-price-range" data-min="${min}" data-max="${max}">
                                 <div class="smartsearch-price-range-fill" style="left: 0%; width: 100%;"></div>
                                 <div class="smartsearch-price-handle" style="left: 0%;" data-handle="min"></div>
                                 <div class="smartsearch-price-handle" style="left: 100%;" data-handle="max"></div>
@@ -1414,6 +1414,89 @@
                 });
             });
         });
+
+        // Price slider drag
+        const priceRange = container.querySelector('.smartsearch-price-range');
+        if (priceRange) {
+            const handles = priceRange.querySelectorAll('.smartsearch-price-handle');
+            const fill = priceRange.querySelector('.smartsearch-price-range-fill');
+            const badges = container.querySelectorAll('.smartsearch-price-badge');
+
+            handles.forEach(handle => {
+                let isDragging = false;
+
+                const onMouseDown = (e) => {
+                    isDragging = true;
+                    e.preventDefault();
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                    document.addEventListener('touchmove', onMouseMove);
+                    document.addEventListener('touchend', onMouseUp);
+                };
+
+                const onMouseMove = (e) => {
+                    if (!isDragging) return;
+                    const rect = priceRange.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    let percent = ((clientX - rect.left) / rect.width) * 100;
+                    percent = Math.max(0, Math.min(100, percent));
+
+                    const isMin = handle.dataset.handle === 'min';
+                    const otherHandle = priceRange.querySelector(`.smartsearch-price-handle[data-handle="${isMin ? 'max' : 'min'}"]`);
+                    const otherPercent = parseFloat(otherHandle.style.left) || (isMin ? 100 : 0);
+
+                    // Prevent crossing
+                    if (isMin && percent > otherPercent - 5) percent = otherPercent - 5;
+                    if (!isMin && percent < otherPercent + 5) percent = otherPercent + 5;
+
+                    handle.style.left = percent + '%';
+                    updatePriceFill();
+                    updatePriceBadges();
+                };
+
+                const onMouseUp = () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                        document.removeEventListener('touchmove', onMouseMove);
+                        document.removeEventListener('touchend', onMouseUp);
+                        applyFilters();
+                    }
+                };
+
+                handle.addEventListener('mousedown', onMouseDown);
+                handle.addEventListener('touchstart', onMouseDown);
+            });
+
+            function updatePriceFill() {
+                const minHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="min"]');
+                const maxHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="max"]');
+                const minPercent = parseFloat(minHandle.style.left) || 0;
+                const maxPercent = parseFloat(maxHandle.style.left) || 100;
+                fill.style.left = minPercent + '%';
+                fill.style.width = (maxPercent - minPercent) + '%';
+            }
+
+            function updatePriceBadges() {
+                if (badges.length < 2) return;
+                const minHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="min"]');
+                const maxHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="max"]');
+                const minPercent = parseFloat(minHandle.style.left) || 0;
+                const maxPercent = parseFloat(maxHandle.style.left) || 100;
+
+                // Get global min/max from data attributes or initial values
+                const globalMin = parseInt(priceRange.dataset.min) || 0;
+                const globalMax = parseInt(priceRange.dataset.max) || 1000;
+                const range = globalMax - globalMin;
+
+                const selectedMin = Math.round(globalMin + (range * minPercent / 100));
+                const selectedMax = Math.round(globalMin + (range * maxPercent / 100));
+
+                badges[0].textContent = selectedMin + ' ' + (config.currency_sign || '€');
+                badges[1].textContent = selectedMax + ' ' + (config.currency_sign || '€');
+            }
+        }
     }
 
     /**
@@ -1433,6 +1516,28 @@
         const selectedManufacturers = sidebar.querySelectorAll('.smartsearch-filter-option.selected[data-filter="manufacturer"]');
         if (selectedManufacturers.length > 0) {
             filters.manufacturer = Array.from(selectedManufacturers).map(el => parseInt(el.dataset.value));
+        }
+
+        // Price range
+        const priceRange = sidebar.querySelector('.smartsearch-price-range');
+        if (priceRange) {
+            const minHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="min"]');
+            const maxHandle = priceRange.querySelector('.smartsearch-price-handle[data-handle="max"]');
+            if (minHandle && maxHandle) {
+                const minPercent = parseFloat(minHandle.style.left) || 0;
+                const maxPercent = parseFloat(maxHandle.style.left) || 100;
+                const globalMin = parseInt(priceRange.dataset.min) || 0;
+                const globalMax = parseInt(priceRange.dataset.max) || 1000;
+                const range = globalMax - globalMin;
+                const selectedMin = Math.round(globalMin + (range * minPercent / 100));
+                const selectedMax = Math.round(globalMin + (range * maxPercent / 100));
+                if (selectedMin > globalMin) {
+                    filters.price_min = selectedMin;
+                }
+                if (selectedMax < globalMax) {
+                    filters.price_max = selectedMax;
+                }
+            }
         }
 
         // In stock

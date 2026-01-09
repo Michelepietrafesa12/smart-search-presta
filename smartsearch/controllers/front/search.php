@@ -52,12 +52,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni banner attivi per questa query
             $banners = $this->getBannersForQuery($query, $idShop);
 
+            // Costruisci facets per i filtri
+            $facets = $this->buildFacets($idLang, $idShop);
+
             die(json_encode([
                 'products' => $products,
                 'categories' => $categories,
                 'total' => count($products),
                 'query' => $query,
-                'facets' => [],
+                'facets' => $facets,
                 'banners' => $banners,
                 'did_you_mean' => []
             ], JSON_UNESCAPED_UNICODE));
@@ -199,6 +202,39 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             'min' => (int)($result['min_price'] ?? 0),
             'max' => (int)($result['max_price'] ?? 1000)
         ];
+    }
+
+    /**
+     * Costruisce i facets per i filtri della sidebar
+     */
+    protected function buildFacets($idLang, $idShop)
+    {
+        $facets = [];
+
+        // Price range
+        $facets['price_range'] = $this->getPriceRange($idShop);
+
+        // Manufacturers (brands) - formato compatibile con JS
+        $brands = $this->getAvailableBrands($idLang, $idShop);
+        $facets['manufacturers'] = array_map(function($brand) {
+            return [
+                'id_manufacturer' => $brand['id'],
+                'name' => $brand['name'],
+                'count' => $brand['count']
+            ];
+        }, $brands);
+
+        // Categories - formato compatibile con JS (usa id_category)
+        $categories = $this->getAvailableCategories($idLang, $idShop);
+        $facets['categories'] = array_map(function($cat) {
+            return [
+                'id_category' => $cat['id'],
+                'name' => $cat['name'],
+                'count' => $cat['count']
+            ];
+        }, $categories);
+
+        return $facets;
     }
 
     /**
