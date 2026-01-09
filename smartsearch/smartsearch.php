@@ -414,6 +414,12 @@ class SmartSearch extends Module
     protected function installTabs()
     {
         foreach ($this->tabs as $tabData) {
+            // Check if tab already exists - skip if so
+            $existingTabId = Tab::getIdFromClassName($tabData['class_name']);
+            if ($existingTabId) {
+                continue;
+            }
+
             $tab = new Tab();
             $tab->class_name = $tabData['class_name'];
             $tab->active = $tabData['visible'];
