@@ -567,7 +567,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 m.name as manufacturer_name,
                 cl.name as category_name,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
-                COALESCE(ps_sales.quantity, 0) as sales_count,
+                0 as sales_count,
                 150 as _relevance_score
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
@@ -577,7 +577,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
                 AND cl.id_lang = ' . (int)$idLang . '
-            LEFT JOIN ' . _DB_PREFIX_ . 'product_sale ps_sales ON p.id_product = ps_sales.id_product
             WHERE p.active = 1 AND ps.active = 1
             AND (
                 p.reference = \'' . pSQL($code) . '\'
@@ -628,11 +627,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 m.name as manufacturer_name,
                 cl.name as category_name,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
-                COALESCE(ps_sales.quantity, 0) as sales_count,
-                COALESCE(
-                    (SELECT AVG(grade) FROM ' . _DB_PREFIX_ . 'product_comment pc
-                     WHERE pc.id_product = p.id_product AND pc.validate = 1), 0
-                ) as avg_rating
+                0 as sales_count,
+                0 as avg_rating
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
@@ -641,7 +637,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
                 AND cl.id_lang = ' . (int)$idLang . '
-            LEFT JOIN ' . _DB_PREFIX_ . 'product_sale ps_sales ON p.id_product = ps_sales.id_product
             WHERE p.active = 1 AND ps.active = 1
             AND (' . implode(' OR ', $orConditions) . ')
             LIMIT 100';
