@@ -52,6 +52,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni banner attivi per questa query
             $banners = $this->getBannersForQuery($query, $idShop);
 
+            // Debug: conta regole boost attive
+            $boostCount = (int)Db::getInstance()->getValue('
+                SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_boost`
+                WHERE id_shop = ' . (int)$idShop . ' AND active = 1
+            ');
+
             die(json_encode([
                 'products' => $products,
                 'categories' => $categories,
@@ -59,7 +65,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'query' => $query,
                 'facets' => [],
                 'banners' => $banners,
-                'did_you_mean' => []
+                'did_you_mean' => [],
+                '_debug' => [
+                    'boost_rules_active' => $boostCount,
+                    'boosted_products' => array_values(array_filter(array_map(function($p) {
+                        if (isset($p['boost_score']) && $p['boost_score'] > 1) {
+                            return ['id' => $p['id'], 'name' => $p['name'], 'boost' => $p['boost_score']];
+                        }
+                        return null;
+                    }, $products)))
+                ]
             ], JSON_UNESCAPED_UNICODE));
 
         } catch (Exception $e) {
@@ -318,7 +333,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'manufacturer' => $row['manufacturer_name'] ?? '',
                 'reference' => $row['reference'] ?? '',
                 'in_stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product']) > 0,
-                'total_sold' => isset($row['total_sold']) ? (int)$row['total_sold'] : 0
+                'total_sold' => isset($row['total_sold']) ? (int)$row['total_sold'] : 0,
+                'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0
             ];
         }
         return $products;
@@ -434,9 +450,17 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
     /**
      * Applica boost ai prodotti in base alle regole configurate
+     *
+     * LOGICA:
+     * - Se la regola ha KEYWORDS: il boost si applica solo se la query contiene quelle keyword
+     * - Se la regola NON ha keywords: il boost si applica sempre al prodotto specificato
      */
     protected function applyBoosting($products, $query, $idShop)
     {
+        if (empty($products)) {
+            return $products;
+        }
+
         // Ottieni le regole di boosting attive
         $boostRules = Db::getInstance()->executeS('
             SELECT id_product, boost_value, keywords
@@ -448,77 +472,73 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return $products;
         }
 
-        // Crea una mappa di boost per prodotto e keyword
-        $productBoosts = [];
-        $keywordBoosts = [];
-
-        foreach ($boostRules as $rule) {
-            // Boost per prodotto specifico
-            if ($rule['id_product']) {
-                $productBoosts[$rule['id_product']] = (float)$rule['boost_value'];
-            }
-
-            // Boost per keyword
-            if (!empty($rule['keywords'])) {
-                $keywords = array_map('trim', explode(',', mb_strtolower($rule['keywords'])));
-                foreach ($keywords as $keyword) {
-                    if (!empty($keyword)) {
-                        if (!isset($keywordBoosts[$keyword])) {
-                            $keywordBoosts[$keyword] = [];
-                        }
-                        $keywordBoosts[$keyword][] = [
-                            'product_id' => $rule['id_product'],
-                            'boost' => (float)$rule['boost_value']
-                        ];
-                    }
-                }
-            }
-        }
-
         // Normalizza la query
-        $queryLower = mb_strtolower($query);
-        $queryWords = explode(' ', $queryLower);
+        $queryLower = mb_strtolower(trim($query));
+        $queryWords = array_filter(explode(' ', $queryLower));
 
         // Calcola score per ogni prodotto
         foreach ($products as &$product) {
             $product['_boost_score'] = 1.0;
+            $productId = isset($product['id_product']) ? (int)$product['id_product'] : 0;
 
-            // Applica boost per prodotto specifico
-            if (isset($productBoosts[$product['id_product']])) {
-                $product['_boost_score'] *= $productBoosts[$product['id_product']];
+            if (!$productId) {
+                continue;
             }
 
-            // Applica boost per keyword match
-            foreach ($keywordBoosts as $keyword => $rules) {
-                // Verifica se la keyword matcha la query
-                $keywordMatches = false;
-                foreach ($queryWords as $word) {
-                    if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
-                        $keywordMatches = true;
-                        break;
+            // Controlla ogni regola di boost
+            foreach ($boostRules as $rule) {
+                $ruleProductId = (int)$rule['id_product'];
+                $boostValue = (float)$rule['boost_value'];
+                $ruleKeywords = trim($rule['keywords'] ?? '');
+
+                // Questa regola si applica a questo prodotto?
+                if ($ruleProductId != $productId) {
+                    continue; // Regola per un altro prodotto
+                }
+
+                // Se la regola ha keywords, verifica che la query le contenga
+                if (!empty($ruleKeywords)) {
+                    $keywords = array_map('trim', explode(',', mb_strtolower($ruleKeywords)));
+                    $keywordMatches = false;
+
+                    foreach ($keywords as $keyword) {
+                        if (empty($keyword)) continue;
+
+                        // Verifica se la query contiene questa keyword
+                        foreach ($queryWords as $word) {
+                            if (strlen($word) < 2) continue;
+                            // Match parziale in entrambe le direzioni
+                            if (stripos($keyword, $word) !== false || stripos($word, $keyword) !== false) {
+                                $keywordMatches = true;
+                                break 2;
+                            }
+                        }
+                    }
+
+                    // Se ha keywords ma non matchano, non applicare il boost
+                    if (!$keywordMatches) {
+                        continue;
                     }
                 }
 
-                if ($keywordMatches) {
-                    foreach ($rules as $rule) {
-                        // Se la regola è per questo prodotto o per tutti (product_id = 0)
-                        if ($rule['product_id'] == $product['id_product'] || !$rule['product_id']) {
-                            $product['_boost_score'] *= $rule['boost'];
-                        }
-                    }
-                }
+                // Applica il boost (solo una volta per regola)
+                $product['_boost_score'] *= $boostValue;
             }
         }
 
-        // Ordina per boost score (più alto prima)
+        // Ordina per boost score (più alto prima), poi per nome
         usort($products, function($a, $b) {
             $scoreA = isset($a['_boost_score']) ? $a['_boost_score'] : 1.0;
             $scoreB = isset($b['_boost_score']) ? $b['_boost_score'] : 1.0;
 
-            if ($scoreA == $scoreB) {
-                return 0;
+            if ($scoreA != $scoreB) {
+                return ($scoreB > $scoreA) ? 1 : -1; // Ordine decrescente per score
             }
-            return ($scoreB > $scoreA) ? 1 : -1; // Ordine decrescente
+
+            // A parità di score, ordina per nome
+            $nameA = isset($a['name']) ? $a['name'] : '';
+            $nameB = isset($b['name']) ? $b['name'] : '';
+            return strcmp($nameA, $nameB);
         });
 
         return $products;
