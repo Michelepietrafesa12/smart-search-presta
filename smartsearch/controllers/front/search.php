@@ -129,14 +129,85 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         $expanded = [];
         foreach ($words as $word) {
+            // Aggiungi variazioni italiane (singolare/plurale)
             $variations = $this->getItalianWordVariations($word);
             foreach ($variations as $var) {
                 if (!in_array($var, $expanded)) {
                     $expanded[] = $var;
                 }
             }
+
+            // Aggiungi variazioni per unità di misura (350g, 500ml, etc.)
+            $unitVariations = $this->getUnitVariations($word);
+            foreach ($unitVariations as $var) {
+                if (!in_array($var, $expanded)) {
+                    $expanded[] = $var;
+                }
+            }
         }
         return $expanded;
+    }
+
+    /**
+     * Genera variazioni per unità di misura
+     * Es: "350g" -> ["350g", "350 g", "350gr", "350 gr"]
+     */
+    protected function getUnitVariations($word)
+    {
+        $variations = [];
+
+        // Pattern: numero + unità (es: 350g, 500ml, 1kg)
+        if (preg_match('/^(\d+)(g|gr|kg|mg|ml|l|cl|oz|lb|caps|cps|tab|tabs|compresse|bustine|porzioni)$/i', $word, $matches)) {
+            $number = $matches[1];
+            $unit = mb_strtolower($matches[2]);
+
+            // Variazioni base
+            $variations[] = $number . $unit;           // 350g
+            $variations[] = $number . ' ' . $unit;     // 350 g
+
+            // Variazioni specifiche per unità
+            if ($unit === 'g' || $unit === 'gr') {
+                $variations[] = $number . 'g';
+                $variations[] = $number . ' g';
+                $variations[] = $number . 'gr';
+                $variations[] = $number . ' gr';
+            } elseif ($unit === 'kg') {
+                $variations[] = $number . 'kg';
+                $variations[] = $number . ' kg';
+            } elseif ($unit === 'mg') {
+                $variations[] = $number . 'mg';
+                $variations[] = $number . ' mg';
+            } elseif ($unit === 'ml') {
+                $variations[] = $number . 'ml';
+                $variations[] = $number . ' ml';
+            } elseif ($unit === 'l') {
+                $variations[] = $number . 'l';
+                $variations[] = $number . ' l';
+                $variations[] = $number . 'lt';
+                $variations[] = $number . ' lt';
+            } elseif ($unit === 'caps' || $unit === 'cps') {
+                $variations[] = $number . 'caps';
+                $variations[] = $number . ' caps';
+                $variations[] = $number . 'cps';
+                $variations[] = $number . ' cps';
+                $variations[] = $number . ' capsule';
+            } elseif ($unit === 'tab' || $unit === 'tabs') {
+                $variations[] = $number . 'tab';
+                $variations[] = $number . ' tab';
+                $variations[] = $number . 'tabs';
+                $variations[] = $number . ' tabs';
+                $variations[] = $number . ' compresse';
+            }
+        }
+
+        // Pattern: numero con spazio + unità (es: "350 g")
+        // Questo viene gestito come due parole separate, quindi aggiungiamo la versione unita
+        if (preg_match('/^(\d+)$/', $word)) {
+            // È solo un numero, potrebbe essere seguito da un'unità
+            $variations[] = $word;
+        }
+
+        return array_unique($variations);
     }
 
     public function displayAjaxSearch()
@@ -973,6 +1044,27 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * Controlla se una parola (o sue variazioni unità) è presente in un testo
+     */
+    protected function wordFoundIn($word, $text)
+    {
+        // Check diretto
+        if (strpos($text, $word) !== false) {
+            return true;
+        }
+
+        // Check variazioni unità (350g -> 350 g, 350gr, etc.)
+        $unitVariations = $this->getUnitVariations($word);
+        foreach ($unitVariations as $variation) {
+            if (strpos($text, $variation) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Calcola lo score di rilevanza per un prodotto
      */
     protected function calculateRelevanceScore($product, $query, $words)
@@ -997,9 +1089,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $wordsInRef = 0;
 
         foreach ($words as $word) {
-            $inName = strpos($nameLower, $word) !== false;
-            $inBrand = strpos($brandLower, $word) !== false;
-            $inRef = strpos($refLower, $word) !== false;
+            // Usa wordFoundIn per gestire variazioni unità (350g, 350 g, etc.)
+            $inName = $this->wordFoundIn($word, $nameLower);
+            $inBrand = $this->wordFoundIn($word, $brandLower);
+            $inRef = $this->wordFoundIn($word, $refLower);
 
             if ($inName) $wordsInName++;
             if ($inBrand) $wordsInBrand++;
@@ -1012,7 +1105,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         $totalWordsFound = 0;
         foreach ($words as $word) {
-            if (strpos($nameAndBrand, $word) !== false || strpos($refLower, $word) !== false) {
+            if ($this->wordFoundIn($word, $nameAndBrand) || $this->wordFoundIn($word, $refLower)) {
                 $totalWordsFound++;
             }
         }
