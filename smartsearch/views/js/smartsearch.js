@@ -878,7 +878,7 @@
      */
     function loadBestsellers() {
         const main = overlay.querySelector('.smartsearch-main');
-        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        // NON toccare la sidebar - i filtri sono renderizzati separatamente
 
         // Mostra loader
         main.innerHTML = `
@@ -887,7 +887,6 @@
                 <span>Caricamento prodotti...</span>
             </div>
         `;
-        sidebar.innerHTML = '';
 
         // Chiama l'API per i bestseller
         const url = config.ajax_url + '?ajax=1&action=bestsellers';
@@ -944,9 +943,8 @@
      */
     function renderEmptyState() {
         const main = overlay.querySelector('.smartsearch-main');
-        const sidebar = overlay.querySelector('.smartsearch-sidebar');
+        // NON toccare la sidebar - i filtri sono già renderizzati
 
-        sidebar.innerHTML = '';
         main.innerHTML = `
             <div class="smartsearch-initial">
                 ${icons.search.replace('width="20"', 'width="100"').replace('height="20"', 'height="100"')}
@@ -961,9 +959,7 @@
      */
     function renderBestsellers(products) {
         const main = overlay.querySelector('.smartsearch-main');
-        const sidebar = overlay.querySelector('.smartsearch-sidebar');
-
-        sidebar.innerHTML = '';
+        // NON toccare la sidebar - i filtri sono già renderizzati
 
         let html = `
             <div class="smartsearch-section-title">
