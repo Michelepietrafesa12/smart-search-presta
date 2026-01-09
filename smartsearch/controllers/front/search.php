@@ -905,7 +905,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE p.active = 1 AND ps.active = 1
             AND (' . implode(' OR ', $orConditions) . ')
             ' . $filterConditions . '
-            LIMIT 100';
+            LIMIT 250';
 
         $results = Db::getInstance()->executeS($sql);
 
@@ -1027,16 +1027,54 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // === MATCH NELLA MARCA ===
+        // === MATCH NELLA MARCA (peso MOLTO alto) ===
         if (!empty($brandLower)) {
-            if (strpos($brandLower, $query) !== false) {
-                $score += 35;
-            } else {
+            // Match esatto del nome marca con la query
+            if ($brandLower === $query) {
+                $score += 200; // Boost massimo per match esatto marca
+            }
+            // Query contenuta nella marca (es: "net integratori" in "Net Integratori")
+            elseif (strpos($brandLower, $query) !== false) {
+                $score += 150;
+            }
+            // Marca contenuta nella query (es: brand "Net" in query "net integratori")
+            elseif (strpos($query, $brandLower) !== false) {
+                $score += 120;
+            }
+            else {
+                // Match per singole parole nella marca
+                $brandWordMatches = 0;
                 foreach ($words as $word) {
                     if (strpos($brandLower, $word) !== false) {
-                        $score += 25;
+                        $score += 40;
+                        $brandWordMatches++;
                     }
                 }
+                // Bonus se TUTTE le parole matchano nella marca
+                if ($brandWordMatches === count($words) && count($words) > 1) {
+                    $score += 80;
+                }
+            }
+        }
+
+        // === PENALITÀ per match parziale ===
+        // Se ci sono più parole nella query ma il prodotto matcha solo alcune
+        if (count($words) > 1) {
+            $totalMatches = 0;
+            foreach ($words as $word) {
+                if (strpos($nameLower, $word) !== false ||
+                    strpos($brandLower, $word) !== false ||
+                    strpos($refLower, $word) !== false) {
+                    $totalMatches++;
+                }
+            }
+            // Penalizza prodotti che matchano meno del 50% delle parole
+            if ($totalMatches < count($words) * 0.5) {
+                $score *= 0.5; // Dimezza lo score
+            }
+            // Penalizza prodotti che matchano meno del 75% delle parole
+            elseif ($totalMatches < count($words) * 0.75) {
+                $score *= 0.75;
             }
         }
 
