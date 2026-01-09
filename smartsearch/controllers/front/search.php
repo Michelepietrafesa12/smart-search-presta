@@ -627,8 +627,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 m.name as manufacturer_name,
                 cl.name as category_name,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
-                0 as sales_count,
-                0 as avg_rating
+                COALESCE((SELECT SUM(od.product_quantity) FROM ' . _DB_PREFIX_ . 'order_detail od
+                    INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order AND o.valid = 1
+                    WHERE od.product_id = p.id_product), 0) as sales_count
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
@@ -746,16 +747,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         } elseif ($salesCount > 10) {
             $score += 10;
         } elseif ($salesCount > 0) {
-            $score += 5;
-        }
-
-        // === BONUS RECENSIONI ===
-        $avgRating = (float)($product['avg_rating'] ?? 0);
-        if ($avgRating >= 4.5) {
-            $score += 15;
-        } elseif ($avgRating >= 4.0) {
-            $score += 10;
-        } elseif ($avgRating >= 3.5) {
             $score += 5;
         }
 
