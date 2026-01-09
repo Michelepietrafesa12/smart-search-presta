@@ -379,6 +379,7 @@
                     ${icons.search}
                     <input type="text" class="smartsearch-search-input" placeholder="${t.search_placeholder || 'Cerca prodotti...'}" autocomplete="off">
                     <button type="button" class="smartsearch-clear-input">${icons.close}</button>
+                    <div class="smartsearch-suggestions"></div>
                 </div>
                 <button type="button" class="smartsearch-close-btn" title="Chiudi">${icons.close}</button>
             </div>
@@ -403,6 +404,14 @@
         // Bind events
         searchInput.addEventListener('input', handleInput);
         searchInput.addEventListener('keydown', handleKeydown);
+        searchInput.addEventListener('focus', () => showSuggestions());
+
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.smartsearch-search-box')) {
+                hideSuggestions();
+            }
+        });
 
         overlay.querySelector('.smartsearch-close-btn').addEventListener('click', closeOverlay);
         overlay.querySelector('.smartsearch-clear-input').addEventListener('click', clearInput);
@@ -1076,11 +1085,16 @@
         if (query.length < (config.min_chars || 2)) {
             if (query.length === 0) {
                 renderInitialState();
+                hideSuggestions();
             }
             return;
         }
 
+        // Fetch suggestions immediately (faster feedback)
+        fetchSuggestions(query);
+
         debounceTimer = setTimeout(() => {
+            hideSuggestions();
             performSearch(query);
         }, config.debounce_time || 300);
     }
@@ -1089,11 +1103,139 @@
      * Handle keydown
      */
     function handleKeydown(e) {
-        if (e.key === 'Enter') {
+        const suggestionsEl = overlay.querySelector('.smartsearch-suggestions');
+        const items = suggestionsEl.querySelectorAll('.smartsearch-suggestion-item');
+        const activeItem = suggestionsEl.querySelector('.smartsearch-suggestion-item.active');
+
+        if (e.key === 'ArrowDown') {
             e.preventDefault();
-            if (currentQuery) {
+            if (!activeItem && items.length > 0) {
+                items[0].classList.add('active');
+            } else if (activeItem && activeItem.nextElementSibling) {
+                activeItem.classList.remove('active');
+                activeItem.nextElementSibling.classList.add('active');
+            }
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (activeItem && activeItem.previousElementSibling) {
+                activeItem.classList.remove('active');
+                activeItem.previousElementSibling.classList.add('active');
+            }
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeItem) {
+                const query = activeItem.dataset.query;
+                searchInput.value = query;
+                hideSuggestions();
+                performSearch(query);
+            } else if (currentQuery) {
+                hideSuggestions();
                 saveRecentSearch(currentQuery);
             }
+        } else if (e.key === 'Escape') {
+            hideSuggestions();
+        }
+    }
+
+    /**
+     * Fetch suggestions from server
+     */
+    let suggestionsTimer = null;
+    function fetchSuggestions(query) {
+        if (suggestionsTimer) clearTimeout(suggestionsTimer);
+
+        suggestionsTimer = setTimeout(() => {
+            const url = config.ajax_url + '?ajax=1&action=suggestions&q=' + encodeURIComponent(query);
+
+            fetch(url, {
+                method: 'GET',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.suggestions && data.suggestions.length > 0) {
+                    renderSuggestions(data.suggestions, query);
+                } else {
+                    hideSuggestions();
+                }
+            })
+            .catch(() => hideSuggestions());
+        }, 100); // Faster than search debounce
+    }
+
+    /**
+     * Render suggestions dropdown
+     */
+    function renderSuggestions(suggestions, query) {
+        const container = overlay.querySelector('.smartsearch-suggestions');
+        if (!container) return;
+
+        const queryLower = query.toLowerCase();
+
+        let html = suggestions.map(s => {
+            // Highlight matching text
+            const name = s.query;
+            const nameLower = name.toLowerCase();
+            const index = nameLower.indexOf(queryLower);
+
+            let highlighted = escapeHtml(name);
+            if (index >= 0) {
+                highlighted = escapeHtml(name.substring(0, index)) +
+                    '<strong>' + escapeHtml(name.substring(index, index + query.length)) + '</strong>' +
+                    escapeHtml(name.substring(index + query.length));
+            }
+
+            // Icon based on type
+            let icon = icons.search;
+            let typeLabel = '';
+            if (s.type === 'popular') {
+                icon = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>';
+                typeLabel = s.count > 10 ? '<span class="smartsearch-suggestion-badge">Popolare</span>' : '';
+            } else if (s.type === 'brand') {
+                icon = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>';
+                typeLabel = '<span class="smartsearch-suggestion-badge">Marca</span>';
+            }
+
+            return `
+                <div class="smartsearch-suggestion-item" data-query="${escapeHtml(s.query)}">
+                    <span class="smartsearch-suggestion-icon">${icon}</span>
+                    <span class="smartsearch-suggestion-text">${highlighted}</span>
+                    ${typeLabel}
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = html;
+        container.classList.add('visible');
+
+        // Bind click events
+        container.querySelectorAll('.smartsearch-suggestion-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const query = item.dataset.query;
+                searchInput.value = query;
+                hideSuggestions();
+                performSearch(query);
+            });
+        });
+    }
+
+    /**
+     * Show suggestions (if any cached)
+     */
+    function showSuggestions() {
+        const container = overlay.querySelector('.smartsearch-suggestions');
+        if (container && container.innerHTML.trim()) {
+            container.classList.add('visible');
+        }
+    }
+
+    /**
+     * Hide suggestions
+     */
+    function hideSuggestions() {
+        const container = overlay.querySelector('.smartsearch-suggestions');
+        if (container) {
+            container.classList.remove('visible');
         }
     }
 

@@ -132,6 +132,115 @@
     color: var(--ss-button-text);
 }
 
+/* === SUGGESTIONS DROPDOWN === */
+.smartsearch-search-box {
+    position: relative;
+}
+
+.smartsearch-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 8px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 1000;
+    display: none;
+}
+
+.smartsearch-suggestions.visible {
+    display: block;
+}
+
+.smartsearch-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid #f5f5f5;
+}
+
+.smartsearch-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.smartsearch-suggestion-item:hover,
+.smartsearch-suggestion-item.active {
+    background: #f8f8f8;
+}
+
+.smartsearch-suggestion-item.active {
+    background: #f0f0f0;
+}
+
+.smartsearch-suggestion-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: #f5f5f5;
+    border-radius: 8px;
+    color: #666;
+    flex-shrink: 0;
+}
+
+.smartsearch-suggestion-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.smartsearch-suggestion-text {
+    flex: 1;
+    font-size: 15px;
+    color: #333;
+}
+
+.smartsearch-suggestion-text strong {
+    color: var(--ss-accent);
+    font-weight: 600;
+}
+
+.smartsearch-suggestion-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: var(--ss-accent);
+    color: #fff;
+    border-radius: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* Mobile suggestions */
+@media (max-width: 768px) {
+    .smartsearch-suggestions {
+        margin-top: 4px;
+        border-radius: 8px;
+        max-height: 300px;
+    }
+
+    .smartsearch-suggestion-item {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
+    .smartsearch-suggestion-icon {
+        width: 28px;
+        height: 28px;
+    }
+
+    .smartsearch-suggestion-text {
+        font-size: 14px;
+    }
+}
+
 .smartsearch-close-btn {
     display: flex;
     align-items: center;

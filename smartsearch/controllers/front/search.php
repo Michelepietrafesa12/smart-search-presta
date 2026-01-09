@@ -617,6 +617,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     case 'banners':
                         $this->displayAjaxBanners();
                         break;
+                    case 'suggestions':
+                        $this->displayAjaxSuggestions();
+                        break;
                     case 'search':
                     default:
                         $this->displayAjaxSearch();
@@ -1772,6 +1775,151 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             'success' => true,
             'banners' => $result
         ]));
+    }
+
+    /**
+     * AJAX endpoint per ottenere suggerimenti di ricerca
+     * Basato sulle ricerche più popolari nel database
+     */
+    public function displayAjaxSuggestions()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Access-Control-Allow-Origin: *');
+
+        $query = Tools::getValue('q', '');
+        $query = trim(mb_strtolower($query));
+
+        if (mb_strlen($query) < 2) {
+            die(json_encode(['suggestions' => []]));
+        }
+
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+
+        $suggestions = [];
+
+        // 1. Suggerimenti da ricerche popolari che iniziano con la query
+        $sql = '
+            SELECT search_query, search_count, results_count
+            FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE id_lang = ' . $idLang . '
+            AND id_shop = ' . $idShop . '
+            AND search_query LIKE \'' . pSQL($query) . '%\'
+            AND results_count > 0
+            AND search_count >= 2
+            ORDER BY search_count DESC
+            LIMIT 5
+        ';
+
+        $popularStarting = Db::getInstance()->executeS($sql);
+        if ($popularStarting) {
+            foreach ($popularStarting as $row) {
+                $suggestions[] = [
+                    'query' => $row['search_query'],
+                    'count' => (int)$row['search_count'],
+                    'results' => (int)$row['results_count'],
+                    'type' => 'popular'
+                ];
+            }
+        }
+
+        // 2. Suggerimenti da ricerche popolari che contengono la query
+        if (count($suggestions) < 8) {
+            $existingQueries = array_column($suggestions, 'query');
+            $excludeList = !empty($existingQueries)
+                ? "AND search_query NOT IN ('" . implode("','", array_map('pSQL', $existingQueries)) . "')"
+                : '';
+
+            $sql = '
+                SELECT search_query, search_count, results_count
+                FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+                WHERE id_lang = ' . $idLang . '
+                AND id_shop = ' . $idShop . '
+                AND search_query LIKE \'%' . pSQL($query) . '%\'
+                AND results_count > 0
+                AND search_count >= 2
+                ' . $excludeList . '
+                ORDER BY search_count DESC
+                LIMIT ' . (8 - count($suggestions)) . '
+            ';
+
+            $popularContaining = Db::getInstance()->executeS($sql);
+            if ($popularContaining) {
+                foreach ($popularContaining as $row) {
+                    $suggestions[] = [
+                        'query' => $row['search_query'],
+                        'count' => (int)$row['search_count'],
+                        'results' => (int)$row['results_count'],
+                        'type' => 'related'
+                    ];
+                }
+            }
+        }
+
+        // 3. Suggerimenti da nomi prodotti se pochi risultati dalle stats
+        if (count($suggestions) < 5) {
+            $existingQueries = array_column($suggestions, 'query');
+
+            $sql = '
+                SELECT DISTINCT
+                    SUBSTRING_INDEX(pl.name, " ", 3) as suggestion
+                FROM `' . _DB_PREFIX_ . 'product_lang` pl
+                INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps ON pl.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
+                WHERE pl.id_lang = ' . $idLang . '
+                AND ps.active = 1
+                AND pl.name LIKE \'' . pSQL($query) . '%\'
+                ORDER BY pl.name ASC
+                LIMIT ' . (5 - count($suggestions)) . '
+            ';
+
+            $productNames = Db::getInstance()->executeS($sql);
+            if ($productNames) {
+                foreach ($productNames as $row) {
+                    $suggestion = trim($row['suggestion']);
+                    if (!empty($suggestion) && !in_array(mb_strtolower($suggestion), array_map('mb_strtolower', $existingQueries))) {
+                        $suggestions[] = [
+                            'query' => $suggestion,
+                            'count' => 0,
+                            'results' => 0,
+                            'type' => 'product'
+                        ];
+                    }
+                }
+            }
+        }
+
+        // 4. Suggerimenti da nomi brand
+        if (count($suggestions) < 8) {
+            $sql = '
+                SELECT DISTINCT m.name
+                FROM `' . _DB_PREFIX_ . 'manufacturer` m
+                INNER JOIN `' . _DB_PREFIX_ . 'product` p ON p.id_manufacturer = m.id_manufacturer
+                INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps ON p.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
+                WHERE m.name LIKE \'' . pSQL($query) . '%\'
+                AND p.active = 1
+                LIMIT 3
+            ';
+
+            $brands = Db::getInstance()->executeS($sql);
+            if ($brands) {
+                $existingQueries = array_column($suggestions, 'query');
+                foreach ($brands as $row) {
+                    if (!in_array(mb_strtolower($row['name']), array_map('mb_strtolower', $existingQueries))) {
+                        $suggestions[] = [
+                            'query' => $row['name'],
+                            'count' => 0,
+                            'results' => 0,
+                            'type' => 'brand'
+                        ];
+                    }
+                }
+            }
+        }
+
+        die(json_encode([
+            'success' => true,
+            'suggestions' => $suggestions
+        ], JSON_UNESCAPED_UNICODE));
     }
 
     /**
