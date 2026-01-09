@@ -814,6 +814,8 @@
         const sliderMin = sidebar.querySelector('#price-slider-min');
         const sliderMax = sidebar.querySelector('#price-slider-max');
         const track = sidebar.querySelector('.smartsearch-price-track');
+        const inputMin = sidebar.querySelector('#price-min');
+        const inputMax = sidebar.querySelector('#price-max');
 
         if (sliderMin && sliderMax && track) {
             const min = parseInt(sliderMin.min);
@@ -824,17 +826,50 @@
             const leftPercent = ((minVal - min) / (max - min)) * 100;
             const rightPercent = ((max - maxVal) / (max - min)) * 100;
 
-            track.style.left = leftPercent + '%';
-            track.style.right = rightPercent + '%';
+            // Usa CSS variables per la track highlight
+            track.style.setProperty('--track-left', leftPercent + '%');
+            track.style.setProperty('--track-right', rightPercent + '%');
+
+            // Aggiorna anche gli input numerici
+            if (inputMin) inputMin.value = minVal;
+            if (inputMax) inputMax.value = maxVal;
         }
     }
 
     /**
+     * Conta i filtri attivi
+     */
+    function getActiveFilterCount() {
+        let count = 0;
+        if (selectedFilters.categories && selectedFilters.categories.length > 0) {
+            count += selectedFilters.categories.length;
+        }
+        if (selectedFilters.brands && selectedFilters.brands.length > 0) {
+            count += selectedFilters.brands.length;
+        }
+        if (selectedFilters.price_min !== null && selectedFilters.price_min !== undefined) {
+            count++;
+        }
+        if (selectedFilters.price_max !== null && selectedFilters.price_max !== undefined) {
+            count++;
+        }
+        return count;
+    }
+
+    /**
      * Applica filtri se c'è una ricerca attiva
+     * Converte i nomi delle proprietà da selectedFilters a quelli attesi da performSearch
      */
     function applyFiltersIfSearching() {
         if (currentQuery && currentQuery.length >= (config.min_chars || 2)) {
-            performSearch(currentQuery, selectedFilters);
+            // Converti i nomi delle proprietà per performSearch
+            const filters = {
+                category: selectedFilters.categories || [],
+                manufacturer: selectedFilters.brands || [],
+                price_min: selectedFilters.price_min,
+                price_max: selectedFilters.price_max
+            };
+            performSearch(currentQuery, filters);
         }
     }
 
@@ -1186,11 +1221,13 @@
             html += '</div>';
         }
 
-        // Mobile filter toggle
+        // Mobile filter toggle con badge filtri attivi
+        const activeFilterCount = getActiveFilterCount();
         html += `
             <button type="button" class="smartsearch-filter-toggle-mobile">
                 ${icons.filter}
                 <span>${t.filters || 'Filtri'}</span>
+                ${activeFilterCount > 0 ? `<span class="smartsearch-filter-badge">${activeFilterCount}</span>` : ''}
             </button>
         `;
 

@@ -53,8 +53,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 die(json_encode($cachedResult, JSON_UNESCAPED_UNICODE));
             }
 
-            // Ricerca prodotti
-            $products = $this->searchProducts($query, $idLang, $idShop);
+            // Ottieni filtri dalla richiesta
+            $filters = $this->getFiltersFromRequest();
+
+            // Ricerca prodotti con filtri
+            $products = $this->searchProducts($query, $idLang, $idShop, $filters);
 
             // Ricerca categorie
             $categories = $this->searchCategories($query, $idLang, $idShop);
@@ -510,7 +513,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      * - Bonus recensioni 4+: +15 punti
      * - Bonus prodotto recente (< 30 giorni): +10 punti
      */
-    protected function searchProducts($query, $idLang, $idShop)
+    protected function searchProducts($query, $idLang, $idShop, $filters = [])
     {
         $query = trim($query);
         if (empty($query)) {
@@ -520,15 +523,23 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // 1. Prima controlla match esatto EAN/SKU (priorità massima)
         $exactMatch = $this->searchByExactCode($query, $idLang, $idShop);
         if (!empty($exactMatch)) {
-            return $this->formatProducts($exactMatch, $idLang);
+            // Applica filtri anche al match esatto
+            $exactMatch = $this->applyFiltersToResults($exactMatch, $filters, $idShop);
+            if (!empty($exactMatch)) {
+                return $this->formatProducts($exactMatch, $idLang);
+            }
         }
 
         // 2. Ricerca con scoring
-        $results = $this->searchProductsWithScoring($query, $idLang, $idShop);
+        $results = $this->searchProductsWithScoring($query, $idLang, $idShop, $filters);
 
         // 3. Se pochi risultati, aggiungi fuzzy search
         if (count($results) < 5) {
-            $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop);
+            $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop, $filters);
+            // Applica filtri anche ai risultati fuzzy
+            if (!empty($filters)) {
+                $fuzzyResults = $this->applyFiltersToResults($fuzzyResults, $filters, $idShop);
+            }
             $results = $this->mergeResultsWithScoring($results, $fuzzyResults, $query);
         }
 
@@ -553,6 +564,84 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $results = array_slice($results, 0, 20);
 
         return $this->formatProducts($results, $idLang);
+    }
+
+    /**
+     * Applica i filtri ai risultati
+     */
+    protected function applyFiltersToResults($results, $filters, $idShop)
+    {
+        if (empty($filters)) {
+            return $results;
+        }
+
+        $filtered = [];
+        foreach ($results as $product) {
+            $include = true;
+
+            // Filtro categoria
+            if (!empty($filters['category']) && is_array($filters['category'])) {
+                $productCategories = $this->getProductCategories($product['id_product']);
+                $hasCategory = false;
+                foreach ($filters['category'] as $catId) {
+                    if (in_array($catId, $productCategories)) {
+                        $hasCategory = true;
+                        break;
+                    }
+                }
+                if (!$hasCategory) {
+                    $include = false;
+                }
+            }
+
+            // Filtro manufacturer
+            if ($include && !empty($filters['manufacturer']) && is_array($filters['manufacturer'])) {
+                if (!in_array((int)$product['id_manufacturer'], $filters['manufacturer'])) {
+                    $include = false;
+                }
+            }
+
+            // Filtro prezzo
+            if ($include) {
+                $productPrice = Product::getPriceStatic($product['id_product'], true);
+                if (isset($filters['price_min']) && $productPrice < $filters['price_min']) {
+                    $include = false;
+                }
+                if (isset($filters['price_max']) && $productPrice > $filters['price_max']) {
+                    $include = false;
+                }
+            }
+
+            // Filtro stock
+            if ($include && !empty($filters['in_stock'])) {
+                $stock = StockAvailable::getQuantityAvailableByProduct($product['id_product']);
+                if ($stock <= 0) {
+                    $include = false;
+                }
+            }
+
+            if ($include) {
+                $filtered[] = $product;
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
+     * Ottieni le categorie di un prodotto
+     */
+    protected function getProductCategories($idProduct)
+    {
+        $sql = 'SELECT id_category FROM ' . _DB_PREFIX_ . 'category_product WHERE id_product = ' . (int)$idProduct;
+        $results = Db::getInstance()->executeS($sql);
+        $categories = [];
+        if ($results) {
+            foreach ($results as $row) {
+                $categories[] = (int)$row['id_category'];
+            }
+        }
+        return $categories;
     }
 
     /**
@@ -607,7 +696,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * Ricerca prodotti con calcolo score di rilevanza
      */
-    protected function searchProductsWithScoring($query, $idLang, $idShop)
+    protected function searchProductsWithScoring($query, $idLang, $idShop, $filters = [])
     {
         $queryLower = mb_strtolower(trim($query));
         $words = array_filter(explode(' ', $queryLower), function($w) {
@@ -628,6 +717,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $orConditions[] = "p.reference LIKE '%{$wordSafe}%'";
             $orConditions[] = "m.name LIKE '%{$wordSafe}%'";
         }
+
+        // Costruisci condizioni filtro
+        $filterConditions = $this->buildFilterConditions($filters, $idShop);
 
         $sql = '
             SELECT DISTINCT
@@ -655,8 +747,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
                 AND cl.id_lang = ' . (int)$idLang . '
+            ' . (!empty($filters['category']) ? 'INNER JOIN ' . _DB_PREFIX_ . 'category_product cp ON p.id_product = cp.id_product' : '') . '
             WHERE p.active = 1 AND ps.active = 1
             AND (' . implode(' OR ', $orConditions) . ')
+            ' . $filterConditions . '
             LIMIT 100';
 
         $results = Db::getInstance()->executeS($sql);
@@ -676,6 +770,49 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         });
 
         return $results;
+    }
+
+    /**
+     * Costruisce le condizioni SQL per i filtri
+     */
+    protected function buildFilterConditions($filters, $idShop)
+    {
+        $conditions = [];
+
+        // Filtro categoria
+        if (!empty($filters['category']) && is_array($filters['category'])) {
+            $categoryIds = array_map('intval', $filters['category']);
+            $conditions[] = 'cp.id_category IN (' . implode(',', $categoryIds) . ')';
+        }
+
+        // Filtro manufacturer
+        if (!empty($filters['manufacturer']) && is_array($filters['manufacturer'])) {
+            $manufacturerIds = array_map('intval', $filters['manufacturer']);
+            $conditions[] = 'p.id_manufacturer IN (' . implode(',', $manufacturerIds) . ')';
+        }
+
+        // Filtro prezzo - usando subquery per il prezzo effettivo
+        if (isset($filters['price_min']) || isset($filters['price_max'])) {
+            // Prezzo base da product_shop
+            if (isset($filters['price_min'])) {
+                $conditions[] = 'ps.price >= ' . (float)$filters['price_min'];
+            }
+            if (isset($filters['price_max'])) {
+                $conditions[] = 'ps.price <= ' . (float)$filters['price_max'];
+            }
+        }
+
+        // Filtro stock
+        if (!empty($filters['in_stock'])) {
+            $conditions[] = '(SELECT SUM(sa.quantity) FROM ' . _DB_PREFIX_ . 'stock_available sa
+                WHERE sa.id_product = p.id_product AND sa.id_shop = ' . (int)$idShop . ') > 0';
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return 'AND ' . implode(' AND ', $conditions);
     }
 
     /**
@@ -1035,7 +1172,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * Ricerca prodotti fuzzy (tollerante agli errori di battitura)
      */
-    protected function searchProductsFuzzy($query, $idLang, $idShop)
+    protected function searchProductsFuzzy($query, $idLang, $idShop, $filters = [])
     {
         $words = explode(' ', $query);
         $conditions = [];
@@ -1349,6 +1486,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         $manufacturerIds = Tools::getValue('manufacturer', '');
         if (!empty($manufacturerIds)) {
             $filters['manufacturer'] = array_map('intval', explode(',', $manufacturerIds));
+        }
+
+        $priceMin = Tools::getValue('price_min', '');
+        if ($priceMin !== '' && is_numeric($priceMin)) {
+            $filters['price_min'] = (float)$priceMin;
+        }
+
+        $priceMax = Tools::getValue('price_max', '');
+        if ($priceMax !== '' && is_numeric($priceMax)) {
+            $filters['price_max'] = (float)$priceMax;
         }
 
         $inStock = Tools::getValue('in_stock', '');

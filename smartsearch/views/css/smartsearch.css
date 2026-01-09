@@ -217,12 +217,14 @@
 
 /* === SIDEBAR FILTRI - PIÙ VISIBILI === */
 .smartsearch-sidebar {
-    width: 280px;
+    width: 300px;
     background: var(--ss-sidebar-bg);
     border-right: 2px solid #e8e8e8;
     overflow-y: auto;
     flex-shrink: 0;
     padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #f97316 #f0f0f0;
 }
 
 .smartsearch-filter-section {
@@ -905,6 +907,22 @@ mark {
     display: none;
 }
 
+/* Badge per numero filtri attivi */
+.smartsearch-filter-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    background: #f97316;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 11px;
+    padding: 0 6px;
+    margin-left: 6px;
+}
+
 @media (max-width: 768px) {
     .smartsearch-filter-toggle-mobile {
         display: flex;
@@ -1080,56 +1098,116 @@ mark {
     font-weight: 600;
 }
 
-/* Range slider doppio */
+/* Range slider doppio - FIXED */
 .smartsearch-price-slider {
     position: relative;
-    height: 30px;
+    height: 40px;
     margin-top: 10px;
+    padding: 0 10px;
 }
 
 .smartsearch-price-track {
     position: absolute;
     top: 50%;
-    left: 0;
-    right: 0;
+    left: 10px;
+    right: 10px;
     height: 6px;
-    background: linear-gradient(90deg, #f97316, #fb923c);
+    background: #e8e8e8;
     border-radius: 3px;
     transform: translateY(-50%);
+    z-index: 1;
+}
+
+/* Track highlight - la parte colorata tra i due cursori */
+.smartsearch-price-track::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: var(--track-left, 0%);
+    right: var(--track-right, 0%);
+    height: 100%;
+    background: linear-gradient(90deg, #f97316, #fb923c);
+    border-radius: 3px;
 }
 
 .smartsearch-price-slider input[type="range"] {
     position: absolute;
-    width: 100%;
+    width: calc(100% - 20px);
+    left: 10px;
     top: 50%;
     transform: translateY(-50%);
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
     pointer-events: none;
+    z-index: 2;
+    height: 6px;
+    margin: 0;
+    padding: 0;
+}
+
+/* Il primo slider (min) sta sotto */
+.smartsearch-price-slider input[type="range"]#price-slider-min {
+    z-index: 3;
+}
+
+/* Il secondo slider (max) sta sopra */
+.smartsearch-price-slider input[type="range"]#price-slider-max {
+    z-index: 4;
+}
+
+.smartsearch-price-slider input[type="range"]::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    border: none;
 }
 
 .smartsearch-price-slider input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     background: #fff;
     border: 3px solid #f97316;
     border-radius: 50%;
-    cursor: pointer;
+    cursor: grab;
     pointer-events: auto;
-    box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+    box-shadow: 0 2px 10px rgba(249,115,22,0.4);
+    margin-top: -9px;
+    position: relative;
+    z-index: 10;
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.smartsearch-price-slider input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 15px rgba(249,115,22,0.5);
+}
+
+.smartsearch-price-slider input[type="range"]::-webkit-slider-thumb:active {
+    cursor: grabbing;
+    transform: scale(1.15);
+    box-shadow: 0 4px 20px rgba(249,115,22,0.6);
+}
+
+.smartsearch-price-slider input[type="range"]::-moz-range-track {
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    border: none;
 }
 
 .smartsearch-price-slider input[type="range"]::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     background: #fff;
     border: 3px solid #f97316;
     border-radius: 50%;
-    cursor: pointer;
+    cursor: grab;
     pointer-events: auto;
-    box-shadow: 0 2px 8px rgba(249,115,22,0.3);
+    box-shadow: 0 2px 10px rgba(249,115,22,0.4);
+    position: relative;
+    z-index: 10;
 }
 
 /* Lista filtri con checkbox */
@@ -1293,19 +1371,46 @@ mark {
     box-shadow: 0 4px 15px rgba(249,115,22,0.3);
 }
 
-/* Mobile filtri */
+/* Mobile filtri - MIGLIORATO */
 @media (max-width: 768px) {
     .smartsearch-filters-close-mobile {
         display: flex;
     }
 
+    /* Overlay backdrop quando i filtri sono aperti */
+    .smartsearch-sidebar.mobile-visible::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: -1;
+        animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
     .smartsearch-sidebar.mobile-visible .smartsearch-filters-header {
-        padding: 16px;
+        padding: 16px 20px;
         position: sticky;
         top: 0;
         z-index: 10;
         background: #fff;
         border-bottom: 2px solid #f97316;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .smartsearch-sidebar.mobile-visible .smartsearch-filters-header h3 {
+        font-size: 18px;
+        font-weight: 700;
+        color: #333;
     }
 
     .smartsearch-filter-section {
@@ -1314,6 +1419,8 @@ mark {
 
     .smartsearch-filter-title {
         padding: 14px 16px;
+        /* Touch target minimo 44px */
+        min-height: 48px;
     }
 
     .smartsearch-filter-content {
@@ -1321,16 +1428,71 @@ mark {
     }
 
     .smartsearch-filters-actions {
-        padding: 12px 16px;
+        padding: 16px 20px;
+        gap: 12px;
+        position: sticky;
+        bottom: 0;
+        background: #fff;
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+    }
+
+    .smartsearch-clear-filters,
+    .smartsearch-apply-filters {
+        min-height: 48px;
+        font-size: 15px;
     }
 
     .smartsearch-filter-tags {
-        gap: 6px;
+        gap: 8px;
     }
 
     .smartsearch-filter-tag {
-        padding: 6px 12px;
-        font-size: 12px;
+        padding: 10px 16px;
+        font-size: 13px;
+        /* Touch target minimo */
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    /* Checkbox più grandi per touch */
+    .smartsearch-filter-checkbox {
+        padding: 12px 0;
+        min-height: 48px;
+    }
+
+    .smartsearch-checkbox-mark {
+        width: 24px;
+        height: 24px;
+    }
+
+    .smartsearch-filter-name {
+        font-size: 15px;
+    }
+
+    /* Price slider più grande per touch */
+    .smartsearch-price-slider {
+        height: 50px;
+        padding: 0 12px;
+    }
+
+    .smartsearch-price-slider input[type="range"]::-webkit-slider-thumb {
+        width: 28px;
+        height: 28px;
+        margin-top: -11px;
+    }
+
+    .smartsearch-price-slider input[type="range"]::-moz-range-thumb {
+        width: 28px;
+        height: 28px;
+    }
+
+    .smartsearch-price-input {
+        padding: 12px 14px;
+    }
+
+    .smartsearch-price-input input {
+        font-size: 16px;
     }
 }
 
