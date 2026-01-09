@@ -63,6 +63,40 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Debug: IDs dei prodotti nei risultati
             $resultProductIds = array_map(function($p) { return $p['id']; }, $products);
 
+            // Debug dettagliato: controlla se ogni prodotto boostato esiste e è attivo
+            $boostDebugDetails = [];
+            foreach ($boostRules ?: [] as $rule) {
+                $productId = (int)$rule['id_product'];
+
+                // Verifica se il prodotto esiste e perché potrebbe non caricarsi
+                $productCheck = Db::getInstance()->getRow('
+                    SELECT
+                        p.id_product,
+                        p.active as product_active,
+                        pl.name,
+                        ps.active as shop_active
+                    FROM `' . _DB_PREFIX_ . 'product` p
+                    LEFT JOIN `' . _DB_PREFIX_ . 'product_lang` pl
+                        ON p.id_product = pl.id_product
+                        AND pl.id_lang = ' . (int)$idLang . '
+                    LEFT JOIN `' . _DB_PREFIX_ . 'product_shop` ps
+                        ON p.id_product = ps.id_product
+                        AND ps.id_shop = ' . (int)$idShop . '
+                    WHERE p.id_product = ' . $productId . '
+                ');
+
+                $boostDebugDetails[] = [
+                    'id_product' => $productId,
+                    'rule_keywords' => $rule['keywords'] ?: '(sempre attivo)',
+                    'boost_value' => (float)$rule['boost_value'],
+                    'product_exists' => $productCheck ? true : false,
+                    'product_name' => $productCheck['name'] ?? 'NOT FOUND',
+                    'product_active' => $productCheck ? (int)$productCheck['product_active'] : 'N/A',
+                    'shop_active' => $productCheck ? ($productCheck['shop_active'] !== null ? (int)$productCheck['shop_active'] : 'NO SHOP ASSOCIATION') : 'N/A',
+                    'in_results' => in_array($productId, $resultProductIds),
+                ];
+            }
+
             die(json_encode([
                 'products' => $products,
                 'categories' => $categories,
@@ -91,7 +125,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                             ];
                         }
                         return null;
-                    }, $products)))
+                    }, $products))),
+                    'boost_details' => $boostDebugDetails
                 ]
             ], JSON_UNESCAPED_UNICODE));
 
