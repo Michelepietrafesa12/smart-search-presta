@@ -55,6 +55,52 @@ class SmartSearch extends Module
         return isset(self::$configCache[$key]) ? self::$configCache[$key] : $default;
     }
 
+    /**
+     * Ottieni configurazione stile personalizzato
+     * Ritorna i valori configurati o i default
+     */
+    protected function getStyleConfig()
+    {
+        // Valori predefiniti
+        $defaults = [
+            'overlay_bg' => '#1e293b',
+            'overlay_opacity' => 98,
+            'search_bg' => '#1e293b',
+            'search_text' => '#ffffff',
+            'search_placeholder' => '#94a3b8',
+            'accent_color' => '#f97316',
+            'card_bg' => '#ffffff',
+            'card_title' => '#1e293b',
+            'card_price' => '#059669',
+            'card_price_old' => '#94a3b8',
+            'discount_badge_bg' => '#dc2626',
+            'discount_badge_text' => '#ffffff',
+            'sidebar_bg' => '#f8fafc',
+            'sidebar_text' => '#334155',
+            'button_bg' => '#f97316',
+            'button_text' => '#ffffff',
+        ];
+
+        return [
+            'overlay_bg' => Configuration::get('SMARTSEARCH_STYLE_OVERLAY_BG') ?: $defaults['overlay_bg'],
+            'overlay_opacity' => (int)(Configuration::get('SMARTSEARCH_STYLE_OVERLAY_OPACITY') ?: $defaults['overlay_opacity']),
+            'search_bg' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_BG') ?: $defaults['search_bg'],
+            'search_text' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_TEXT') ?: $defaults['search_text'],
+            'search_placeholder' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_PLACEHOLDER') ?: $defaults['search_placeholder'],
+            'accent_color' => Configuration::get('SMARTSEARCH_STYLE_ACCENT') ?: $defaults['accent_color'],
+            'card_bg' => Configuration::get('SMARTSEARCH_STYLE_CARD_BG') ?: $defaults['card_bg'],
+            'card_title' => Configuration::get('SMARTSEARCH_STYLE_CARD_TITLE') ?: $defaults['card_title'],
+            'card_price' => Configuration::get('SMARTSEARCH_STYLE_CARD_PRICE') ?: $defaults['card_price'],
+            'card_price_old' => Configuration::get('SMARTSEARCH_STYLE_CARD_PRICE_OLD') ?: $defaults['card_price_old'],
+            'discount_badge_bg' => Configuration::get('SMARTSEARCH_STYLE_DISCOUNT_BG') ?: $defaults['discount_badge_bg'],
+            'discount_badge_text' => Configuration::get('SMARTSEARCH_STYLE_DISCOUNT_TEXT') ?: $defaults['discount_badge_text'],
+            'sidebar_bg' => Configuration::get('SMARTSEARCH_STYLE_SIDEBAR_BG') ?: $defaults['sidebar_bg'],
+            'sidebar_text' => Configuration::get('SMARTSEARCH_STYLE_SIDEBAR_TEXT') ?: $defaults['sidebar_text'],
+            'button_bg' => Configuration::get('SMARTSEARCH_STYLE_BUTTON_BG') ?: $defaults['button_bg'],
+            'button_text' => Configuration::get('SMARTSEARCH_STYLE_BUTTON_TEXT') ?: $defaults['button_text'],
+        ];
+    }
+
     public function __construct()
     {
         $this->name = 'smartsearch';
@@ -496,6 +542,9 @@ class SmartSearch extends Module
                     'featured_products' => $this->l('Prodotti in evidenza'),
                     'products_found' => $this->l('risultati'),
                 ],
+
+                // Stile personalizzato
+                'style' => $this->getStyleConfig(),
             ]
         ]);
 

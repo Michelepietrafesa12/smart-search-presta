@@ -3,6 +3,27 @@
  * UI/UX ottimizzata simile a Doofinder
  */
 
+/* === CSS VARIABLES (defaults - can be overridden by JS) === */
+:root {
+    --ss-overlay-bg: #1e293b;
+    --ss-overlay-bg-rgb: 30, 41, 59;
+    --ss-overlay-opacity: 0.98;
+    --ss-search-bg: #1e293b;
+    --ss-search-text: #ffffff;
+    --ss-search-placeholder: #94a3b8;
+    --ss-accent: #f97316;
+    --ss-card-bg: #ffffff;
+    --ss-card-title: #1e293b;
+    --ss-card-price: #059669;
+    --ss-card-price-old: #94a3b8;
+    --ss-discount-bg: #dc2626;
+    --ss-discount-text: #ffffff;
+    --ss-sidebar-bg: #f8fafc;
+    --ss-sidebar-text: #334155;
+    --ss-button-bg: #f97316;
+    --ss-button-text: #ffffff;
+}
+
 /* === RESET & BASE === */
 .smartsearch-overlay *,
 .smartsearch-overlay *::before,
@@ -63,14 +84,14 @@
 
 .smartsearch-search-box:focus-within {
     background: #fff;
-    border-color: #f97316;
+    border-color: var(--ss-accent);
     box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.1);
 }
 
 .smartsearch-search-box svg {
     width: 22px;
     height: 22px;
-    color: #f97316;
+    color: var(--ss-accent);
     flex-shrink: 0;
 }
 
@@ -107,8 +128,8 @@
 }
 
 .smartsearch-clear-input:hover {
-    background: #f97316;
-    color: #fff;
+    background: var(--ss-accent);
+    color: var(--ss-button-text);
 }
 
 .smartsearch-close-btn {
@@ -127,8 +148,8 @@
 }
 
 .smartsearch-close-btn:hover {
-    background: #f97316;
-    color: #fff;
+    background: var(--ss-accent);
+    color: var(--ss-button-text);
 }
 
 .smartsearch-close-btn svg {
@@ -162,8 +183,8 @@
 }
 
 .smartsearch-tag:hover {
-    border-color: #f97316;
-    color: #f97316;
+    border-color: var(--ss-accent);
+    color: var(--ss-accent);
     background: #fff7ed;
 }
 
@@ -183,8 +204,8 @@
 }
 
 .smartsearch-tag:hover .smartsearch-tag-remove {
-    background: #f97316;
-    color: #fff;
+    background: var(--ss-accent);
+    color: var(--ss-button-text);
 }
 
 /* === CONTENT AREA === */
@@ -197,7 +218,7 @@
 /* === SIDEBAR FILTRI - PIÙ VISIBILI === */
 .smartsearch-sidebar {
     width: 280px;
-    background: #f8f9fa;
+    background: var(--ss-sidebar-bg);
     border-right: 2px solid #e8e8e8;
     overflow-y: auto;
     flex-shrink: 0;
@@ -510,7 +531,7 @@
 .smartsearch-section-title svg {
     width: 24px;
     height: 24px;
-    color: #f97316;
+    color: var(--ss-accent);
 }
 
 /* Products grid - MIGLIORATO - Fix spazi vuoti */
@@ -562,7 +583,7 @@
 
 /* Product card - MIGLIORATO senza carrello */
 .smartsearch-product-card {
-    background: #fff;
+    background: var(--ss-card-bg);
     border-radius: 12px;
     overflow: hidden;
     text-decoration: none;
@@ -587,8 +608,8 @@
     position: absolute;
     top: 12px;
     left: 12px;
-    background: linear-gradient(135deg, #ef4444, #dc2626);
-    color: #fff;
+    background: var(--ss-discount-bg);
+    color: var(--ss-discount-text);
     font-size: 13px;
     font-weight: 700;
     padding: 6px 10px;
@@ -636,7 +657,7 @@
 .smartsearch-product-name {
     font-size: 14px;
     font-weight: 600;
-    color: #333;
+    color: var(--ss-card-title);
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -655,14 +676,14 @@
 
 .smartsearch-product-old-price {
     font-size: 13px;
-    color: #999;
+    color: var(--ss-card-price-old);
     text-decoration: line-through;
 }
 
 .smartsearch-product-price {
     font-size: 18px;
     font-weight: 700;
-    color: #f97316;
+    color: var(--ss-card-price);
 }
 
 /* Badge "Risparmi X€" */

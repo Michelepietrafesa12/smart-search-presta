@@ -204,10 +204,82 @@
      * Init
      */
     function init() {
+        applyCustomStyles(); // Apply custom colors from config
         loadRecentSearches();
         createOverlay();
         bindTriggers();
         loadBanners(''); // Preload banners
+    }
+
+    /**
+     * Apply custom styles from admin configuration
+     * Injects CSS variables into the page
+     */
+    function applyCustomStyles() {
+        const style = config.style || {};
+
+        // Default values (fallback)
+        const defaults = {
+            overlay_bg: '#1e293b',
+            overlay_opacity: 98,
+            search_bg: '#1e293b',
+            search_text: '#ffffff',
+            search_placeholder: '#94a3b8',
+            accent_color: '#f97316',
+            card_bg: '#ffffff',
+            card_title: '#1e293b',
+            card_price: '#059669',
+            card_price_old: '#94a3b8',
+            discount_badge_bg: '#dc2626',
+            discount_badge_text: '#ffffff',
+            sidebar_bg: '#f8fafc',
+            sidebar_text: '#334155',
+            button_bg: '#f97316',
+            button_text: '#ffffff'
+        };
+
+        // Merge with defaults
+        const s = { ...defaults, ...style };
+
+        // Convert hex to RGB for opacity support
+        const hexToRgb = (hex) => {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '30, 41, 59';
+        };
+
+        // Create CSS custom properties
+        const cssVars = `
+            :root {
+                --ss-overlay-bg: ${s.overlay_bg};
+                --ss-overlay-bg-rgb: ${hexToRgb(s.overlay_bg)};
+                --ss-overlay-opacity: ${s.overlay_opacity / 100};
+                --ss-search-bg: ${s.search_bg};
+                --ss-search-text: ${s.search_text};
+                --ss-search-placeholder: ${s.search_placeholder};
+                --ss-accent: ${s.accent_color};
+                --ss-card-bg: ${s.card_bg};
+                --ss-card-title: ${s.card_title};
+                --ss-card-price: ${s.card_price};
+                --ss-card-price-old: ${s.card_price_old};
+                --ss-discount-bg: ${s.discount_badge_bg};
+                --ss-discount-text: ${s.discount_badge_text};
+                --ss-sidebar-bg: ${s.sidebar_bg};
+                --ss-sidebar-text: ${s.sidebar_text};
+                --ss-button-bg: ${s.button_bg};
+                --ss-button-text: ${s.button_text};
+            }
+        `;
+
+        // Inject styles
+        const styleEl = document.createElement('style');
+        styleEl.id = 'smartsearch-custom-styles';
+        styleEl.textContent = cssVars;
+
+        // Remove existing if present
+        const existing = document.getElementById('smartsearch-custom-styles');
+        if (existing) existing.remove();
+
+        document.head.appendChild(styleEl);
     }
 
     /**

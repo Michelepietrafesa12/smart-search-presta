@@ -69,6 +69,11 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                                     <i class="icon-picture-o"></i> Banner
                                 </a>
                             </li>
+                            <li class="' . ($this->activeTab == 'style' ? 'active' : '') . '">
+                                <a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=style">
+                                    <i class="icon-paint-brush"></i> Stile
+                                </a>
+                            </li>
                         </ul>
                     </div>
                     <div class="tab-content">';
@@ -79,6 +84,9 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                 break;
             case 'banners':
                 $html .= $this->renderBannersTab();
+                break;
+            case 'style':
+                $html .= $this->renderStyleTab();
                 break;
             default:
                 $html .= $this->renderSettingsTab();
@@ -141,6 +149,18 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         if (Tools::getValue('toggleBanner')) {
             $this->toggleBannerStatus((int)Tools::getValue('toggleBanner'));
             $this->activeTab = 'banners';
+        }
+
+        if (Tools::isSubmit('submitStyleSettings')) {
+            $this->saveStyleSettings();
+            $this->confirmations[] = $this->l('Impostazioni di stile salvate con successo!');
+            $this->activeTab = 'style';
+        }
+
+        if (Tools::isSubmit('resetStyleSettings')) {
+            $this->resetStyleSettings();
+            $this->confirmations[] = $this->l('Stile ripristinato ai valori predefiniti!');
+            $this->activeTab = 'style';
         }
 
         parent::postProcess();
@@ -327,6 +347,236 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
         $html .= '</div>';
         return $html;
+    }
+
+    protected function renderStyleTab()
+    {
+        $formAction = $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=style';
+
+        // Valori predefiniti
+        $defaults = $this->getDefaultStyleValues();
+
+        // Valori attuali (o predefiniti se non impostati)
+        $values = [
+            'overlay_bg' => Configuration::get('SMARTSEARCH_STYLE_OVERLAY_BG') ?: $defaults['overlay_bg'],
+            'overlay_opacity' => Configuration::get('SMARTSEARCH_STYLE_OVERLAY_OPACITY') ?: $defaults['overlay_opacity'],
+            'search_bg' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_BG') ?: $defaults['search_bg'],
+            'search_text' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_TEXT') ?: $defaults['search_text'],
+            'search_placeholder' => Configuration::get('SMARTSEARCH_STYLE_SEARCH_PLACEHOLDER') ?: $defaults['search_placeholder'],
+            'accent_color' => Configuration::get('SMARTSEARCH_STYLE_ACCENT') ?: $defaults['accent_color'],
+            'card_bg' => Configuration::get('SMARTSEARCH_STYLE_CARD_BG') ?: $defaults['card_bg'],
+            'card_title' => Configuration::get('SMARTSEARCH_STYLE_CARD_TITLE') ?: $defaults['card_title'],
+            'card_price' => Configuration::get('SMARTSEARCH_STYLE_CARD_PRICE') ?: $defaults['card_price'],
+            'card_price_old' => Configuration::get('SMARTSEARCH_STYLE_CARD_PRICE_OLD') ?: $defaults['card_price_old'],
+            'discount_badge_bg' => Configuration::get('SMARTSEARCH_STYLE_DISCOUNT_BG') ?: $defaults['discount_badge_bg'],
+            'discount_badge_text' => Configuration::get('SMARTSEARCH_STYLE_DISCOUNT_TEXT') ?: $defaults['discount_badge_text'],
+            'sidebar_bg' => Configuration::get('SMARTSEARCH_STYLE_SIDEBAR_BG') ?: $defaults['sidebar_bg'],
+            'sidebar_text' => Configuration::get('SMARTSEARCH_STYLE_SIDEBAR_TEXT') ?: $defaults['sidebar_text'],
+            'button_bg' => Configuration::get('SMARTSEARCH_STYLE_BUTTON_BG') ?: $defaults['button_bg'],
+            'button_text' => Configuration::get('SMARTSEARCH_STYLE_BUTTON_TEXT') ?: $defaults['button_text'],
+        ];
+
+        $html = '<div class="panel"><div class="panel-heading"><i class="icon-paint-brush"></i> Personalizzazione Stile</div>';
+
+        // Anteprima live
+        $html .= '<div class="alert alert-info">';
+        $html .= '<i class="icon-eye"></i> <strong>Anteprima:</strong> Le modifiche saranno visibili dopo il salvataggio. Ricarica la pagina del negozio per vedere i cambiamenti.';
+        $html .= '</div>';
+
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '">';
+
+        // Sezione 1: Overlay
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-square"></i> Overlay Sfondo</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore sfondo overlay</label>';
+        $html .= '<input type="color" name="style_overlay_bg" class="form-control" value="' . htmlspecialchars($values['overlay_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '<p class="help-block">Sfondo dietro i risultati</p>';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Opacità overlay (0-100)</label>';
+        $html .= '<input type="number" name="style_overlay_opacity" class="form-control" value="' . (int)$values['overlay_opacity'] . '" min="0" max="100">';
+        $html .= '<p class="help-block">0 = trasparente, 100 = opaco</p>';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Sezione 2: Barra di ricerca
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-search"></i> Barra di Ricerca</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Sfondo input</label>';
+        $html .= '<input type="color" name="style_search_bg" class="form-control" value="' . htmlspecialchars($values['search_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore testo</label>';
+        $html .= '<input type="color" name="style_search_text" class="form-control" value="' . htmlspecialchars($values['search_text']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore placeholder</label>';
+        $html .= '<input type="color" name="style_search_placeholder" class="form-control" value="' . htmlspecialchars($values['search_placeholder']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore accento</label>';
+        $html .= '<input type="color" name="style_accent_color" class="form-control" value="' . htmlspecialchars($values['accent_color']) . '" style="height:40px;padding:2px">';
+        $html .= '<p class="help-block">Icone, bordi focus</p>';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Sezione 3: Card prodotto
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-th"></i> Card Prodotto</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Sfondo card</label>';
+        $html .= '<input type="color" name="style_card_bg" class="form-control" value="' . htmlspecialchars($values['card_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore titolo</label>';
+        $html .= '<input type="color" name="style_card_title" class="form-control" value="' . htmlspecialchars($values['card_title']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore prezzo</label>';
+        $html .= '<input type="color" name="style_card_price" class="form-control" value="' . htmlspecialchars($values['card_price']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-3">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore prezzo barrato</label>';
+        $html .= '<input type="color" name="style_card_price_old" class="form-control" value="' . htmlspecialchars($values['card_price_old']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Sezione 4: Badge sconto
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-tag"></i> Badge Sconto</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Sfondo badge</label>';
+        $html .= '<input type="color" name="style_discount_badge_bg" class="form-control" value="' . htmlspecialchars($values['discount_badge_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Testo badge</label>';
+        $html .= '<input type="color" name="style_discount_badge_text" class="form-control" value="' . htmlspecialchars($values['discount_badge_text']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Sezione 5: Sidebar filtri
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-sliders"></i> Sidebar Filtri</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Sfondo sidebar</label>';
+        $html .= '<input type="color" name="style_sidebar_bg" class="form-control" value="' . htmlspecialchars($values['sidebar_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Colore testo</label>';
+        $html .= '<input type="color" name="style_sidebar_text" class="form-control" value="' . htmlspecialchars($values['sidebar_text']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Sezione 6: Pulsanti
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-hand-pointer-o"></i> Pulsanti</div>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Sfondo pulsanti</label>';
+        $html .= '<input type="color" name="style_button_bg" class="form-control" value="' . htmlspecialchars($values['button_bg']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '<div class="col-md-4">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>Testo pulsanti</label>';
+        $html .= '<input type="color" name="style_button_text" class="form-control" value="' . htmlspecialchars($values['button_text']) . '" style="height:40px;padding:2px">';
+        $html .= '</div></div>';
+        $html .= '</div></div>';
+
+        // Pulsanti azione
+        $html .= '<div class="panel-footer">';
+        $html .= '<button type="submit" name="submitStyleSettings" class="btn btn-primary"><i class="icon-save"></i> Salva Stile</button> ';
+        $html .= '<button type="submit" name="resetStyleSettings" class="btn btn-default" onclick="return confirm(\'Ripristinare i colori predefiniti?\')"><i class="icon-refresh"></i> Ripristina Predefiniti</button>';
+        $html .= '</div>';
+
+        $html .= '</form>';
+        $html .= '</div>';
+
+        return $html;
+    }
+
+    protected function getDefaultStyleValues()
+    {
+        return [
+            'overlay_bg' => '#1e293b',
+            'overlay_opacity' => '98',
+            'search_bg' => '#1e293b',
+            'search_text' => '#ffffff',
+            'search_placeholder' => '#94a3b8',
+            'accent_color' => '#f97316',
+            'card_bg' => '#ffffff',
+            'card_title' => '#1e293b',
+            'card_price' => '#059669',
+            'card_price_old' => '#94a3b8',
+            'discount_badge_bg' => '#dc2626',
+            'discount_badge_text' => '#ffffff',
+            'sidebar_bg' => '#f8fafc',
+            'sidebar_text' => '#334155',
+            'button_bg' => '#f97316',
+            'button_text' => '#ffffff',
+        ];
+    }
+
+    protected function saveStyleSettings()
+    {
+        Configuration::updateValue('SMARTSEARCH_STYLE_OVERLAY_BG', pSQL(Tools::getValue('style_overlay_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_OVERLAY_OPACITY', (int)Tools::getValue('style_overlay_opacity'));
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_BG', pSQL(Tools::getValue('style_search_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_TEXT', pSQL(Tools::getValue('style_search_text')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_PLACEHOLDER', pSQL(Tools::getValue('style_search_placeholder')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_ACCENT', pSQL(Tools::getValue('style_accent_color')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_BG', pSQL(Tools::getValue('style_card_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_TITLE', pSQL(Tools::getValue('style_card_title')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_PRICE', pSQL(Tools::getValue('style_card_price')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_PRICE_OLD', pSQL(Tools::getValue('style_card_price_old')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_DISCOUNT_BG', pSQL(Tools::getValue('style_discount_badge_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_DISCOUNT_TEXT', pSQL(Tools::getValue('style_discount_badge_text')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_SIDEBAR_BG', pSQL(Tools::getValue('style_sidebar_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_SIDEBAR_TEXT', pSQL(Tools::getValue('style_sidebar_text')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_BUTTON_BG', pSQL(Tools::getValue('style_button_bg')));
+        Configuration::updateValue('SMARTSEARCH_STYLE_BUTTON_TEXT', pSQL(Tools::getValue('style_button_text')));
+    }
+
+    protected function resetStyleSettings()
+    {
+        $defaults = $this->getDefaultStyleValues();
+        Configuration::updateValue('SMARTSEARCH_STYLE_OVERLAY_BG', $defaults['overlay_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_OVERLAY_OPACITY', $defaults['overlay_opacity']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_BG', $defaults['search_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_TEXT', $defaults['search_text']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_SEARCH_PLACEHOLDER', $defaults['search_placeholder']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_ACCENT', $defaults['accent_color']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_BG', $defaults['card_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_TITLE', $defaults['card_title']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_PRICE', $defaults['card_price']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_CARD_PRICE_OLD', $defaults['card_price_old']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_DISCOUNT_BG', $defaults['discount_badge_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_DISCOUNT_TEXT', $defaults['discount_badge_text']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_SIDEBAR_BG', $defaults['sidebar_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_SIDEBAR_TEXT', $defaults['sidebar_text']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_BUTTON_BG', $defaults['button_bg']);
+        Configuration::updateValue('SMARTSEARCH_STYLE_BUTTON_TEXT', $defaults['button_text']);
     }
 
     protected function saveSettings()
