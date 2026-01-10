@@ -921,8 +921,7 @@ mark {
     }
 
     .smartsearch-tags {
-        padding: 12px 16px;
-        gap: 8px;
+        display: none !important;
     }
 
     .smartsearch-tag {
