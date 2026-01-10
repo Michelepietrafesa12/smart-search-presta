@@ -27,6 +27,10 @@
     let totalResultsCount = 0;
     const RESULTS_PER_PAGE = 24;
 
+    // Sort state
+    let currentSortOrder = 'relevance';
+    let allLoadedProducts = [];
+
     // Analytics
     const sessionId = getOrCreateSessionId();
 
@@ -1284,6 +1288,10 @@
             hasMoreResults = data.has_more || false;
             totalResultsCount = data.total_count || data.total || 0;
 
+            // Reset sort to relevance and store products for sorting
+            currentSortOrder = 'relevance';
+            allLoadedProducts = data.products ? [...data.products] : [];
+
             renderResults(data);
             saveRecentSearch(query);
             // Track search analytics
@@ -1388,6 +1396,85 @@
             // Bind click event for analytics
             card.addEventListener('click', () => {
                 trackProductClick(product.id, currentQuery, startIndex + index);
+            });
+
+            grid.appendChild(card);
+        });
+
+        // Add to allLoadedProducts for sorting
+        allLoadedProducts = allLoadedProducts.concat(products);
+    }
+
+    /**
+     * Sort products by current sort order
+     */
+    function sortProducts(products) {
+        const sorted = [...products];
+
+        switch (currentSortOrder) {
+            case 'price_asc':
+                sorted.sort((a, b) => (parseFloat(a.price_raw) || 0) - (parseFloat(b.price_raw) || 0));
+                break;
+            case 'price_desc':
+                sorted.sort((a, b) => (parseFloat(b.price_raw) || 0) - (parseFloat(a.price_raw) || 0));
+                break;
+            case 'name_asc':
+                sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                break;
+            case 'name_desc':
+                sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+                break;
+            case 'relevance':
+            default:
+                // Keep original order (by relevance score from server)
+                break;
+        }
+
+        return sorted;
+    }
+
+    /**
+     * Sort and re-render all loaded products
+     */
+    function sortAndRenderProducts() {
+        if (allLoadedProducts.length === 0) return;
+
+        const sorted = sortProducts(allLoadedProducts);
+        const grid = overlay.querySelector('.smartsearch-products-grid');
+        if (!grid) return;
+
+        // Clear grid and re-render sorted products
+        grid.innerHTML = '';
+
+        sorted.forEach((product, index) => {
+            const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
+            const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
+
+            const card = document.createElement('a');
+            card.href = product.url;
+            card.className = 'smartsearch-product-card';
+            card.dataset.productId = product.id;
+            card.dataset.index = index;
+            card.dataset.price = product.price_raw || 0;
+
+            card.innerHTML = `
+                ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                <div class="smartsearch-product-image">
+                    <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                </div>
+                <div class="smartsearch-product-info">
+                    <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
+                    <div class="smartsearch-product-prices">
+                        ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                        <span class="smartsearch-product-price">${product.price}</span>
+                    </div>
+                    ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
+                </div>
+            `;
+
+            // Bind click event for analytics
+            card.addEventListener('click', () => {
+                trackProductClick(product.id, currentQuery, index);
             });
 
             grid.appendChild(card);
@@ -1509,6 +1596,8 @@
                         <option value="relevance">${t.relevance || 'Rilevanza'}</option>
                         <option value="price_asc">${t.price_low || 'Prezzo crescente'}</option>
                         <option value="price_desc">${t.price_high || 'Prezzo decrescente'}</option>
+                        <option value="name_asc">${t.name_asc || 'Nome A-Z'}</option>
+                        <option value="name_desc">${t.name_desc || 'Nome Z-A'}</option>
                     </select>
                 </div>
             </div>
@@ -1671,8 +1760,10 @@
         // Sort select
         const sortSelect = main.querySelector('.smartsearch-results-sort select');
         if (sortSelect) {
+            sortSelect.value = currentSortOrder;
             sortSelect.addEventListener('change', (e) => {
-                // Sort logic here
+                currentSortOrder = e.target.value;
+                sortAndRenderProducts();
             });
         }
 
