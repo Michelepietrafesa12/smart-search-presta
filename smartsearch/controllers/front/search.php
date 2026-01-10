@@ -439,9 +439,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         $result = Db::getInstance()->getRow($sql);
 
+        // Applica IVA stimata (22%) per mostrare range prezzi finali
+        // Il filtro effettivo usa Product::getPriceStatic() che calcola IVA esatta
+        $taxRate = 1.22;
+        $minPrice = (int)($result['min_price'] ?? 0);
+        $maxPrice = (int)(($result['max_price'] ?? 1000) * $taxRate);
+
         return [
-            'min' => (int)($result['min_price'] ?? 0),
-            'max' => (int)($result['max_price'] ?? 1000)
+            'min' => $minPrice,
+            'max' => $maxPrice
         ];
     }
 
@@ -748,6 +754,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // 2. Ricerca con scoring
         $results = $this->searchProductsWithScoring($query, $idLang, $idShop, $filters);
 
+        // 2b. Applica filtri (prezzo con IVA, stock, etc.)
+        if (!empty($filters)) {
+            $results = $this->applyFiltersToResults($results, $filters, $idShop);
+        }
+
         // 3. Se pochi risultati, aggiungi fuzzy search
         if (count($results) < 5) {
             $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop, $filters);
@@ -1024,16 +1035,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $conditions[] = 'p.id_manufacturer IN (' . implode(',', $manufacturerIds) . ')';
         }
 
-        // Filtro prezzo - usando subquery per il prezzo effettivo
-        if (isset($filters['price_min']) || isset($filters['price_max'])) {
-            // Prezzo base da product_shop
-            if (isset($filters['price_min'])) {
-                $conditions[] = 'ps.price >= ' . (float)$filters['price_min'];
-            }
-            if (isset($filters['price_max'])) {
-                $conditions[] = 'ps.price <= ' . (float)$filters['price_max'];
-            }
-        }
+        // Filtro prezzo - NON filtrare in SQL, lasciare al PHP che usa getPriceStatic con IVA
+        // Il filtro prezzo viene applicato in applyFiltersToResults() con il prezzo corretto
+        // Questo evita inconsistenze tra prezzo base (senza IVA) e prezzo finale (con IVA)
 
         // Filtro stock
         if (!empty($filters['in_stock'])) {
