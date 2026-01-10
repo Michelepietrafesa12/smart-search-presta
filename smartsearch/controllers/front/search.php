@@ -439,16 +439,51 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         $result = Db::getInstance()->getRow($sql);
 
-        // Applica IVA stimata (22%) per mostrare range prezzi finali
-        // Il filtro effettivo usa Product::getPriceStatic() che calcola IVA esatta
-        $taxRate = 1.22;
+        // Recupera l'IVA di default dal paese del negozio
+        $taxRate = $this->getDefaultTaxRate();
         $minPrice = (int)($result['min_price'] ?? 0);
-        $maxPrice = (int)(($result['max_price'] ?? 1000) * $taxRate);
+        $maxPrice = (int)(($result['max_price'] ?? 1000) * (1 + $taxRate / 100));
 
         return [
             'min' => $minPrice,
             'max' => $maxPrice
         ];
+    }
+
+    /**
+     * Recupera l'aliquota IVA di default del negozio
+     */
+    protected function getDefaultTaxRate()
+    {
+        // Prova a ottenere l'IVA dal paese di default del negozio
+        $idCountry = (int)Configuration::get('PS_COUNTRY_DEFAULT');
+
+        if ($idCountry) {
+            // Cerca l'aliquota IVA più comune per questo paese
+            $sql = '
+                SELECT t.rate
+                FROM ' . _DB_PREFIX_ . 'tax t
+                INNER JOIN ' . _DB_PREFIX_ . 'tax_rule tr ON t.id_tax = tr.id_tax
+                INNER JOIN ' . _DB_PREFIX_ . 'tax_rules_group trg ON tr.id_tax_rules_group = trg.id_tax_rules_group
+                WHERE tr.id_country = ' . $idCountry . '
+                AND trg.active = 1
+                AND t.active = 1
+                GROUP BY t.rate
+                ORDER BY COUNT(*) DESC
+                LIMIT 1';
+
+            $rate = Db::getInstance()->getValue($sql);
+
+            if ($rate !== false && $rate > 0) {
+                return (float)$rate;
+            }
+        }
+
+        // Fallback: cerca qualsiasi aliquota IVA attiva
+        $sql = 'SELECT rate FROM ' . _DB_PREFIX_ . 'tax WHERE active = 1 ORDER BY rate DESC LIMIT 1';
+        $rate = Db::getInstance()->getValue($sql);
+
+        return $rate !== false ? (float)$rate : 22.0; // Default 22% se non trovata
     }
 
     /**
