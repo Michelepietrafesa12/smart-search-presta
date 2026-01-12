@@ -423,7 +423,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
             die(json_encode($response, JSON_UNESCAPED_UNICODE));
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Log error only in dev mode, never expose to frontend
             if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                 PrestaShopLogger::addLog('SmartSearch error: ' . $e->getMessage(), 3, null, 'SmartSearch');
@@ -464,7 +464,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'price_range' => $priceRange
             ], JSON_UNESCAPED_UNICODE));
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                 PrestaShopLogger::addLog('SmartSearch filters error: ' . $e->getMessage(), 3, null, 'SmartSearch');
             }
@@ -659,13 +659,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'total' => count($products)
             ], JSON_UNESCAPED_UNICODE));
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                PrestaShopLogger::addLog('SmartSearch filtered search error: ' . $e->getMessage(), 3, null, 'SmartSearch');
+                PrestaShopLogger::addLog('SmartSearch bestsellers error: ' . $e->getMessage(), 3, null, 'SmartSearch');
             }
             die(json_encode([
                 'products' => [],
-                'total' => 0
+                'total' => 0,
+                'error' => true
             ], JSON_UNESCAPED_UNICODE));
         }
     }
@@ -774,7 +775,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 ]));
             }
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                 PrestaShopLogger::addLog('SmartSearch addToCart error: ' . $e->getMessage(), 3, null, 'SmartSearch');
             }
@@ -864,7 +865,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $hasAttributes = false;
                 try {
                     $hasAttributes = (bool)Product::hasAttributes($row['id_product']);
-                } catch (Exception $e) {
+                } catch (Throwable $e) {
                     $hasAttributes = false;
                 }
                 $idProductAttribute = 0;
@@ -898,7 +899,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0,
                     'injected' => isset($row['_injected']) && $row['_injected'] ? true : false
                 ];
-            } catch (Exception $e) {
+            } catch (Throwable $e) {
                 // Skip prodotto problematico, continua con gli altri
                 continue;
             }
@@ -1991,7 +1992,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'success' => $success
             ]));
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                 PrestaShopLogger::addLog('SmartSearch analytics error: ' . $e->getMessage(), 3, null, 'SmartSearch');
             }
@@ -2390,7 +2391,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             if ($result && !empty($result['result_data'])) {
                 return json_decode($result['result_data'], true);
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Table might not exist
         }
 
@@ -2429,7 +2430,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         try {
             Db::getInstance()->execute($sql);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Cache table might not exist, ignore
         }
     }
@@ -2443,7 +2444,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 WHERE created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
         try {
             Db::getInstance()->execute($sql);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Ignore
         }
     }
@@ -2532,7 +2533,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 usort($suggestions, function($a, $b) { return $b['score'] <=> $a['score']; });
                 $suggestions = array_column(array_slice($suggestions, 0, 3), 'term');
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Table might not exist
         }
 
@@ -2683,7 +2684,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
 
             Db::getInstance()->execute($sql);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Ignore - table might not exist
         }
     }

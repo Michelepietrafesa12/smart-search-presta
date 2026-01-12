@@ -555,6 +555,7 @@ class SmartSearch extends Module
                     'featured_products' => $this->l('Prodotti in evidenza'),
                     'products_found' => $this->l('risultati'),
                     'bestseller' => $this->l('Più acquistato'),
+                    'add_to_cart' => $this->l('Aggiungi al carrello'),
                     'added_to_cart' => $this->l('Aggiunto al carrello'),
                     'continue_shopping' => $this->l('Continua lo shopping'),
                     'checkout' => $this->l('Vai al carrello'),
