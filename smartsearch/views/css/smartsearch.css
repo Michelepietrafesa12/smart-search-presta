@@ -1651,64 +1651,72 @@ mark {
 .smartsearch-banner-link {
     display: block;
     text-decoration: none;
-    margin: 16px 0;
+    margin: 12px 0;
 }
 
 .smartsearch-banner {
     width: 100%;
-    border-radius: 12px;
+    max-height: 120px;
+    border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     transition: all 0.3s ease;
 }
 
 .smartsearch-banner:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
 
 .smartsearch-banner img {
     width: 100%;
-    height: auto;
+    height: 100%;
+    max-height: 120px;
     display: block;
     object-fit: cover;
+    object-position: center;
 }
 
 /* Top banner - full width prominent */
 .smartsearch-banner-top {
-    margin: 0 0 20px 0;
+    margin: 0 0 16px 0;
 }
 
 /* Middle banner - between products */
 .smartsearch-banner-middle {
-    margin: 20px 0;
+    margin: 16px 0;
 }
 
 /* Bottom banner - after results */
 .smartsearch-banner-bottom {
-    margin: 20px 0 0 0;
+    margin: 16px 0 0 0;
 }
 
 /* Mobile banner adjustments */
 @media (max-width: 768px) {
     .smartsearch-banner-link {
-        margin: 12px 0;
+        margin: 8px 0;
     }
 
     .smartsearch-banner {
-        border-radius: 8px;
+        border-radius: 6px;
+        max-height: 80px;
+    }
+
+    .smartsearch-banner img {
+        max-height: 80px;
     }
 
     .smartsearch-banner-top {
-        margin: 0 0 16px 0;
+        margin: 0 0 12px 0;
     }
 
     .smartsearch-banner-middle {
-        margin: 16px 0;
+        margin: 12px 0;
     }
 
     .smartsearch-banner-bottom {
-        margin: 16px 0 0 0;
+        margin: 12px 0 0 0;
     }
 }
 
