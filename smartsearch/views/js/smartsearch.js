@@ -1019,22 +1019,35 @@
         products.forEach((product, index) => {
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
+            const showAddToCart = config.show_add_to_cart !== false;
+            const showBestseller = config.show_bestseller_badge !== false;
 
             html += `
-                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}">
-                    ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                    <div class="smartsearch-product-image">
-                        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
-                    </div>
-                    <div class="smartsearch-product-info">
-                        <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
-                        <div class="smartsearch-product-prices">
-                            ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
-                            <span class="smartsearch-product-price">${product.price}</span>
+                <div class="smartsearch-product-card-wrapper">
+                    <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}" data-has-attributes="${product.has_attributes ? '1' : '0'}">
+                        ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                        ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
+                        <div class="smartsearch-product-image">
+                            <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
                         </div>
-                        ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
-                    </div>
-                </a>
+                        <div class="smartsearch-product-info">
+                            <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
+                            <div class="smartsearch-product-prices">
+                                ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                                <span class="smartsearch-product-price">${product.price}</span>
+                            </div>
+                            ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
+                        </div>
+                    </a>
+                    ${showAddToCart && product.in_stock ? `
+                        <button type="button" class="smartsearch-add-to-cart" data-product-id="${product.id}" data-has-attributes="${product.has_attributes ? '1' : '0'}" data-product-url="${product.url}" title="${t.add_to_cart || 'Aggiungi al carrello'}">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                            </svg>
+                        </button>
+                    ` : ''}
+                </div>
             `;
         });
 
@@ -1366,39 +1379,58 @@
         if (!grid) return;
 
         const startIndex = grid.querySelectorAll('.smartsearch-product-card').length;
+        const showAddToCart = config.show_add_to_cart !== false;
+        const showBestseller = config.show_bestseller_badge !== false;
 
         products.forEach((product, index) => {
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
-            const card = document.createElement('a');
-            card.href = product.url;
-            card.className = 'smartsearch-product-card';
-            card.dataset.productId = product.id;
-            card.dataset.index = startIndex + index;
-            card.dataset.price = product.price_raw || 0;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'smartsearch-product-card-wrapper';
 
-            card.innerHTML = `
-                ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                <div class="smartsearch-product-image">
-                    <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
-                </div>
-                <div class="smartsearch-product-info">
-                    <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
-                    <div class="smartsearch-product-prices">
-                        ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
-                        <span class="smartsearch-product-price">${product.price}</span>
+            wrapper.innerHTML = `
+                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${startIndex + index}" data-price="${product.price_raw || 0}" data-has-attributes="${product.has_attributes ? '1' : '0'}">
+                    ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                    ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
+                    <div class="smartsearch-product-image">
+                        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
                     </div>
-                    ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
-                </div>
+                    <div class="smartsearch-product-info">
+                        <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
+                        <div class="smartsearch-product-prices">
+                            ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                            <span class="smartsearch-product-price">${product.price}</span>
+                        </div>
+                        ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
+                    </div>
+                </a>
+                ${showAddToCart && product.in_stock ? `
+                    <button type="button" class="smartsearch-add-to-cart" data-product-id="${product.id}" data-has-attributes="${product.has_attributes ? '1' : '0'}" data-product-url="${product.url}" title="${t.add_to_cart || 'Aggiungi al carrello'}">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                        </svg>
+                    </button>
+                ` : ''}
             `;
 
-            // Bind click event for analytics
-            card.addEventListener('click', () => {
+            // Bind click event for analytics on the card
+            wrapper.querySelector('.smartsearch-product-card').addEventListener('click', () => {
                 trackProductClick(product.id, currentQuery, startIndex + index);
             });
 
-            grid.appendChild(card);
+            // Bind add to cart button
+            const addToCartBtn = wrapper.querySelector('.smartsearch-add-to-cart');
+            if (addToCartBtn) {
+                addToCartBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleAddToCart(product.id, product.has_attributes, product.url);
+                });
+            }
+
+            grid.appendChild(wrapper);
         });
 
         // Add to allLoadedProducts for sorting
@@ -1748,6 +1780,18 @@
             });
         });
 
+        // Add to cart buttons
+        main.querySelectorAll('.smartsearch-add-to-cart').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const productId = parseInt(btn.dataset.productId);
+                const hasAttributes = btn.dataset.hasAttributes === '1';
+                const productUrl = btn.dataset.productUrl;
+                handleAddToCart(productId, hasAttributes, productUrl);
+            });
+        });
+
         // Mobile filter toggle
         const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');
         if (filterToggle) {
@@ -1942,6 +1986,134 @@
         });
 
         return result;
+    }
+
+    /**
+     * Handle add to cart click
+     */
+    function handleAddToCart(productId, hasAttributes, productUrl) {
+        // Se ha varianti, redirect alla pagina prodotto
+        if (hasAttributes) {
+            window.location.href = productUrl;
+            return;
+        }
+
+        const btn = overlay.querySelector(`.smartsearch-add-to-cart[data-product-id="${productId}"]`);
+        if (btn) {
+            btn.classList.add('loading');
+            btn.disabled = true;
+        }
+
+        const formData = new FormData();
+        formData.append('ajax', '1');
+        formData.append('action', 'addtocart');
+        formData.append('id_product', productId);
+        formData.append('qty', 1);
+
+        fetch(config.search_url, {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (btn) {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+
+            if (data.success) {
+                showCartNotification(data.product, data.cart);
+                updateCartWidget(data.cart);
+            } else if (data.has_attributes && data.redirect) {
+                window.location.href = data.redirect;
+            } else {
+                showCartNotification(null, null, data.message || 'Errore');
+            }
+        })
+        .catch(err => {
+            if (btn) {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+            console.error('Add to cart error:', err);
+        });
+    }
+
+    /**
+     * Show cart notification overlay
+     */
+    function showCartNotification(product, cart, errorMessage) {
+        // Rimuovi notifica esistente
+        const existing = document.querySelector('.smartsearch-cart-notification');
+        if (existing) existing.remove();
+
+        const notification = document.createElement('div');
+        notification.className = 'smartsearch-cart-notification';
+
+        if (errorMessage) {
+            notification.innerHTML = `
+                <div class="smartsearch-cart-notification-content error">
+                    <span class="smartsearch-cart-notification-icon error">✕</span>
+                    <span class="smartsearch-cart-notification-text">${escapeHtml(errorMessage)}</span>
+                </div>
+            `;
+        } else {
+            notification.innerHTML = `
+                <div class="smartsearch-cart-notification-content success">
+                    <span class="smartsearch-cart-notification-icon success">✓</span>
+                    <div class="smartsearch-cart-notification-details">
+                        ${product && product.image ? `<img src="${product.image}" alt="" class="smartsearch-cart-notification-img">` : ''}
+                        <div class="smartsearch-cart-notification-info">
+                            <div class="smartsearch-cart-notification-title">${t.added_to_cart || 'Aggiunto al carrello!'}</div>
+                            ${product ? `<div class="smartsearch-cart-notification-product">${escapeHtml(product.name)}</div>` : ''}
+                            ${cart ? `<div class="smartsearch-cart-notification-total">${t.cart_total || 'Totale carrello'}: ${cart.total}</div>` : ''}
+                        </div>
+                    </div>
+                    <div class="smartsearch-cart-notification-actions">
+                        <button type="button" class="smartsearch-cart-notification-continue">${t.continue_shopping || 'Continua'}</button>
+                        <a href="${config.cart_url || '/carrello'}" class="smartsearch-cart-notification-checkout">${t.go_to_cart || 'Vai al carrello'}</a>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Inserisci sopra l'overlay di ricerca
+        overlay.insertBefore(notification, overlay.firstChild);
+
+        // Animazione entrata
+        setTimeout(() => notification.classList.add('visible'), 10);
+
+        // Click su continua o fuori chiude la notifica
+        notification.querySelector('.smartsearch-cart-notification-continue')?.addEventListener('click', () => {
+            notification.classList.remove('visible');
+            setTimeout(() => notification.remove(), 300);
+        });
+
+        // Auto-hide dopo 5 secondi
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.classList.remove('visible');
+                setTimeout(() => notification.remove(), 300);
+            }
+        }, 5000);
+    }
+
+    /**
+     * Update cart widget in header (PrestaShop)
+     */
+    function updateCartWidget(cart) {
+        if (!cart) return;
+
+        // Aggiorna contatore carrello PrestaShop
+        const cartCounters = document.querySelectorAll('.cart-products-count, .header-cart .count, [data-cart-count]');
+        cartCounters.forEach(el => {
+            el.textContent = cart.products_count;
+        });
+
+        // Trigger evento PrestaShop per aggiornare blockcart
+        if (typeof prestashop !== 'undefined') {
+            prestashop.emit('updateCart', { reason: { cart: cart } });
+        }
     }
 
     function escapeHtml(text) {
