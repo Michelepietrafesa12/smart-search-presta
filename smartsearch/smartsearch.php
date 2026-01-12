@@ -634,18 +634,19 @@ class SmartSearch extends Module
             }
 
             // Recupera dati dalla sessione/cookie in modo sicuro
-            $cookie = Context::getContext()->cookie;
+            // NOTA: I cookie sono settati via JavaScript (document.cookie), quindi vanno letti da $_COOKIE
             $lastSearch = '';
             $sessionId = '';
             $searchHistory = [];
             $clickHistory = [];
             $lastClick = null;
 
-            if (isset($cookie->smartsearch_last_query)) {
-                $lastSearch = (string)$cookie->smartsearch_last_query;
+            // Leggi da $_COOKIE (cookie standard settati da JavaScript)
+            if (isset($_COOKIE['smartsearch_last_query'])) {
+                $lastSearch = urldecode((string)$_COOKIE['smartsearch_last_query']);
             }
-            if (isset($cookie->smartsearch_session_id)) {
-                $sessionId = (string)$cookie->smartsearch_session_id;
+            if (isset($_COOKIE['smartsearch_session_id'])) {
+                $sessionId = urldecode((string)$_COOKIE['smartsearch_session_id']);
             }
 
             // Recupera storico ricerche (nuovo sistema di attribuzione)
