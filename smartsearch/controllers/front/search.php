@@ -144,8 +144,123 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     $expanded[] = $var;
                 }
             }
+
+            // Aggiungi correzioni brand (typo correction)
+            if (mb_strlen($word) >= 4) {
+                $brandCorrections = $this->findSimilarBrandNames($word);
+                foreach ($brandCorrections as $correction) {
+                    if (!in_array($correction, $expanded)) {
+                        $expanded[] = $correction;
+                    }
+                }
+            }
         }
         return $expanded;
+    }
+
+    /**
+     * Cache per i nomi dei brand (evita query ripetute)
+     */
+    protected static $brandNamesCache = null;
+
+    /**
+     * Trova brand names simili usando Levenshtein distance
+     * Es: "etocsport" -> "ethicsport"
+     */
+    protected function findSimilarBrandNames($word)
+    {
+        $corrections = [];
+        $wordLower = mb_strtolower($word);
+        $wordLen = mb_strlen($wordLower);
+
+        // Carica cache brand se non presente
+        if (self::$brandNamesCache === null) {
+            $idShop = (int)$this->context->shop->id;
+            $sql = '
+                SELECT DISTINCT m.name
+                FROM ' . _DB_PREFIX_ . 'manufacturer m
+                INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_manufacturer = m.id_manufacturer
+                INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
+                WHERE m.active = 1 AND ps.active = 1
+            ';
+            $brands = Db::getInstance()->executeS($sql);
+            self::$brandNamesCache = [];
+            if ($brands) {
+                foreach ($brands as $brand) {
+                    self::$brandNamesCache[] = $brand['name'];
+                }
+            }
+        }
+
+        // Cerca brand simili
+        foreach (self::$brandNamesCache as $brandName) {
+            $brandLower = mb_strtolower($brandName);
+            $brandLen = mb_strlen($brandLower);
+
+            // Skip se lunghezze troppo diverse (>50% differenza)
+            if (abs($brandLen - $wordLen) > max($brandLen, $wordLen) * 0.5) {
+                continue;
+            }
+
+            // Match esatto - già gestito altrove
+            if ($brandLower === $wordLower) {
+                continue;
+            }
+
+            // 1. Levenshtein distance - tolleranza basata sulla lunghezza
+            // Per parole lunghe (>=8 caratteri) tollera fino a 3 errori
+            // Per parole medie (>=5 caratteri) tollera fino a 2 errori
+            // Per parole corte tollera 1 errore
+            $maxDistance = $wordLen >= 8 ? 3 : ($wordLen >= 5 ? 2 : 1);
+            $distance = levenshtein($wordLower, $brandLower);
+
+            if ($distance > 0 && $distance <= $maxDistance) {
+                $corrections[] = $brandLower;
+                continue;
+            }
+
+            // 2. Controllo consonanti (ignora vocali) - per typo di vocali
+            $wordConsonants = preg_replace('/[aeiouàèéìòù]/iu', '', $wordLower);
+            $brandConsonants = preg_replace('/[aeiouàèéìòù]/iu', '', $brandLower);
+
+            if (mb_strlen($wordConsonants) >= 4 && $wordConsonants === $brandConsonants) {
+                $corrections[] = $brandLower;
+                continue;
+            }
+
+            // 3. Soundex per match fonetici
+            if (mb_strlen($wordLower) >= 4 && soundex($wordLower) === soundex($brandLower)) {
+                $corrections[] = $brandLower;
+                continue;
+            }
+
+            // 4. Contenimento parziale (una contiene l'altra con almeno 80% match)
+            if ($wordLen >= 5 && $brandLen >= 5) {
+                if (strpos($brandLower, $wordLower) !== false || strpos($wordLower, $brandLower) !== false) {
+                    $corrections[] = $brandLower;
+                    continue;
+                }
+
+                // Inizia o finisce allo stesso modo (primi/ultimi 4+ caratteri)
+                $prefixLen = min(4, $wordLen - 1, $brandLen - 1);
+                if ($prefixLen >= 3) {
+                    $wordPrefix = mb_substr($wordLower, 0, $prefixLen);
+                    $brandPrefix = mb_substr($brandLower, 0, $prefixLen);
+                    $wordSuffix = mb_substr($wordLower, -$prefixLen);
+                    $brandSuffix = mb_substr($brandLower, -$prefixLen);
+
+                    if ($wordPrefix === $brandPrefix || $wordSuffix === $brandSuffix) {
+                        // Verifica che non sia troppo diverso
+                        if (levenshtein($wordLower, $brandLower) <= max($wordLen, $brandLen) * 0.4) {
+                            $corrections[] = $brandLower;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
+        return array_unique($corrections);
     }
 
     /**
