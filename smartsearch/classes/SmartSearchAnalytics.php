@@ -27,24 +27,50 @@ class SmartSearchAnalytics
     }
 
     /**
-     * Traccia una ricerca
+     * Traccia una ricerca (metodo aggregato - incrementa contatore se esiste)
      */
-    public function trackSearch($query, $resultsCount, $filters = [], $customerId = null)
+    public function trackSearch($query, $resultsCount)
     {
-        $sql = 'INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_stats`
-                (search_query, results_count, filters_used, id_customer, id_lang, id_shop, session_id, date_add)
-                VALUES (
-                    \'' . pSQL($query) . '\',
-                    ' . (int)$resultsCount . ',
-                    \'' . pSQL(json_encode($filters)) . '\',
-                    ' . ($customerId ? (int)$customerId : 'NULL') . ',
-                    ' . $this->idLang . ',
-                    ' . $this->idShop . ',
-                    \'' . pSQL(session_id()) . '\',
-                    NOW()
-                )';
+        $query = trim($query);
+        if (strlen($query) < 2) {
+            return false;
+        }
 
-        return Db::getInstance()->execute($sql);
+        // Controlla se esiste già
+        $existing = Db::getInstance()->getRow('
+            SELECT id_smartsearch_stats, search_count
+            FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE search_query = \'' . pSQL($query) . '\'
+            AND id_lang = ' . $this->idLang . '
+            AND id_shop = ' . $this->idShop . '
+            LIMIT 1
+        ');
+
+        if ($existing) {
+            // Aggiorna contatore
+            return Db::getInstance()->execute('
+                UPDATE `' . _DB_PREFIX_ . 'smartsearch_stats`
+                SET search_count = search_count + 1,
+                    results_count = ' . (int)$resultsCount . ',
+                    last_search = NOW()
+                WHERE id_smartsearch_stats = ' . (int)$existing['id_smartsearch_stats']
+            );
+        }
+
+        // Inserisci nuovo
+        return Db::getInstance()->execute('
+            INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_stats`
+            (search_query, search_count, results_count, id_lang, id_shop, last_search, date_add)
+            VALUES (
+                \'' . pSQL($query) . '\',
+                1,
+                ' . (int)$resultsCount . ',
+                ' . $this->idLang . ',
+                ' . $this->idShop . ',
+                NOW(),
+                NOW()
+            )
+        ');
     }
 
     /**
@@ -90,28 +116,27 @@ class SmartSearchAnalytics
 
     /**
      * Ottieni ricerche più popolari
+     * Nota: la tabella stats è aggregata per query, quindi usiamo search_count
      */
     public function getTopSearches($limit = 20, $dateFrom = null, $dateTo = null)
     {
         $dateCondition = '';
         if ($dateFrom) {
-            $dateCondition .= ' AND date_add >= \'' . pSQL($dateFrom) . '\'';
+            $dateCondition .= ' AND last_search >= \'' . pSQL($dateFrom) . '\'';
         }
         if ($dateTo) {
-            $dateCondition .= ' AND date_add <= \'' . pSQL($dateTo) . '\'';
+            $dateCondition .= ' AND last_search <= \'' . pSQL($dateTo) . '\'';
         }
 
         $sql = '
             SELECT
                 search_query,
-                COUNT(*) AS search_count,
-                AVG(results_count) AS avg_results,
-                COUNT(DISTINCT session_id) AS unique_users
+                search_count,
+                results_count AS avg_results
             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
             WHERE id_shop = ' . $this->idShop . '
             AND id_lang = ' . $this->idLang . '
             ' . $dateCondition . '
-            GROUP BY search_query
             ORDER BY search_count DESC
             LIMIT ' . (int)$limit;
 
@@ -120,28 +145,27 @@ class SmartSearchAnalytics
 
     /**
      * Ottieni ricerche senza risultati
+     * Nota: la tabella stats è aggregata per query
      */
     public function getZeroResultSearches($limit = 20, $dateFrom = null, $dateTo = null)
     {
         $dateCondition = '';
         if ($dateFrom) {
-            $dateCondition .= ' AND date_add >= \'' . pSQL($dateFrom) . '\'';
+            $dateCondition .= ' AND last_search >= \'' . pSQL($dateFrom) . '\'';
         }
         if ($dateTo) {
-            $dateCondition .= ' AND date_add <= \'' . pSQL($dateTo) . '\'';
+            $dateCondition .= ' AND last_search <= \'' . pSQL($dateTo) . '\'';
         }
 
         $sql = '
             SELECT
                 search_query,
-                COUNT(*) AS search_count,
-                COUNT(DISTINCT session_id) AS unique_users
+                search_count
             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
             WHERE id_shop = ' . $this->idShop . '
             AND id_lang = ' . $this->idLang . '
             AND results_count = 0
             ' . $dateCondition . '
-            GROUP BY search_query
             ORDER BY search_count DESC
             LIMIT ' . (int)$limit;
 
@@ -181,31 +205,36 @@ class SmartSearchAnalytics
 
     /**
      * Calcola CTR (Click-Through Rate) per query
+     * Nota: la tabella stats è aggregata per query, usiamo search_count
      */
     public function getSearchCTR($dateFrom = null, $dateTo = null)
     {
         $dateCondition = '';
+        $dateConditionClicks = '';
         if ($dateFrom) {
-            $dateCondition .= ' AND s.date_add >= \'' . pSQL($dateFrom) . '\'';
+            $dateCondition .= ' AND s.last_search >= \'' . pSQL($dateFrom) . '\'';
+            $dateConditionClicks .= ' AND c.date_add >= \'' . pSQL($dateFrom) . '\'';
         }
         if ($dateTo) {
-            $dateCondition .= ' AND s.date_add <= \'' . pSQL($dateTo) . '\'';
+            $dateCondition .= ' AND s.last_search <= \'' . pSQL($dateTo) . '\'';
+            $dateConditionClicks .= ' AND c.date_add <= \'' . pSQL($dateTo) . '\'';
         }
 
         $sql = '
             SELECT
                 s.search_query,
-                COUNT(DISTINCT s.id_smartsearch_stat) AS searches,
-                COUNT(DISTINCT c.id_smartsearch_click) AS clicks,
-                (COUNT(DISTINCT c.id_smartsearch_click) / COUNT(DISTINCT s.id_smartsearch_stat) * 100) AS ctr
+                s.search_count AS searches,
+                COUNT(c.id_smartsearch_click) AS clicks,
+                ROUND((COUNT(c.id_smartsearch_click) / s.search_count * 100), 2) AS ctr
             FROM `' . _DB_PREFIX_ . 'smartsearch_stats` s
             LEFT JOIN `' . _DB_PREFIX_ . 'smartsearch_clicks` c
                 ON s.search_query = c.search_query
-                AND DATE(s.date_add) = DATE(c.date_add)
+                AND c.id_shop = ' . $this->idShop . '
+                ' . $dateConditionClicks . '
             WHERE s.id_shop = ' . $this->idShop . '
             AND s.results_count > 0
             ' . $dateCondition . '
-            GROUP BY s.search_query
+            GROUP BY s.id_smartsearch_stats
             HAVING searches >= 10
             ORDER BY ctr DESC
             LIMIT 50';
@@ -215,30 +244,36 @@ class SmartSearchAnalytics
 
     /**
      * Calcola tasso di conversione per query
+     * Nota: la tabella stats è aggregata per query, usiamo search_count
      */
     public function getSearchConversionRate($dateFrom = null, $dateTo = null)
     {
         $dateCondition = '';
+        $dateConditionConv = '';
         if ($dateFrom) {
-            $dateCondition .= ' AND s.date_add >= \'' . pSQL($dateFrom) . '\'';
+            $dateCondition .= ' AND s.last_search >= \'' . pSQL($dateFrom) . '\'';
+            $dateConditionConv .= ' AND c.date_add >= \'' . pSQL($dateFrom) . '\'';
         }
         if ($dateTo) {
-            $dateCondition .= ' AND s.date_add <= \'' . pSQL($dateTo) . '\'';
+            $dateCondition .= ' AND s.last_search <= \'' . pSQL($dateTo) . '\'';
+            $dateConditionConv .= ' AND c.date_add <= \'' . pSQL($dateTo) . '\'';
         }
 
         $sql = '
             SELECT
                 s.search_query,
-                COUNT(DISTINCT s.id_smartsearch_stat) AS searches,
+                s.search_count AS searches,
                 COUNT(DISTINCT c.id_smartsearch_conversion) AS conversions,
-                SUM(c.amount) AS revenue,
-                (COUNT(DISTINCT c.id_smartsearch_conversion) / COUNT(DISTINCT s.id_smartsearch_stat) * 100) AS conversion_rate
+                COALESCE(SUM(c.amount), 0) AS revenue,
+                ROUND((COUNT(DISTINCT c.id_smartsearch_conversion) / s.search_count * 100), 2) AS conversion_rate
             FROM `' . _DB_PREFIX_ . 'smartsearch_stats` s
             LEFT JOIN `' . _DB_PREFIX_ . 'smartsearch_conversions` c
                 ON s.search_query = c.search_query
+                AND c.id_shop = ' . $this->idShop . '
+                ' . $dateConditionConv . '
             WHERE s.id_shop = ' . $this->idShop . '
             ' . $dateCondition . '
-            GROUP BY s.search_query
+            GROUP BY s.id_smartsearch_stats
             HAVING searches >= 10
             ORDER BY conversion_rate DESC
             LIMIT 50';
@@ -248,62 +283,69 @@ class SmartSearchAnalytics
 
     /**
      * Ottieni statistiche generali
+     * Nota: la tabella stats è aggregata per query, usiamo SUM(search_count)
      */
     public function getDashboardStats($dateFrom = null, $dateTo = null)
     {
-        $dateCondition = '';
+        $dateConditionStats = '';
+        $dateConditionOther = '';
         if ($dateFrom) {
-            $dateCondition .= ' AND date_add >= \'' . pSQL($dateFrom) . '\'';
+            $dateConditionStats .= ' AND last_search >= \'' . pSQL($dateFrom) . '\'';
+            $dateConditionOther .= ' AND date_add >= \'' . pSQL($dateFrom) . '\'';
         }
         if ($dateTo) {
-            $dateCondition .= ' AND date_add <= \'' . pSQL($dateTo) . '\'';
+            $dateConditionStats .= ' AND last_search <= \'' . pSQL($dateTo) . '\'';
+            $dateConditionOther .= ' AND date_add <= \'' . pSQL($dateTo) . '\'';
         }
 
-        // Totale ricerche
+        // Totale ricerche (somma di search_count perché aggregato)
         $totalSearches = Db::getInstance()->getValue('
-            SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            SELECT COALESCE(SUM(search_count), 0) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE id_shop = ' . $this->idShop . $dateConditionStats
         );
 
-        // Ricerche uniche
+        // Ricerche uniche (numero di query distinte)
         $uniqueSearches = Db::getInstance()->getValue('
-            SELECT COUNT(DISTINCT search_query) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE id_shop = ' . $this->idShop . $dateConditionStats
         );
 
         // Ricerche senza risultati
         $zeroResults = Db::getInstance()->getValue('
-            SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            SELECT COALESCE(SUM(search_count), 0) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
             WHERE id_shop = ' . $this->idShop . '
-            AND results_count = 0' . $dateCondition
+            AND results_count = 0' . $dateConditionStats
         );
 
         // Totale click
         $totalClicks = Db::getInstance()->getValue('
             SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_clicks`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            WHERE id_shop = ' . $this->idShop . $dateConditionOther
         );
 
         // Totale conversioni
         $totalConversions = Db::getInstance()->getValue('
             SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_conversions`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            WHERE id_shop = ' . $this->idShop . $dateConditionOther
         );
 
         // Revenue da ricerche
         $searchRevenue = Db::getInstance()->getValue('
-            SELECT SUM(amount) FROM `' . _DB_PREFIX_ . 'smartsearch_conversions`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            SELECT COALESCE(SUM(amount), 0) FROM `' . _DB_PREFIX_ . 'smartsearch_conversions`
+            WHERE id_shop = ' . $this->idShop . $dateConditionOther
         );
 
-        // Media risultati per ricerca
+        // Media risultati per ricerca (pesata per search_count)
         $avgResults = Db::getInstance()->getValue('
-            SELECT AVG(results_count) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
-            WHERE id_shop = ' . $this->idShop . $dateCondition
+            SELECT COALESCE(SUM(results_count * search_count) / SUM(search_count), 0)
+            FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE id_shop = ' . $this->idShop . ' AND search_count > 0' . $dateConditionStats
         );
+
+        $totalSearches = (int)$totalSearches;
 
         return [
-            'total_searches' => (int)$totalSearches,
+            'total_searches' => $totalSearches,
             'unique_searches' => (int)$uniqueSearches,
             'zero_results' => (int)$zeroResults,
             'zero_results_rate' => $totalSearches > 0 ? round(($zeroResults / $totalSearches) * 100, 2) : 0,
@@ -318,16 +360,17 @@ class SmartSearchAnalytics
 
     /**
      * Ottieni trend ricerche per grafico
+     * Nota: la tabella stats è aggregata, usiamo click table per daily trend
      */
     public function getSearchTrend($days = 30)
     {
+        // Usiamo la tabella clicks per i trend giornalieri (ha timestamp preciso)
         $sql = '
             SELECT
                 DATE(date_add) AS date,
                 COUNT(*) AS searches,
-                COUNT(DISTINCT session_id) AS unique_users,
-                SUM(CASE WHEN results_count = 0 THEN 1 ELSE 0 END) AS zero_results
-            FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+                COUNT(DISTINCT search_query) AS unique_queries
+            FROM `' . _DB_PREFIX_ . 'smartsearch_clicks`
             WHERE id_shop = ' . $this->idShop . '
             AND date_add >= DATE_SUB(NOW(), INTERVAL ' . (int)$days . ' DAY)
             GROUP BY DATE(date_add)
@@ -341,14 +384,22 @@ class SmartSearchAnalytics
      */
     public function cleanup($daysToKeep = 90)
     {
-        $tables = ['smartsearch_stats', 'smartsearch_clicks', 'smartsearch_conversions'];
+        // Stats table usa last_search per la data di riferimento
+        Db::getInstance()->execute('
+            DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+            WHERE last_search < DATE_SUB(NOW(), INTERVAL ' . (int)$daysToKeep . ' DAY)
+            AND id_shop = ' . $this->idShop
+        );
+
+        // Altre tabelle usano date_add
+        $tables = ['smartsearch_clicks', 'smartsearch_conversions'];
 
         foreach ($tables as $table) {
-            $sql = 'DELETE FROM `' . _DB_PREFIX_ . $table . '`
-                    WHERE date_add < DATE_SUB(NOW(), INTERVAL ' . (int)$daysToKeep . ' DAY)
-                    AND id_shop = ' . $this->idShop;
-
-            Db::getInstance()->execute($sql);
+            Db::getInstance()->execute('
+                DELETE FROM `' . _DB_PREFIX_ . $table . '`
+                WHERE date_add < DATE_SUB(NOW(), INTERVAL ' . (int)$daysToKeep . ' DAY)
+                AND id_shop = ' . $this->idShop
+            );
         }
 
         return true;
