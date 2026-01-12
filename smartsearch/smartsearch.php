@@ -49,11 +49,11 @@ class SmartSearch extends Module
                 'show_category' => (bool)Configuration::get('SMARTSEARCH_SHOW_CATEGORY'),
                 'show_manufacturer' => (bool)Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
                 'show_stock' => (bool)Configuration::get('SMARTSEARCH_SHOW_STOCK'),
-                // Default a true se non configurato (chiave non esiste = false)
+                // Default: true per bestseller, false per add-to-cart (disabilitato)
                 // Se esplicitamente impostato a "0", (bool)"0" = false
                 // Se esplicitamente impostato a "1", (bool)"1" = true
                 'show_bestseller_badge' => ($showBestseller === false) ? true : (bool)$showBestseller,
-                'show_add_to_cart' => ($showAddToCart === false) ? true : (bool)$showAddToCart,
+                'show_add_to_cart' => ($showAddToCart === false) ? false : (bool)$showAddToCart,
                 'highlight' => (bool)Configuration::get('SMARTSEARCH_HIGHLIGHT'),
                 'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
                 'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
