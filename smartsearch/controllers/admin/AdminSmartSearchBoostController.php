@@ -16,6 +16,7 @@ class AdminSmartSearchBoostController extends ModuleAdminController
         $this->identifier = 'id_smartsearch_boost';
         $this->lang = false;
         $this->bootstrap = true;
+        $this->allow_export = false;
         $this->addRowAction('edit');
         $this->addRowAction('delete');
 
@@ -87,10 +88,23 @@ class AdminSmartSearchBoostController extends ModuleAdminController
     }
 
     /**
+     * Handle AJAX requests
+     */
+    public function postProcess()
+    {
+        if (Tools::isSubmit('ajax') && Tools::getValue('action') == 'searchProducts') {
+            $this->ajaxProcessSearchProducts();
+        }
+        return parent::postProcess();
+    }
+
+    /**
      * AJAX endpoint per cercare prodotti
      */
     public function ajaxProcessSearchProducts()
     {
+        header('Content-Type: application/json; charset=utf-8');
+
         $query = Tools::getValue('q', '');
         $query = trim($query);
 
@@ -101,21 +115,22 @@ class AdminSmartSearchBoostController extends ModuleAdminController
         $idLang = (int)$this->context->language->id;
         $idShop = (int)$this->context->shop->id;
 
+        // Cerca anche prodotti inattivi nel backend (l'admin potrebbe volerli boostare)
         $sql = '
-            SELECT p.id_product, pl.name, p.reference, m.name as manufacturer_name
+            SELECT p.id_product, pl.name, p.reference, m.name as manufacturer_name, ps.active
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . $idLang . ' AND pl.id_shop = ' . $idShop . '
             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
                 AND ps.id_shop = ' . $idShop . '
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
-            WHERE ps.active = 1
-            AND (
+            WHERE (
                 pl.name LIKE \'%' . pSQL($query) . '%\'
                 OR p.reference LIKE \'%' . pSQL($query) . '%\'
+                OR m.name LIKE \'%' . pSQL($query) . '%\'
                 OR p.id_product = ' . (int)$query . '
             )
-            ORDER BY pl.name ASC
+            ORDER BY ps.active DESC, pl.name ASC
             LIMIT 50
         ';
 
@@ -132,11 +147,14 @@ class AdminSmartSearchBoostController extends ModuleAdminController
                     $label .= ' - ' . $product['manufacturer_name'];
                 }
                 $label .= ' (ID: ' . $product['id_product'] . ')';
+                if (!$product['active']) {
+                    $label .= ' [INATTIVO]';
+                }
 
                 $results[] = [
                     'id' => (int)$product['id_product'],
                     'name' => $label,
-                    'text' => $label, // For Select2 compatibility
+                    'text' => $label,
                 ];
             }
         }
@@ -227,7 +245,8 @@ class AdminSmartSearchBoostController extends ModuleAdminController
      */
     protected function getProductSearchHtml($currentProductId = 0, $currentProductName = '')
     {
-        $ajaxUrl = $this->context->link->getAdminLink('AdminSmartSearchBoost', true, [], ['ajax' => 1, 'action' => 'searchProducts']);
+        // URL per AJAX - formato corretto per PrestaShop admin
+        $ajaxUrl = $this->context->link->getAdminLink('AdminSmartSearchBoost') . '&ajax=1&action=searchProducts';
 
         $html = '
         <div class="product-search-container">
