@@ -103,6 +103,11 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
     public function postProcess()
     {
+        // Handle AJAX product search
+        if (Tools::isSubmit('ajax') && Tools::getValue('action') == 'searchProducts') {
+            $this->ajaxProcessSearchProducts();
+        }
+
         if (Tools::isSubmit('submitSmartSearchSettings')) {
             $this->saveSettings();
             $this->confirmations[] = $this->l('Impostazioni salvate con successo!');
@@ -269,18 +274,81 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         $html .= '</div>'; // chiude row
         $html .= '</div>'; // chiude alert
 
-        // Form con action esplicita
-        $products = Product::getProducts($this->context->language->id, 0, 100, 'name', 'ASC', false, true);
+        // URL AJAX per ricerca prodotti
+        $ajaxUrl = $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&ajax=1&action=searchProducts';
 
         $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '">';
-        $html .= '<div class="row"><div class="col-md-4"><div class="form-group"><label>Prodotto</label><select name="boost_product" class="form-control" required><option value="">Seleziona...</option>';
-        foreach ($products as $p) {
-            $html .= '<option value="' . $p['id_product'] . '">' . htmlspecialchars($p['name']) . '</option>';
-        }
-        $html .= '</select></div></div>';
+        $html .= '<div class="row">';
+
+        // Campo ricerca prodotto con autocomplete
+        $html .= '<div class="col-md-4"><div class="form-group"><label>Prodotto</label>';
+        $html .= '<div class="boost-product-search-container" style="position:relative;">';
+        $html .= '<input type="text" id="boost_product_search" class="form-control" placeholder="Cerca prodotto per nome, riferimento o ID..." autocomplete="off">';
+        $html .= '<input type="hidden" name="boost_product" id="boost_product_id" value="">';
+        $html .= '<div id="boost_product_results" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ddd;border-top:none;max-height:250px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 6px rgba(0,0,0,0.1);"></div>';
+        $html .= '</div></div></div>';
+
         $html .= '<div class="col-md-2"><div class="form-group"><label>Boost</label><input type="number" name="boost_value" class="form-control" value="1.5" min="0.1" max="10" step="0.1"></div></div>';
         $html .= '<div class="col-md-3"><div class="form-group"><label>Keywords</label><input type="text" name="boost_keywords" class="form-control" placeholder="es: scarpe"></div></div>';
-        $html .= '<div class="col-md-3"><div class="form-group"><label>&nbsp;</label><button type="submit" name="submitBoost" class="btn btn-primary btn-block"><i class="icon-plus"></i> Aggiungi</button></div></div></div></form>';
+        $html .= '<div class="col-md-3"><div class="form-group"><label>&nbsp;</label><button type="submit" name="submitBoost" class="btn btn-primary btn-block"><i class="icon-plus"></i> AGGIUNGI</button></div></div></div>';
+
+        // JavaScript per autocomplete
+        $html .= '<script>
+(function() {
+    var searchInput = document.getElementById("boost_product_search");
+    var resultsDiv = document.getElementById("boost_product_results");
+    var hiddenInput = document.getElementById("boost_product_id");
+    var searchTimer = null;
+
+    searchInput.addEventListener("input", function() {
+        var q = this.value.trim();
+        clearTimeout(searchTimer);
+        if (q.length < 2) {
+            resultsDiv.style.display = "none";
+            return;
+        }
+        searchTimer = setTimeout(function() {
+            fetch("' . $ajaxUrl . '&q=" + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.products && data.products.length > 0) {
+                        var html = "";
+                        data.products.forEach(function(p) {
+                            html += "<div class=\"boost-product-item\" data-id=\"" + p.id + "\" style=\"padding:10px 15px;cursor:pointer;border-bottom:1px solid #eee;\">" + p.name + "</div>";
+                        });
+                        resultsDiv.innerHTML = html;
+                        resultsDiv.style.display = "block";
+
+                        resultsDiv.querySelectorAll(".boost-product-item").forEach(function(item) {
+                            item.addEventListener("click", function() {
+                                searchInput.value = this.textContent;
+                                hiddenInput.value = this.dataset.id;
+                                resultsDiv.style.display = "none";
+                            });
+                            item.addEventListener("mouseenter", function() {
+                                this.style.background = "#f5f5f5";
+                            });
+                            item.addEventListener("mouseleave", function() {
+                                this.style.background = "#fff";
+                            });
+                        });
+                    } else {
+                        resultsDiv.innerHTML = "<div style=\"padding:10px 15px;color:#999;font-style:italic;\">Nessun prodotto trovato</div>";
+                        resultsDiv.style.display = "block";
+                    }
+                });
+        }, 300);
+    });
+
+    document.addEventListener("click", function(e) {
+        if (!e.target.closest(".boost-product-search-container")) {
+            resultsDiv.style.display = "none";
+        }
+    });
+})();
+</script>';
+
+        $html .= '</form>';
 
         // List
         $boosts = Db::getInstance()->executeS('SELECT b.*, pl.name as product_name FROM `' . _DB_PREFIX_ . 'smartsearch_boost` b LEFT JOIN `' . _DB_PREFIX_ . 'product_lang` pl ON b.id_product = pl.id_product AND pl.id_lang = ' . (int)$this->context->language->id . ' WHERE b.id_shop = ' . (int)$this->context->shop->id);
@@ -668,5 +736,67 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
     protected function clearModuleCache()
     {
         Db::getInstance()->execute('TRUNCATE TABLE `' . _DB_PREFIX_ . 'smartsearch_cache`');
+    }
+
+    /**
+     * AJAX endpoint per cercare prodotti (per boosting)
+     */
+    protected function ajaxProcessSearchProducts()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $query = Tools::getValue('q', '');
+        $query = trim($query);
+
+        if (strlen($query) < 2) {
+            die(json_encode(['products' => []]));
+        }
+
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+
+        $sql = '
+            SELECT p.id_product, pl.name, p.reference, m.name as manufacturer_name, ps.active
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . $idLang . ' AND pl.id_shop = ' . $idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . $idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            WHERE (
+                pl.name LIKE \'%' . pSQL($query) . '%\'
+                OR p.reference LIKE \'%' . pSQL($query) . '%\'
+                OR m.name LIKE \'%' . pSQL($query) . '%\'
+                OR p.id_product = ' . (int)$query . '
+            )
+            ORDER BY ps.active DESC, pl.name ASC
+            LIMIT 50
+        ';
+
+        $products = Db::getInstance()->executeS($sql);
+
+        $results = [];
+        if ($products) {
+            foreach ($products as $product) {
+                $label = $product['name'];
+                if ($product['reference']) {
+                    $label .= ' [' . $product['reference'] . ']';
+                }
+                if ($product['manufacturer_name']) {
+                    $label .= ' - ' . $product['manufacturer_name'];
+                }
+                $label .= ' (ID: ' . $product['id_product'] . ')';
+                if (!$product['active']) {
+                    $label .= ' [INATTIVO]';
+                }
+
+                $results[] = [
+                    'id' => (int)$product['id_product'],
+                    'name' => $label,
+                ];
+            }
+        }
+
+        die(json_encode(['products' => $results]));
     }
 }
