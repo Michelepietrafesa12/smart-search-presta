@@ -836,66 +836,72 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         $products = [];
         foreach ($results as $row) {
-            // URL prodotto
-            $productUrl = $this->context->link->getProductLink(
-                $row['id_product'],
-                $row['link_rewrite'],
-                null,
-                null,
-                $idLang
-            );
-
-            // Immagine
-            $imageUrl = '';
-            if (!empty($row['id_image'])) {
-                $imageUrl = $this->context->link->getImageLink(
+            try {
+                // URL prodotto
+                $productUrl = $this->context->link->getProductLink(
+                    $row['id_product'],
                     $row['link_rewrite'],
-                    $row['id_image'],
-                    ImageType::getFormattedName('home')
+                    null,
+                    null,
+                    $idLang
                 );
-            }
 
-            // Prezzo
-            $priceDisplay = Product::getPriceStatic($row['id_product'], true);
-            $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
+                // Immagine
+                $imageUrl = '';
+                if (!empty($row['id_image'])) {
+                    $imageUrl = $this->context->link->getImageLink(
+                        $row['link_rewrite'],
+                        $row['id_image'],
+                        ImageType::getFormattedName('home')
+                    );
+                }
 
-            // Verifica se il prodotto ha attributi/varianti
-            $hasAttributes = (bool)Product::hasAttributes($row['id_product']);
-            $idProductAttribute = 0;
-            if (!$hasAttributes) {
-                // Prodotto semplice senza varianti
+                // Prezzo
+                $priceDisplay = Product::getPriceStatic($row['id_product'], true);
+                $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
+
+                // Verifica se il prodotto ha attributi/varianti (con fallback sicuro)
+                $hasAttributes = false;
+                try {
+                    $hasAttributes = (bool)Product::hasAttributes($row['id_product']);
+                } catch (Exception $e) {
+                    $hasAttributes = false;
+                }
                 $idProductAttribute = 0;
+
+                // Calcola se è un bestseller (più di 10 vendite)
+                $totalSold = isset($row['total_sold']) ? (int)$row['total_sold'] : 0;
+                $isBestseller = $totalSold >= 10;
+
+                // Quantità disponibile
+                $quantity = StockAvailable::getQuantityAvailableByProduct($row['id_product']);
+
+                $products[] = [
+                    'id' => (int)$row['id_product'],
+                    'name' => $row['name'],
+                    'url' => $productUrl,
+                    'image' => $imageUrl,
+                    'price' => Tools::displayPrice($priceDisplay),
+                    'price_raw' => $priceDisplay,
+                    'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
+                    'price_old_raw' => ($priceOldDisplay > $priceDisplay) ? $priceOldDisplay : 0,
+                    'description' => mb_substr(strip_tags($row['description_short'] ?? ''), 0, 100),
+                    'category' => $row['category_name'] ?? '',
+                    'manufacturer' => $row['manufacturer_name'] ?? '',
+                    'reference' => $row['reference'] ?? '',
+                    'in_stock' => $quantity > 0,
+                    'quantity' => $quantity,
+                    'total_sold' => $totalSold,
+                    'is_bestseller' => $isBestseller,
+                    'has_attributes' => $hasAttributes,
+                    'id_product_attribute' => $idProductAttribute,
+                    'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0,
+                    'injected' => isset($row['_injected']) && $row['_injected'] ? true : false
+                ];
+            } catch (Exception $e) {
+                // Skip prodotto problematico, continua con gli altri
+                continue;
             }
-
-            // Calcola se è un bestseller (più di 10 vendite)
-            $totalSold = isset($row['total_sold']) ? (int)$row['total_sold'] : 0;
-            $isBestseller = $totalSold >= 10;
-
-            // Quantità disponibile
-            $quantity = StockAvailable::getQuantityAvailableByProduct($row['id_product']);
-
-            $products[] = [
-                'id' => (int)$row['id_product'],
-                'name' => $row['name'],
-                'url' => $productUrl,
-                'image' => $imageUrl,
-                'price' => Tools::displayPrice($priceDisplay),
-                'price_raw' => $priceDisplay,
-                'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
-                'price_old_raw' => ($priceOldDisplay > $priceDisplay) ? $priceOldDisplay : 0,
-                'description' => mb_substr(strip_tags($row['description_short'] ?? ''), 0, 100),
-                'category' => $row['category_name'] ?? '',
-                'manufacturer' => $row['manufacturer_name'] ?? '',
-                'reference' => $row['reference'] ?? '',
-                'in_stock' => $quantity > 0,
-                'quantity' => $quantity,
-                'total_sold' => $totalSold,
-                'is_bestseller' => $isBestseller,
-                'has_attributes' => $hasAttributes,
-                'id_product_attribute' => $idProductAttribute,
-                'boost_score' => isset($row['_boost_score']) ? (float)$row['_boost_score'] : 1.0,
-                'injected' => isset($row['_injected']) && $row['_injected'] ? true : false
-            ];
         }
         return $products;
     }

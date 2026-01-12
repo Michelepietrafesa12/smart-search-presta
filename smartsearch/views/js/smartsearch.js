@@ -1672,25 +1672,39 @@
         // Products grid - MAI interrotto dai banner
         html += '<div class="smartsearch-products-grid">';
 
+        const showAddToCart = config.show_add_to_cart !== false;
+        const showBestseller = config.show_bestseller_badge !== false;
+
         data.products.forEach((product, index) => {
             const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
             const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
 
             html += `
-                <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}">
-                    ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                    <div class="smartsearch-product-image">
-                        <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
-                    </div>
-                    <div class="smartsearch-product-info">
-                        <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
-                        <div class="smartsearch-product-prices">
-                            ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
-                            <span class="smartsearch-product-price">${product.price}</span>
+                <div class="smartsearch-product-card-wrapper">
+                    <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}" data-has-attributes="${product.has_attributes ? '1' : '0'}">
+                        ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
+                        <div class="smartsearch-product-image">
+                            <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                            ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                         </div>
-                        ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
-                    </div>
-                </a>
+                        <div class="smartsearch-product-info">
+                            <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
+                            <div class="smartsearch-product-prices">
+                                ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
+                                <span class="smartsearch-product-price">${product.price}</span>
+                            </div>
+                            ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
+                        </div>
+                    </a>
+                    ${showAddToCart && product.in_stock ? `
+                        <button type="button" class="smartsearch-add-to-cart" data-product-id="${product.id}" data-has-attributes="${product.has_attributes ? '1' : '0'}" data-product-url="${product.url}" title="${t.add_to_cart || 'Aggiungi al carrello'}">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+                                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+                            </svg>
+                        </button>
+                    ` : ''}
+                </div>
             `;
         });
 
