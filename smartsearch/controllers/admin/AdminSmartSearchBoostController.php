@@ -86,25 +86,76 @@ class AdminSmartSearchBoostController extends ModuleAdminController
         $this->_orderWay = 'DESC';
     }
 
+    /**
+     * AJAX endpoint per cercare prodotti
+     */
+    public function ajaxProcessSearchProducts()
+    {
+        $query = Tools::getValue('q', '');
+        $query = trim($query);
+
+        if (strlen($query) < 2) {
+            die(json_encode(['products' => []]));
+        }
+
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+
+        $sql = '
+            SELECT p.id_product, pl.name, p.reference, m.name as manufacturer_name
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . $idLang . ' AND pl.id_shop = ' . $idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . $idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            WHERE ps.active = 1
+            AND (
+                pl.name LIKE \'%' . pSQL($query) . '%\'
+                OR p.reference LIKE \'%' . pSQL($query) . '%\'
+                OR p.id_product = ' . (int)$query . '
+            )
+            ORDER BY pl.name ASC
+            LIMIT 50
+        ';
+
+        $products = Db::getInstance()->executeS($sql);
+
+        $results = [];
+        if ($products) {
+            foreach ($products as $product) {
+                $label = $product['name'];
+                if ($product['reference']) {
+                    $label .= ' [' . $product['reference'] . ']';
+                }
+                if ($product['manufacturer_name']) {
+                    $label .= ' - ' . $product['manufacturer_name'];
+                }
+                $label .= ' (ID: ' . $product['id_product'] . ')';
+
+                $results[] = [
+                    'id' => (int)$product['id_product'],
+                    'name' => $label,
+                    'text' => $label, // For Select2 compatibility
+                ];
+            }
+        }
+
+        die(json_encode(['products' => $results]));
+    }
+
     public function renderForm()
     {
-        // Get products for dropdown
-        $products = Product::getProducts(
-            $this->context->language->id,
-            0,
-            0,
-            'name',
-            'ASC',
-            false,
-            true
-        );
+        // Get current product info if editing
+        $currentProductName = '';
+        $currentProductId = 0;
 
-        $productOptions = [];
-        foreach ($products as $product) {
-            $productOptions[] = [
-                'id' => $product['id_product'],
-                'name' => $product['name'] . ' (ID: ' . $product['id_product'] . ')',
-            ];
+        if ($this->object && $this->object->id_product) {
+            $currentProductId = (int)$this->object->id_product;
+            $product = new Product($currentProductId, false, $this->context->language->id);
+            if (Validate::isLoadedObject($product)) {
+                $currentProductName = $product->name . ' (ID: ' . $currentProductId . ')';
+            }
         }
 
         $this->fields_form = [
@@ -114,16 +165,16 @@ class AdminSmartSearchBoostController extends ModuleAdminController
             ],
             'input' => [
                 [
-                    'type' => 'select',
+                    'type' => 'html',
                     'label' => $this->l('Product'),
-                    'name' => 'id_product',
+                    'name' => 'product_search_html',
                     'required' => true,
-                    'options' => [
-                        'query' => $productOptions,
-                        'id' => 'id',
-                        'name' => 'name',
-                    ],
-                    'desc' => $this->l('Select the product to boost'),
+                    'html_content' => $this->getProductSearchHtml($currentProductId, $currentProductName),
+                    'desc' => $this->l('Search for a product by name, reference or ID'),
+                ],
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_product',
                 ],
                 [
                     'type' => 'text',
@@ -169,6 +220,188 @@ class AdminSmartSearchBoostController extends ModuleAdminController
         ];
 
         return parent::renderForm();
+    }
+
+    /**
+     * Genera l'HTML per il campo di ricerca prodotti con autocomplete
+     */
+    protected function getProductSearchHtml($currentProductId = 0, $currentProductName = '')
+    {
+        $ajaxUrl = $this->context->link->getAdminLink('AdminSmartSearchBoost', true, [], ['ajax' => 1, 'action' => 'searchProducts']);
+
+        $html = '
+        <div class="product-search-container">
+            <input type="text"
+                   id="product_search_input"
+                   class="form-control"
+                   placeholder="' . $this->l('Type to search products...') . '"
+                   value="' . htmlspecialchars($currentProductName) . '"
+                   autocomplete="off">
+            <div id="product_search_results" class="product-search-results"></div>
+        </div>
+        <style>
+            .product-search-container {
+                position: relative;
+                max-width: 600px;
+            }
+            .product-search-results {
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: #fff;
+                border: 1px solid #ddd;
+                border-top: none;
+                max-height: 300px;
+                overflow-y: auto;
+                z-index: 1000;
+                display: none;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+            .product-search-results.visible {
+                display: block;
+            }
+            .product-search-item {
+                padding: 10px 15px;
+                cursor: pointer;
+                border-bottom: 1px solid #eee;
+            }
+            .product-search-item:hover,
+            .product-search-item.selected {
+                background: #f5f5f5;
+            }
+            .product-search-item:last-child {
+                border-bottom: none;
+            }
+            .product-search-no-results {
+                padding: 10px 15px;
+                color: #999;
+                font-style: italic;
+            }
+        </style>
+        <script>
+        (function() {
+            var searchInput = document.getElementById("product_search_input");
+            var resultsContainer = document.getElementById("product_search_results");
+            var hiddenInput = document.querySelector("input[name=id_product]");
+            var searchTimer = null;
+            var selectedIndex = -1;
+            var currentResults = [];
+
+            // Set initial value
+            if (' . ($currentProductId ? 'true' : 'false') . ') {
+                hiddenInput.value = ' . (int)$currentProductId . ';
+            }
+
+            searchInput.addEventListener("input", function() {
+                var query = this.value.trim();
+                clearTimeout(searchTimer);
+
+                if (query.length < 2) {
+                    hideResults();
+                    return;
+                }
+
+                searchTimer = setTimeout(function() {
+                    searchProducts(query);
+                }, 300);
+            });
+
+            searchInput.addEventListener("keydown", function(e) {
+                if (!resultsContainer.classList.contains("visible")) return;
+
+                var items = resultsContainer.querySelectorAll(".product-search-item");
+
+                if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                    updateSelection(items);
+                } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    selectedIndex = Math.max(selectedIndex - 1, 0);
+                    updateSelection(items);
+                } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (selectedIndex >= 0 && currentResults[selectedIndex]) {
+                        selectProduct(currentResults[selectedIndex]);
+                    }
+                } else if (e.key === "Escape") {
+                    hideResults();
+                }
+            });
+
+            document.addEventListener("click", function(e) {
+                if (!e.target.closest(".product-search-container")) {
+                    hideResults();
+                }
+            });
+
+            function searchProducts(query) {
+                var url = "' . $ajaxUrl . '&q=" + encodeURIComponent(query);
+
+                fetch(url)
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        currentResults = data.products || [];
+                        selectedIndex = -1;
+                        renderResults(currentResults);
+                    })
+                    .catch(function(err) {
+                        console.error("Search error:", err);
+                    });
+            }
+
+            function renderResults(products) {
+                if (products.length === 0) {
+                    resultsContainer.innerHTML = "<div class=\"product-search-no-results\">' . $this->l('No products found') . '</div>";
+                } else {
+                    var html = "";
+                    products.forEach(function(product, index) {
+                        html += "<div class=\"product-search-item\" data-id=\"" + product.id + "\" data-index=\"" + index + "\">" + escapeHtml(product.name) + "</div>";
+                    });
+                    resultsContainer.innerHTML = html;
+
+                    // Bind click events
+                    resultsContainer.querySelectorAll(".product-search-item").forEach(function(item) {
+                        item.addEventListener("click", function() {
+                            var idx = parseInt(this.dataset.index);
+                            selectProduct(currentResults[idx]);
+                        });
+                    });
+                }
+                resultsContainer.classList.add("visible");
+            }
+
+            function selectProduct(product) {
+                searchInput.value = product.name;
+                hiddenInput.value = product.id;
+                hideResults();
+            }
+
+            function hideResults() {
+                resultsContainer.classList.remove("visible");
+                selectedIndex = -1;
+            }
+
+            function updateSelection(items) {
+                items.forEach(function(item, idx) {
+                    item.classList.toggle("selected", idx === selectedIndex);
+                });
+                if (selectedIndex >= 0) {
+                    items[selectedIndex].scrollIntoView({ block: "nearest" });
+                }
+            }
+
+            function escapeHtml(text) {
+                var div = document.createElement("div");
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        })();
+        </script>
+        ';
+
+        return $html;
     }
 
     public function processSave()
