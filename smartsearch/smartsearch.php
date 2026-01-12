@@ -767,22 +767,13 @@ class SmartSearch extends Module
                 $this->trackConversionInternal($lastSearch, $products, $orderId);
             }
 
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // Log silenzioso - NON bloccare mai il checkout
-            if (_PS_MODE_DEV_) {
+            // Throwable cattura sia Exception che Error (PHP 7+)
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                 PrestaShopLogger::addLog(
                     'SmartSearch conversion tracking error: ' . $e->getMessage(),
                     2,
-                    null,
-                    'SmartSearch'
-                );
-            }
-        } catch (Error $e) {
-            // Cattura anche errori PHP 7+ fatali
-            if (_PS_MODE_DEV_) {
-                PrestaShopLogger::addLog(
-                    'SmartSearch conversion tracking fatal error: ' . $e->getMessage(),
-                    3,
                     null,
                     'SmartSearch'
                 );
@@ -812,8 +803,8 @@ class SmartSearch extends Module
                     isset($product['total_price_tax_incl']) ? $product['total_price_tax_incl'] : 0
                 );
             }
-        } catch (Exception $e) {
-            // Ignora errori di tracking interno
+        } catch (Throwable $e) {
+            // Ignora errori di tracking interno - non bloccare mai il checkout
         }
     }
 
