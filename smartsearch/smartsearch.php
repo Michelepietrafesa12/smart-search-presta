@@ -33,6 +33,11 @@ class SmartSearch extends Module
     {
         if (self::$configCache === null) {
             // Carica tutte le config in una volta sola
+            // Configuration::get() restituisce false se la chiave non esiste
+            // quindi dobbiamo usare default true per le nuove funzionalità
+            $showBestseller = Configuration::get('SMARTSEARCH_SHOW_BESTSELLER');
+            $showAddToCart = Configuration::get('SMARTSEARCH_SHOW_ADD_TO_CART');
+
             self::$configCache = [
                 'enabled' => (bool)Configuration::get('SMARTSEARCH_ENABLED'),
                 'min_chars' => (int)Configuration::get('SMARTSEARCH_MIN_CHARS') ?: 2,
@@ -44,8 +49,11 @@ class SmartSearch extends Module
                 'show_category' => (bool)Configuration::get('SMARTSEARCH_SHOW_CATEGORY'),
                 'show_manufacturer' => (bool)Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
                 'show_stock' => (bool)Configuration::get('SMARTSEARCH_SHOW_STOCK'),
-                'show_bestseller_badge' => (bool)Configuration::get('SMARTSEARCH_SHOW_BESTSELLER'),
-                'show_add_to_cart' => (bool)Configuration::get('SMARTSEARCH_SHOW_ADD_TO_CART'),
+                // Default a true se non configurato (chiave non esiste = false)
+                // Se esplicitamente impostato a "0", (bool)"0" = false
+                // Se esplicitamente impostato a "1", (bool)"1" = true
+                'show_bestseller_badge' => ($showBestseller === false) ? true : (bool)$showBestseller,
+                'show_add_to_cart' => ($showAddToCart === false) ? true : (bool)$showAddToCart,
                 'highlight' => (bool)Configuration::get('SMARTSEARCH_HIGHLIGHT'),
                 'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
                 'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),

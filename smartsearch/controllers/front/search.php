@@ -871,7 +871,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $idProductAttribute = 0;
 
                 // Calcola se è un bestseller (più di 10 vendite)
-                $totalSold = isset($row['total_sold']) ? (int)$row['total_sold'] : 0;
+                // Supporta sia total_sold (da getBestsellers) che sales_count (da searchProducts)
+                $totalSold = 0;
+                if (isset($row['total_sold'])) {
+                    $totalSold = (int)$row['total_sold'];
+                } elseif (isset($row['sales_count'])) {
+                    $totalSold = (int)$row['sales_count'];
+                }
                 $isBestseller = $totalSold >= 10;
 
                 // Quantità disponibile
