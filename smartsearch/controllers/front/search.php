@@ -672,121 +672,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Aggiunge un prodotto al carrello via AJAX
-     */
-    public function displayAjaxAddToCart()
-    {
-        header('Content-Type: application/json; charset=utf-8');
-
-        try {
-            $idProduct = (int)Tools::getValue('id_product');
-            $idProductAttribute = (int)Tools::getValue('id_product_attribute', 0);
-            $qty = (int)Tools::getValue('qty', 1);
-
-            if ($idProduct <= 0) {
-                die(json_encode([
-                    'success' => false,
-                    'message' => 'Prodotto non valido'
-                ]));
-            }
-
-            // Verifica che il prodotto esista e sia attivo
-            $product = new Product($idProduct, false, $this->context->language->id);
-            if (!Validate::isLoadedObject($product) || !$product->active) {
-                die(json_encode([
-                    'success' => false,
-                    'message' => 'Prodotto non disponibile'
-                ]));
-            }
-
-            // Se il prodotto ha varianti ma non è stato specificato l'attributo, redirect al prodotto
-            if (Product::hasAttributes($idProduct) && $idProductAttribute == 0) {
-                die(json_encode([
-                    'success' => false,
-                    'has_attributes' => true,
-                    'message' => 'Seleziona una variante',
-                    'redirect' => $this->context->link->getProductLink($product)
-                ]));
-            }
-
-            // Verifica disponibilità
-            $quantity = StockAvailable::getQuantityAvailableByProduct($idProduct, $idProductAttribute);
-            if ($quantity < $qty && !Product::isAvailableWhenOutOfStock($product->out_of_stock)) {
-                die(json_encode([
-                    'success' => false,
-                    'message' => 'Quantità non disponibile'
-                ]));
-            }
-
-            // Aggiungi al carrello
-            $cart = $this->context->cart;
-            if (!$cart->id) {
-                if ($this->context->cookie->id_guest) {
-                    $guest = new Guest($this->context->cookie->id_guest);
-                    $cart->mobile_theme = $guest->mobile_theme;
-                }
-                $cart->add();
-                if ($cart->id) {
-                    $this->context->cookie->id_cart = (int)$cart->id;
-                }
-            }
-
-            $result = $cart->updateQty($qty, $idProduct, $idProductAttribute);
-
-            if ($result) {
-                // Aggiorna i totali del carrello
-                $cart->update();
-
-                // Calcola nuovo totale carrello
-                $cartTotal = $cart->getOrderTotal(true, Cart::BOTH);
-                $cartProducts = $cart->nbProducts();
-
-                // Dati prodotto per conferma
-                $imageUrl = '';
-                $images = $product->getImages($this->context->language->id);
-                if (!empty($images)) {
-                    $imageUrl = $this->context->link->getImageLink(
-                        $product->link_rewrite,
-                        $images[0]['id_image'],
-                        ImageType::getFormattedName('small')
-                    );
-                }
-
-                die(json_encode([
-                    'success' => true,
-                    'message' => 'Prodotto aggiunto al carrello',
-                    'cart' => [
-                        'products_count' => $cartProducts,
-                        'total' => Tools::displayPrice($cartTotal),
-                        'total_raw' => $cartTotal
-                    ],
-                    'product' => [
-                        'id' => $idProduct,
-                        'name' => $product->name,
-                        'image' => $imageUrl,
-                        'price' => Tools::displayPrice(Product::getPriceStatic($idProduct, true, $idProductAttribute)),
-                        'qty' => $qty
-                    ]
-                ]));
-            } else {
-                die(json_encode([
-                    'success' => false,
-                    'message' => 'Impossibile aggiungere al carrello'
-                ]));
-            }
-
-        } catch (Throwable $e) {
-            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                PrestaShopLogger::addLog('SmartSearch addToCart error: ' . $e->getMessage(), 3, null, 'SmartSearch');
-            }
-            die(json_encode([
-                'success' => false,
-                'message' => 'Errore durante l\'aggiunta al carrello'
-            ]));
-        }
-    }
-
-    /**
      * Ottieni i prodotti più recenti (fallback)
      */
     protected function getRecentProducts($idLang, $idShop, $limit = 12)
@@ -991,9 +876,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                         break;
                     case 'suggestions':
                         $this->displayAjaxSuggestions();
-                        break;
-                    case 'addtocart':
-                        $this->displayAjaxAddToCart();
                         break;
                     case 'search':
                     default:

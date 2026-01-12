@@ -34,9 +34,7 @@ class SmartSearch extends Module
         if (self::$configCache === null) {
             // Carica tutte le config in una volta sola
             // Configuration::get() restituisce false se la chiave non esiste
-            // quindi dobbiamo usare default true per le nuove funzionalità
             $showBestseller = Configuration::get('SMARTSEARCH_SHOW_BESTSELLER');
-            $showAddToCart = Configuration::get('SMARTSEARCH_SHOW_ADD_TO_CART');
 
             self::$configCache = [
                 'enabled' => (bool)Configuration::get('SMARTSEARCH_ENABLED'),
@@ -49,11 +47,8 @@ class SmartSearch extends Module
                 'show_category' => (bool)Configuration::get('SMARTSEARCH_SHOW_CATEGORY'),
                 'show_manufacturer' => (bool)Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
                 'show_stock' => (bool)Configuration::get('SMARTSEARCH_SHOW_STOCK'),
-                // Default: true per bestseller, false per add-to-cart (disabilitato)
-                // Se esplicitamente impostato a "0", (bool)"0" = false
-                // Se esplicitamente impostato a "1", (bool)"1" = true
+                // Default: true per bestseller se non configurato
                 'show_bestseller_badge' => ($showBestseller === false) ? true : (bool)$showBestseller,
-                'show_add_to_cart' => ($showAddToCart === false) ? false : (bool)$showAddToCart,
                 'highlight' => (bool)Configuration::get('SMARTSEARCH_HIGHLIGHT'),
                 'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
                 'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
@@ -192,7 +187,6 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_SHOW_MANUFACTURER', 1);
         Configuration::updateValue('SMARTSEARCH_SHOW_STOCK', 1);
         Configuration::updateValue('SMARTSEARCH_SHOW_BESTSELLER', 1);
-        Configuration::updateValue('SMARTSEARCH_SHOW_ADD_TO_CART', 1);
         Configuration::updateValue('SMARTSEARCH_HIGHLIGHT', 1);
 
         // Algoritmi intelligenti
@@ -237,7 +231,7 @@ class SmartSearch extends Module
             'SMARTSEARCH_ENABLED', 'SMARTSEARCH_MIN_CHARS', 'SMARTSEARCH_MAX_RESULTS',
             'SMARTSEARCH_DEBOUNCE_TIME', 'SMARTSEARCH_SHOW_PRICE', 'SMARTSEARCH_SHOW_IMAGE',
             'SMARTSEARCH_SHOW_DESCRIPTION', 'SMARTSEARCH_SHOW_CATEGORY', 'SMARTSEARCH_SHOW_MANUFACTURER',
-            'SMARTSEARCH_SHOW_STOCK', 'SMARTSEARCH_SHOW_BESTSELLER', 'SMARTSEARCH_SHOW_ADD_TO_CART',
+            'SMARTSEARCH_SHOW_STOCK', 'SMARTSEARCH_SHOW_BESTSELLER',
             'SMARTSEARCH_HIGHLIGHT', 'SMARTSEARCH_FUZZY_ENABLED',
             'SMARTSEARCH_FUZZY_THRESHOLD', 'SMARTSEARCH_PHONETIC_ENABLED', 'SMARTSEARCH_STEMMING_ENABLED',
             'SMARTSEARCH_SYNONYMS_ENABLED', 'SMARTSEARCH_FACETS_ENABLED', 'SMARTSEARCH_FACETS_CATEGORIES',
@@ -532,7 +526,6 @@ class SmartSearch extends Module
             'smartsearch_config' => [
                 // URLs - essenziali
                 'ajax_url' => $this->context->link->getModuleLink($this->name, 'search'),
-                'cart_url' => $this->context->link->getPageLink('cart', true),
 
                 // Config essenziali (dalla cache)
                 'min_chars' => self::getConfig('min_chars'),
@@ -540,7 +533,6 @@ class SmartSearch extends Module
                 'highlight' => self::getConfig('highlight'),
                 'facets_enabled' => self::getConfig('facets_enabled'),
                 'show_bestseller_badge' => self::getConfig('show_bestseller_badge'),
-                'show_add_to_cart' => self::getConfig('show_add_to_cart'),
 
                 // Analytics - sempre configurato (usa default se vuoto)
                 'analytics_webhook_url' => $webhookUrl,
@@ -563,11 +555,6 @@ class SmartSearch extends Module
                     'featured_products' => $this->l('Prodotti in evidenza'),
                     'products_found' => $this->l('risultati'),
                     'bestseller' => $this->l('Più acquistato'),
-                    'add_to_cart' => $this->l('Aggiungi al carrello'),
-                    'added_to_cart' => $this->l('Aggiunto al carrello'),
-                    'continue_shopping' => $this->l('Continua lo shopping'),
-                    'checkout' => $this->l('Vai al carrello'),
-                    'cart_total' => $this->l('Totale carrello'),
                 ],
 
                 // Stile personalizzato
@@ -936,7 +923,7 @@ class SmartSearch extends Module
             'SMARTSEARCH_ENABLED', 'SMARTSEARCH_MIN_CHARS', 'SMARTSEARCH_MAX_RESULTS',
             'SMARTSEARCH_DEBOUNCE_TIME', 'SMARTSEARCH_SHOW_PRICE', 'SMARTSEARCH_SHOW_IMAGE',
             'SMARTSEARCH_SHOW_DESCRIPTION', 'SMARTSEARCH_SHOW_CATEGORY', 'SMARTSEARCH_SHOW_MANUFACTURER',
-            'SMARTSEARCH_SHOW_STOCK', 'SMARTSEARCH_SHOW_BESTSELLER', 'SMARTSEARCH_SHOW_ADD_TO_CART',
+            'SMARTSEARCH_SHOW_STOCK', 'SMARTSEARCH_SHOW_BESTSELLER',
             'SMARTSEARCH_HIGHLIGHT', 'SMARTSEARCH_FUZZY_ENABLED',
             'SMARTSEARCH_FUZZY_THRESHOLD', 'SMARTSEARCH_PHONETIC_ENABLED', 'SMARTSEARCH_STEMMING_ENABLED',
             'SMARTSEARCH_SYNONYMS_ENABLED', 'SMARTSEARCH_FACETS_ENABLED', 'SMARTSEARCH_FACETS_CATEGORIES',
@@ -996,9 +983,6 @@ class SmartSearch extends Module
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
                     ['type' => 'switch', 'label' => $this->l('Mostra badge "Più acquistato"'), 'name' => 'SMARTSEARCH_SHOW_BESTSELLER', 'is_bool' => true,
                      'desc' => $this->l('Mostra un badge rosso sui prodotti più venduti'),
-                     'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
-                    ['type' => 'switch', 'label' => $this->l('Mostra pulsante "Aggiungi al carrello"'), 'name' => 'SMARTSEARCH_SHOW_ADD_TO_CART', 'is_bool' => true,
-                     'desc' => $this->l('Mostra un pulsante per aggiungere rapidamente al carrello'),
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
                     ['type' => 'switch', 'label' => $this->l('Evidenzia termini'), 'name' => 'SMARTSEARCH_HIGHLIGHT', 'is_bool' => true,
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
@@ -1114,7 +1098,6 @@ class SmartSearch extends Module
             'SMARTSEARCH_SHOW_MANUFACTURER' => Configuration::get('SMARTSEARCH_SHOW_MANUFACTURER'),
             'SMARTSEARCH_SHOW_STOCK' => Configuration::get('SMARTSEARCH_SHOW_STOCK'),
             'SMARTSEARCH_SHOW_BESTSELLER' => Configuration::get('SMARTSEARCH_SHOW_BESTSELLER'),
-            'SMARTSEARCH_SHOW_ADD_TO_CART' => Configuration::get('SMARTSEARCH_SHOW_ADD_TO_CART'),
             'SMARTSEARCH_HIGHLIGHT' => Configuration::get('SMARTSEARCH_HIGHLIGHT'),
             'SMARTSEARCH_FUZZY_ENABLED' => Configuration::get('SMARTSEARCH_FUZZY_ENABLED'),
             'SMARTSEARCH_FUZZY_THRESHOLD' => Configuration::get('SMARTSEARCH_FUZZY_THRESHOLD'),
