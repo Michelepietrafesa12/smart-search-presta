@@ -164,6 +164,49 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     protected static $brandNamesCache = null;
 
     /**
+     * Cache per gli ID dei prodotti bestseller (top 20)
+     */
+    protected static $bestsellerIdsCache = null;
+
+    /**
+     * Ottiene gli ID dei prodotti più venduti (top 20)
+     * Usa cache statica per evitare query ripetute
+     */
+    protected function getBestsellerIds($idShop)
+    {
+        if (self::$bestsellerIdsCache === null) {
+            $sql = '
+                SELECT p.id_product
+                FROM ' . _DB_PREFIX_ . 'product p
+                INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps
+                    ON p.id_product = ps.id_product
+                    AND ps.id_shop = ' . (int)$idShop . '
+                LEFT JOIN ' . _DB_PREFIX_ . 'order_detail od
+                    ON od.product_id = p.id_product
+                LEFT JOIN ' . _DB_PREFIX_ . 'orders o
+                    ON o.id_order = od.id_order
+                    AND o.valid = 1
+                WHERE p.active = 1 AND ps.active = 1
+                GROUP BY p.id_product
+                HAVING SUM(IFNULL(od.product_quantity, 0)) > 0
+                ORDER BY SUM(IFNULL(od.product_quantity, 0)) DESC
+                LIMIT 20
+            ';
+
+            $results = Db::getInstance()->executeS($sql);
+            self::$bestsellerIdsCache = [];
+
+            if ($results) {
+                foreach ($results as $row) {
+                    self::$bestsellerIdsCache[] = (int)$row['id_product'];
+                }
+            }
+        }
+
+        return self::$bestsellerIdsCache;
+    }
+
+    /**
      * Trova brand names simili usando Levenshtein distance
      * Es: "etocsport" -> "ethicsport"
      */
@@ -755,15 +798,17 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
                 $idProductAttribute = 0;
 
-                // Calcola se è un bestseller (più di 10 vendite)
-                // Supporta sia total_sold (da getBestsellers) che sales_count (da searchProducts)
+                // Calcola se è un bestseller (top 20 prodotti più venduti)
+                $bestsellerIds = $this->getBestsellerIds((int)$this->context->shop->id);
+                $isBestseller = in_array((int)$row['id_product'], $bestsellerIds);
+
+                // Mantieni total_sold per eventuali usi futuri
                 $totalSold = 0;
                 if (isset($row['total_sold'])) {
                     $totalSold = (int)$row['total_sold'];
                 } elseif (isset($row['sales_count'])) {
                     $totalSold = (int)$row['sales_count'];
                 }
-                $isBestseller = $totalSold >= 10;
 
                 // Quantità disponibile
                 $quantity = StockAvailable::getQuantityAvailableByProduct($row['id_product']);
