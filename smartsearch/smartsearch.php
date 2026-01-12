@@ -524,6 +524,7 @@ class SmartSearch extends Module
             'smartsearch_config' => [
                 // URLs - essenziali
                 'ajax_url' => $this->context->link->getModuleLink($this->name, 'search'),
+                'cart_url' => $this->context->link->getPageLink('cart', true),
 
                 // Config essenziali (dalla cache)
                 'min_chars' => self::getConfig('min_chars'),

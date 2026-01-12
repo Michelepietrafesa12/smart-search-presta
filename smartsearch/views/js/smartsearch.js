@@ -1026,9 +1026,9 @@
                 <div class="smartsearch-product-card-wrapper">
                     <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${index}" data-price="${product.price_raw || 0}" data-has-attributes="${product.has_attributes ? '1' : '0'}">
                         ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                        ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                         <div class="smartsearch-product-image">
                             <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                            ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                         </div>
                         <div class="smartsearch-product-info">
                             <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
@@ -1392,9 +1392,9 @@
             wrapper.innerHTML = `
                 <a href="${product.url}" class="smartsearch-product-card" data-product-id="${product.id}" data-index="${startIndex + index}" data-price="${product.price_raw || 0}" data-has-attributes="${product.has_attributes ? '1' : '0'}">
                     ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                    ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                     <div class="smartsearch-product-image">
                         <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
+                        ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                     </div>
                     <div class="smartsearch-product-info">
                         <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
@@ -2010,7 +2010,7 @@
         formData.append('id_product', productId);
         formData.append('qty', 1);
 
-        fetch(config.search_url, {
+        fetch(config.ajax_url, {
             method: 'POST',
             body: formData
         })
@@ -2071,7 +2071,7 @@
                     </div>
                     <div class="smartsearch-cart-notification-actions">
                         <button type="button" class="smartsearch-cart-notification-continue">${t.continue_shopping || 'Continua'}</button>
-                        <a href="${config.cart_url || '/carrello'}" class="smartsearch-cart-notification-checkout">${t.go_to_cart || 'Vai al carrello'}</a>
+                        <a href="${config.cart_url || '/carrello'}" class="smartsearch-cart-notification-checkout">${t.checkout || 'Vai al carrello'}</a>
                     </div>
                 </div>
             `;
