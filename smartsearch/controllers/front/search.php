@@ -789,10 +789,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $priceDisplay = Product::getPriceStatic($row['id_product'], true);
                 $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
 
-                // Verifica se il prodotto ha attributi/varianti (con fallback sicuro)
+                // Verifica se il prodotto ha attributi/varianti (query diretta per evitare deprecation)
                 $hasAttributes = false;
                 try {
-                    $hasAttributes = (bool)Product::hasAttributes($row['id_product']);
+                    $hasAttributes = (bool)Db::getInstance()->getValue('
+                        SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'product_attribute`
+                        WHERE id_product = ' . (int)$row['id_product']
+                    );
                 } catch (Throwable $e) {
                     $hasAttributes = false;
                 }
