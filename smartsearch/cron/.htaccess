@@ -1,0 +1,8 @@
+# SmartSearch Cron Directory Protection
+# Permette accesso solo con token di sicurezza
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{QUERY_STRING} !token= [NC]
+    RewriteRule ^.*$ - [F,L]
+</IfModule>
