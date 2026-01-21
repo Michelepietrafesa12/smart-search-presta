@@ -31,6 +31,10 @@
     let currentSortOrder = 'relevance';
     let allLoadedProducts = [];
 
+    // AbortController per cancellare richieste in corso
+    let searchAbortController = null;
+    let loadMoreAbortController = null;
+
     // Analytics
     const sessionId = getOrCreateSessionId();
 
@@ -1247,8 +1251,15 @@
 
     /**
      * Perform search
+     * Usa AbortController per cancellare richieste precedenti
      */
     function performSearch(query, filters = {}) {
+        // Cancella ricerca precedente se ancora in corso
+        if (searchAbortController) {
+            searchAbortController.abort();
+        }
+        searchAbortController = new AbortController();
+
         currentQuery = query;
         currentFilters = filters;
 
@@ -1272,10 +1283,10 @@
         if (filters.price_max) url += '&price_max=' + filters.price_max;
         if (filters.in_stock) url += '&in_stock=1';
 
-
         fetch(url, {
             method: 'GET',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: searchAbortController.signal
         })
         .then(response => {
             if (!response.ok) {
@@ -1300,15 +1311,26 @@
             trackSearch(query, totalResultsCount);
         })
         .catch(error => {
+            // Ignora errori di abort (richiesta cancellata intenzionalmente)
+            if (error.name === 'AbortError') {
+                return;
+            }
             renderNoResults();
         });
     }
 
     /**
      * Load more results (for infinite scroll)
+     * Usa AbortController per cancellare se arriva nuova ricerca
      */
     function loadMoreResults() {
         if (isLoadingMore || !hasMoreResults || !currentQuery) return;
+
+        // Cancella caricamento precedente se in corso
+        if (loadMoreAbortController) {
+            loadMoreAbortController.abort();
+        }
+        loadMoreAbortController = new AbortController();
 
         isLoadingMore = true;
 
@@ -1333,7 +1355,8 @@
 
         fetch(url, {
             method: 'GET',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: loadMoreAbortController.signal
         })
         .then(response => response.json())
         .then(data => {
@@ -1355,6 +1378,10 @@
             isLoadingMore = false;
         })
         .catch(error => {
+            // Ignora errori di abort
+            if (error.name === 'AbortError') {
+                return;
+            }
             loadMoreIndicator.remove();
             isLoadingMore = false;
         });
