@@ -35,6 +35,9 @@
     let searchAbortController = null;
     let loadMoreAbortController = null;
 
+    // Lazy loading overlay - creato solo al primo utilizzo
+    let overlayCreated = false;
+
     // Analytics
     const sessionId = getOrCreateSessionId();
 
@@ -254,14 +257,24 @@
     }
 
     /**
-     * Init
+     * Init - Lazy loading: overlay creato solo al primo utilizzo
      */
     function init() {
         applyCustomStyles(); // Apply custom colors from config
-        loadRecentSearches();
-        createOverlay();
-        bindTriggers();
-        loadBanners(''); // Preload banners
+        loadRecentSearches(); // Carica da localStorage (veloce)
+        bindTriggers(); // Collega ai trigger esistenti
+        // NON creare overlay qui - sarà creato al primo click/focus
+    }
+
+    /**
+     * Ensure overlay is created (lazy loading)
+     */
+    function ensureOverlayCreated() {
+        if (!overlayCreated) {
+            createOverlay();
+            loadBanners(''); // Carica banner solo quando serve
+            overlayCreated = true;
+        }
     }
 
     /**
@@ -518,12 +531,14 @@
         e.preventDefault();
         e.stopPropagation();
         e.target.blur();
+        ensureOverlayCreated(); // Lazy load: crea overlay al primo utilizzo
         openOverlay();
     }
 
     function handleTriggerClick(e) {
         e.preventDefault();
         e.stopPropagation();
+        ensureOverlayCreated(); // Lazy load: crea overlay al primo utilizzo
         openOverlay();
     }
 
