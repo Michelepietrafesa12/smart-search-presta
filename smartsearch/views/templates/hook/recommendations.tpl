@@ -42,9 +42,9 @@
                         </div>
                         {/if}
 
-                        {if $product.price_old}
+                        {if $product.price_old && $product.price_old_raw > 0}
                         <span class="smartsearch-rec-discount-badge">
-                            -{math equation="round((1 - new/old) * 100)" new=$product.price_raw old=$product.price_old|regex_replace:"/[^0-9.]/":""}%
+                            -{math equation="round((1 - new/old) * 100)" new=$product.price_raw old=$product.price_old_raw}%
                         </span>
                         {/if}
 

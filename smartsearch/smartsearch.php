@@ -1419,6 +1419,7 @@ class SmartSearch extends Module
                 );
             }
 
+            $hasDiscount = ($priceOldDisplay > $priceDisplay);
             $formatted[] = [
                 'id' => (int)$row['id_product'],
                 'name' => $row['name'],
@@ -1426,7 +1427,8 @@ class SmartSearch extends Module
                 'image' => $imageUrl,
                 'price' => Tools::displayPrice($priceDisplay),
                 'price_raw' => $priceDisplay,
-                'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
+                'price_old' => $hasDiscount ? Tools::displayPrice($priceOldDisplay) : '',
+                'price_old_raw' => $hasDiscount ? $priceOldDisplay : 0,
                 'manufacturer' => $row['manufacturer_name'] ?? '',
                 'in_stock' => $quantity > 0,
                 'quantity' => $quantity
@@ -1438,70 +1440,94 @@ class SmartSearch extends Module
 
     /**
      * Hook: Mostra slider prodotti consigliati nella pagina prodotto
+     * Fail-safe: non blocca mai la pagina prodotto in caso di errori
      */
     public function hookDisplayFooterProduct($params)
     {
-        if (!self::getConfig('enabled')) {
+        try {
+            if (!self::getConfig('enabled')) {
+                return '';
+            }
+
+            $idProduct = (int)Tools::getValue('id_product');
+            if (!$idProduct && isset($params['product'])) {
+                $idProduct = (int)$params['product']['id_product'];
+            }
+
+            if (!$idProduct) {
+                return '';
+            }
+
+            $recommendations = $this->getCorrelatedProducts($idProduct, 8);
+
+            if (empty($recommendations)) {
+                return '';
+            }
+
+            $this->context->smarty->assign([
+                'smartsearch_recommendations' => $recommendations,
+                'smartsearch_rec_title' => $this->l('Chi ha acquistato questo prodotto ha comprato anche'),
+                'smartsearch_rec_type' => 'product'
+            ]);
+
+            return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
+        } catch (Throwable $e) {
+            // Log silenzioso - non bloccare mai la pagina prodotto
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog(
+                    'SmartSearch recommendations error (product): ' . $e->getMessage(),
+                    2, null, 'SmartSearch'
+                );
+            }
             return '';
         }
-
-        $idProduct = (int)Tools::getValue('id_product');
-        if (!$idProduct && isset($params['product'])) {
-            $idProduct = (int)$params['product']['id_product'];
-        }
-
-        if (!$idProduct) {
-            return '';
-        }
-
-        $recommendations = $this->getCorrelatedProducts($idProduct, 8);
-
-        if (empty($recommendations)) {
-            return '';
-        }
-
-        $this->context->smarty->assign([
-            'smartsearch_recommendations' => $recommendations,
-            'smartsearch_rec_title' => $this->l('Chi ha acquistato questo prodotto ha comprato anche'),
-            'smartsearch_rec_type' => 'product'
-        ]);
-
-        return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
     }
 
     /**
      * Hook: Mostra slider prodotti consigliati nel carrello
+     * Fail-safe: non blocca mai il carrello in caso di errori
      */
     public function hookDisplayShoppingCartFooter($params)
     {
-        if (!self::getConfig('enabled')) {
+        try {
+            if (!self::getConfig('enabled')) {
+                return '';
+            }
+
+            // Ottieni prodotti nel carrello
+            $cart = $this->context->cart;
+            if (!$cart || !$cart->id) {
+                return '';
+            }
+
+            $cartProducts = $cart->getProducts();
+            if (empty($cartProducts)) {
+                return '';
+            }
+
+            $productIds = array_column($cartProducts, 'id_product');
+            $recommendations = $this->getCorrelatedProductsForCart($productIds, 8);
+
+            if (empty($recommendations)) {
+                return '';
+            }
+
+            $this->context->smarty->assign([
+                'smartsearch_recommendations' => $recommendations,
+                'smartsearch_rec_title' => $this->l('Completa il tuo ordine'),
+                'smartsearch_rec_type' => 'cart'
+            ]);
+
+            return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
+        } catch (Throwable $e) {
+            // Log silenzioso - non bloccare mai il carrello
+            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                PrestaShopLogger::addLog(
+                    'SmartSearch recommendations error (cart): ' . $e->getMessage(),
+                    2, null, 'SmartSearch'
+                );
+            }
             return '';
         }
-
-        // Ottieni prodotti nel carrello
-        $cart = $this->context->cart;
-        if (!$cart || !$cart->id) {
-            return '';
-        }
-
-        $cartProducts = $cart->getProducts();
-        if (empty($cartProducts)) {
-            return '';
-        }
-
-        $productIds = array_column($cartProducts, 'id_product');
-        $recommendations = $this->getCorrelatedProductsForCart($productIds, 8);
-
-        if (empty($recommendations)) {
-            return '';
-        }
-
-        $this->context->smarty->assign([
-            'smartsearch_recommendations' => $recommendations,
-            'smartsearch_rec_title' => $this->l('Completa il tuo ordine'),
-            'smartsearch_rec_type' => 'cart'
-        ]);
-
-        return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
     }
 }
