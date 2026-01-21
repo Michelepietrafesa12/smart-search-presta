@@ -221,6 +221,12 @@ class SmartSearch extends Module
         // Banner
         Configuration::updateValue('SMARTSEARCH_BANNERS_ENABLED', 1);
 
+        // Correlazioni/Raccomandazioni
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_DAYS', 180);
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 2);
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_LAST_UPDATE', '');
+
         return true;
     }
 
@@ -240,7 +246,9 @@ class SmartSearch extends Module
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
             'SMARTSEARCH_FACETS_STOCK', 'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL',
             'SMARTSEARCH_ANALYTICS_ENABLED', 'SMARTSEARCH_ANALYTICS_RETENTION',
-            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED'
+            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
+            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS',
+            'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'SMARTSEARCH_CORRELATIONS_LAST_UPDATE'
         ];
 
         foreach ($configs as $config) {
@@ -924,6 +932,15 @@ class SmartSearch extends Module
             $output .= $this->displayConfirmation($this->l('Cache svuotata con successo'));
         }
 
+        if (Tools::isSubmit('calculateCorrelations')) {
+            $daysBack = (int)Configuration::get('SMARTSEARCH_CORRELATIONS_DAYS') ?: 180;
+            $count = $this->calculateProductCorrelations(null, $daysBack);
+            Configuration::updateValue('SMARTSEARCH_CORRELATIONS_LAST_UPDATE', date('Y-m-d H:i:s'));
+            $output .= $this->displayConfirmation(
+                sprintf($this->l('Correlazioni calcolate con successo! %d correlazioni create/aggiornate.'), $count)
+            );
+        }
+
         return $output . $this->renderConfigForm();
     }
 
@@ -942,7 +959,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_SYNONYMS_ENABLED', 'SMARTSEARCH_FACETS_ENABLED', 'SMARTSEARCH_FACETS_CATEGORIES',
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
             'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL', 'SMARTSEARCH_ANALYTICS_ENABLED',
-            'SMARTSEARCH_ANALYTICS_RETENTION', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED'
+            'SMARTSEARCH_ANALYTICS_RETENTION', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
+            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS', 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES'
         ];
 
         foreach ($configs as $config) {
@@ -953,6 +971,78 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', Tools::getValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'));
 
         $this->invalidateCache();
+    }
+
+    /**
+     * Ottiene statistiche sulle correlazioni
+     */
+    protected function getCorrelationStats()
+    {
+        $idShop = (int)$this->context->shop->id;
+
+        $stats = [
+            'total_correlations' => 0,
+            'total_products' => 0,
+            'last_update' => Configuration::get('SMARTSEARCH_CORRELATIONS_LAST_UPDATE') ?: null,
+            'avg_score' => 0
+        ];
+
+        // Conta correlazioni totali
+        $sql = 'SELECT COUNT(*) FROM ' . _DB_PREFIX_ . 'smartsearch_correlations WHERE id_shop = ' . $idShop;
+        $stats['total_correlations'] = (int)Db::getInstance()->getValue($sql);
+
+        // Conta prodotti con correlazioni
+        $sql = 'SELECT COUNT(DISTINCT id_product_source) FROM ' . _DB_PREFIX_ . 'smartsearch_correlations WHERE id_shop = ' . $idShop;
+        $stats['total_products'] = (int)Db::getInstance()->getValue($sql);
+
+        // Score medio
+        if ($stats['total_correlations'] > 0) {
+            $sql = 'SELECT AVG(correlation_score) FROM ' . _DB_PREFIX_ . 'smartsearch_correlations WHERE id_shop = ' . $idShop;
+            $stats['avg_score'] = round((float)Db::getInstance()->getValue($sql), 4);
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Genera HTML per mostrare le statistiche correlazioni
+     */
+    protected function getCorrelationStatsHtml($stats)
+    {
+        $lastUpdate = $stats['last_update']
+            ? date('d/m/Y H:i', strtotime($stats['last_update']))
+            : $this->l('Mai');
+
+        $statusColor = $stats['total_correlations'] > 0 ? '#059669' : '#dc2626';
+        $statusText = $stats['total_correlations'] > 0
+            ? $this->l('Attivo')
+            : $this->l('Nessuna correlazione - Clicca "Calcola Correlazioni Ora"');
+
+        return '
+        <div style="background: #f8fafc; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <div style="display: flex; gap: 30px; flex-wrap: wrap;">
+                <div>
+                    <strong style="color: #64748b; font-size: 12px; text-transform: uppercase;">' . $this->l('Stato') . '</strong>
+                    <div style="font-size: 16px; color: ' . $statusColor . '; font-weight: 600;">' . $statusText . '</div>
+                </div>
+                <div>
+                    <strong style="color: #64748b; font-size: 12px; text-transform: uppercase;">' . $this->l('Correlazioni') . '</strong>
+                    <div style="font-size: 24px; font-weight: 700; color: #1e293b;">' . number_format($stats['total_correlations'], 0, ',', '.') . '</div>
+                </div>
+                <div>
+                    <strong style="color: #64748b; font-size: 12px; text-transform: uppercase;">' . $this->l('Prodotti collegati') . '</strong>
+                    <div style="font-size: 24px; font-weight: 700; color: #1e293b;">' . number_format($stats['total_products'], 0, ',', '.') . '</div>
+                </div>
+                <div>
+                    <strong style="color: #64748b; font-size: 12px; text-transform: uppercase;">' . $this->l('Ultimo aggiornamento') . '</strong>
+                    <div style="font-size: 16px; color: #1e293b;">' . $lastUpdate . '</div>
+                </div>
+            </div>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">
+                <strong>' . $this->l('Come funziona:') . '</strong> ' .
+                $this->l('Le correlazioni analizzano gli ordini per trovare prodotti acquistati insieme. Esegui il calcolo periodicamente (consigliato: settimanale) per mantenere i suggerimenti aggiornati.') . '
+            </div>
+        </div>';
     }
 
     /**
@@ -1089,6 +1179,33 @@ class SmartSearch extends Module
             ]
         ];
 
+        // Form Correlazioni/Raccomandazioni
+        $correlationStats = $this->getCorrelationStats();
+        $fields_form[7] = [
+            'form' => [
+                'legend' => ['title' => $this->l('Prodotti Consigliati (Correlazioni)'), 'icon' => 'icon-link'],
+                'description' => $this->getCorrelationStatsHtml($correlationStats),
+                'input' => [
+                    ['type' => 'switch', 'label' => $this->l('Abilita Raccomandazioni'), 'name' => 'SMARTSEARCH_CORRELATIONS_ENABLED', 'is_bool' => true,
+                     'desc' => $this->l('Mostra slider "Chi ha acquistato questo ha comprato anche" nelle pagine prodotto e carrello'),
+                     'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
+                    ['type' => 'text', 'label' => $this->l('Periodo analisi (giorni)'), 'name' => 'SMARTSEARCH_CORRELATIONS_DAYS', 'class' => 'fixed-width-sm',
+                     'desc' => $this->l('Numero di giorni di storico ordini da analizzare (consigliato: 180)')],
+                    ['type' => 'text', 'label' => $this->l('Acquisti minimi'), 'name' => 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'class' => 'fixed-width-sm',
+                     'desc' => $this->l('Numero minimo di acquisti congiunti per creare una correlazione (consigliato: 2)')],
+                ],
+                'buttons' => [
+                    [
+                        'title' => $this->l('Calcola Correlazioni Ora'),
+                        'name' => 'calculateCorrelations',
+                        'type' => 'submit',
+                        'class' => 'btn btn-primary',
+                        'icon' => 'process-icon-refresh'
+                    ]
+                ]
+            ]
+        ];
+
         $helper = new HelperForm();
         $helper->module = $this;
         $helper->name_controller = $this->name;
@@ -1129,6 +1246,9 @@ class SmartSearch extends Module
             'SMARTSEARCH_ANALYTICS_WEBHOOK_URL' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
             'SMARTSEARCH_VOICE_ENABLED' => Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
+            'SMARTSEARCH_CORRELATIONS_ENABLED' => Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED'),
+            'SMARTSEARCH_CORRELATIONS_DAYS' => Configuration::get('SMARTSEARCH_CORRELATIONS_DAYS') ?: 180,
+            'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES' => Configuration::get('SMARTSEARCH_CORRELATIONS_MIN_PURCHASES') ?: 2,
         ];
 
         return $helper->generateForm($fields_form);
@@ -1449,6 +1569,11 @@ class SmartSearch extends Module
                 return '';
             }
 
+            // Verifica se le correlazioni sono abilitate
+            if (!Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED')) {
+                return '';
+            }
+
             $idProduct = (int)Tools::getValue('id_product');
             if (!$idProduct && isset($params['product'])) {
                 $idProduct = (int)$params['product']['id_product'];
@@ -1491,6 +1616,11 @@ class SmartSearch extends Module
     {
         try {
             if (!self::getConfig('enabled')) {
+                return '';
+            }
+
+            // Verifica se le correlazioni sono abilitate
+            if (!Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED')) {
                 return '';
             }
 
