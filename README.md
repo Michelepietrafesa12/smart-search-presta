@@ -1,10 +1,10 @@
 # Smart Search 2.0 - Plugin PrestaShop per Ricerca Dinamica Intelligente
 
-Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente simile a Doofinder, con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali e integrazione analytics.
+Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.1.0
-**Compatibilita:** PrestaShop 1.7.0.0+
+**Versione:** 2.2.0
+**Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
 
@@ -168,6 +168,41 @@ Se i risultati sono insufficienti (<5), attiva ricerca tollerante:
 
 ---
 
+### Prodotti Consigliati (Correlazioni)
+
+Sistema intelligente di raccomandazioni basato sugli acquisti:
+
+#### Pagina Prodotto
+- **"Chi ha acquistato questo ha comprato anche"**: Slider con prodotti correlati
+- Basato su ordini reali degli ultimi 180 giorni (configurabile)
+- Fallback automatico a prodotti della stessa categoria se non ci sono correlazioni
+
+#### Pagina Carrello
+- **"Completa il tuo ordine"**: Slider con prodotti complementari
+- Analizza tutti i prodotti nel carrello
+- **Bottone "Aggiungi"**: Aggiunge direttamente al carrello senza uscire dal checkout
+- Fallback a bestseller se correlazioni insufficienti
+
+#### Pannello di Controllo
+- Abilita/disabilita raccomandazioni
+- Configura periodo di analisi (giorni)
+- Configura acquisti minimi per correlazione
+- Pulsante "Calcola Correlazioni Ora" per aggiornamento manuale
+- Statistiche in tempo reale (correlazioni totali, prodotti, score medio)
+
+#### Cron Job Automatico
+- Script per calcolo automatico delle correlazioni
+- Eseguibile da CLI o via HTTP con token di sicurezza
+- Consigliato: esecuzione notturna giornaliera
+
+---
+
+### Penalità Prodotti Esauriti
+
+I prodotti non disponibili vengono penalizzati del 30% nello scoring, facendoli apparire più in basso nei risultati di ricerca rispetto ai prodotti disponibili.
+
+---
+
 ### Performance Ottimizzate
 
 - **Cache Statica Config**: Zero query DB per configurazioni
@@ -239,6 +274,35 @@ Il modulo include un pannello admin con 3 sezioni:
 - Link opzionale
 - Keywords target
 
+#### 4. Correlazioni (Prodotti Consigliati)
+- Abilita/disabilita raccomandazioni
+- Periodo analisi ordini (default: 180 giorni)
+- Acquisti minimi per correlazione (default: 2)
+- Pulsante calcolo manuale
+- Statistiche in tempo reale
+
+---
+
+## Configurazione Cron Job
+
+Per mantenere aggiornate le correlazioni prodotti, configura un cron job:
+
+### Da Command Line (consigliato)
+```bash
+# Ogni notte alle 3:00
+0 3 * * * /usr/bin/php /var/www/html/modules/smartsearch/cron/calculate_correlations.php >> /var/log/smartsearch_cron.log 2>&1
+```
+
+### Via HTTP (con token di sicurezza)
+```
+https://tuosito.com/modules/smartsearch/cron/calculate_correlations.php?token=TOKEN
+```
+
+Per generare il token:
+```bash
+php -r "require_once('/path/to/config/config.inc.php'); echo md5(_COOKIE_KEY_ . 'smartsearch_cron');"
+```
+
 ---
 
 ## Struttura del Modulo
@@ -258,7 +322,11 @@ smartsearch/
 │   └── admin/
 │       ├── AdminSmartSearchDashboardController.php
 │       ├── AdminSmartSearchBoostController.php
-│       └── AdminSmartSearchBannersController.php
+│       ├── AdminSmartSearchBannersController.php
+│       ├── AdminSmartSearchSynonymsController.php
+│       └── AdminSmartSearchAnalyticsController.php
+├── cron/
+│   └── calculate_correlations.php     # Cron job correlazioni
 ├── views/
 │   ├── css/
 │   │   ├── smartsearch.css            # Stili frontend
@@ -266,7 +334,9 @@ smartsearch/
 │   ├── js/
 │   │   └── smartsearch.js             # JavaScript frontend
 │   ├── templates/
-│   │   ├── hook/searchbar.tpl         # Template searchbar
+│   │   ├── hook/
+│   │   │   ├── searchbar.tpl          # Template searchbar
+│   │   │   └── recommendations.tpl    # Template slider consigliati
 │   │   └── admin/dashboard.tpl        # Template dashboard
 │   └── img/banners/                   # Upload banner
 └── docs/
@@ -351,8 +421,22 @@ Content-Type: application/json
 
 ## Changelog
 
+### v2.2.0 (Gennaio 2025)
+- **NEW**: Slider prodotti consigliati in pagina prodotto ("Chi ha acquistato...")
+- **NEW**: Slider prodotti consigliati nel carrello ("Completa il tuo ordine")
+- **NEW**: Sistema correlazioni basato su ordini reali
+- **NEW**: Bottone "Aggiungi al carrello" diretto nello slider carrello
+- **NEW**: Pannello controllo correlazioni con statistiche
+- **NEW**: Cron job per calcolo automatico correlazioni
+- **NEW**: Penalità -30% per prodotti esauriti nello scoring
+- **NEW**: Hook fail-safe con try/catch Throwable
+- **FIX**: Compatibilità completa checkout e pagamenti
+- **IMPROVEMENT**: Lazy loading per overlay ricerca
+- **IMPROVEMENT**: AbortController per richieste di ricerca
+- **IMPROVEMENT**: Indici database ottimizzati per analytics
+
 ### v2.1.0 (Gennaio 2025)
-- **NEW**: Sistema di scoring a 3 livelli di priorita
+- **NEW**: Sistema di scoring a 3 livelli di priorità
 - **NEW**: Priorita assoluta per match completo nel nome prodotto
 - **NEW**: Pre-ordinamento SQL per numero parole matchate
 - **NEW**: Variazioni singolare/plurale italiano
