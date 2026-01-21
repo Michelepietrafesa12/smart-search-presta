@@ -153,6 +153,8 @@ class SmartSearch extends Module
             && $this->registerHook('actionProductUpdate')
             && $this->registerHook('actionProductDelete')
             && $this->registerHook('actionOrderStatusPostUpdate')
+            && $this->registerHook('displayFooterProduct')
+            && $this->registerHook('displayShoppingCartFooter')
             && $this->installDb()
             && $this->installTabs();
     }
@@ -373,6 +375,21 @@ class SmartSearch extends Module
             INDEX `created_at` (`created_at`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
+        // Tabella correlazioni prodotti (per raccomandazioni)
+        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_correlations` (
+            `id_smartsearch_correlation` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `id_product_source` INT(11) UNSIGNED NOT NULL,
+            `id_product_target` INT(11) UNSIGNED NOT NULL,
+            `correlation_score` DECIMAL(5,4) NOT NULL DEFAULT 0,
+            `purchase_count` INT(11) NOT NULL DEFAULT 0,
+            `id_shop` INT(11) UNSIGNED NOT NULL,
+            `date_upd` DATETIME NOT NULL,
+            PRIMARY KEY (`id_smartsearch_correlation`),
+            UNIQUE KEY `product_pair_shop` (`id_product_source`, `id_product_target`, `id_shop`),
+            INDEX `idx_source_shop` (`id_product_source`, `id_shop`, `correlation_score`),
+            INDEX `idx_target` (`id_product_target`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
         // Inserisci sinonimi di default
         $sql[] = 'INSERT IGNORE INTO `' . _DB_PREFIX_ . 'smartsearch_synonyms` (word, synonyms, id_shop, active, date_add, date_upd) VALUES
             ("smartphone", "cellulare, telefono, mobile, phone", 1, 1, NOW(), NOW()),
@@ -408,7 +425,8 @@ class SmartSearch extends Module
             'smartsearch_synonyms',
             'smartsearch_boost',
             'smartsearch_banners',
-            'smartsearch_cache'
+            'smartsearch_cache',
+            'smartsearch_correlations'
         ];
 
         foreach ($tables as $table) {
@@ -1114,5 +1132,376 @@ class SmartSearch extends Module
         ];
 
         return $helper->generateForm($fields_form);
+    }
+
+    /**
+     * Calcola e aggiorna le correlazioni tra prodotti basandosi sugli ordini
+     * Chiamare periodicamente via cron o manualmente dal backoffice
+     *
+     * @param int $idShop ID del negozio
+     * @param int $daysBack Numero di giorni da analizzare (default 180)
+     * @return int Numero di correlazioni create/aggiornate
+     */
+    public function calculateProductCorrelations($idShop = null, $daysBack = 180)
+    {
+        if ($idShop === null) {
+            $idShop = (int)$this->context->shop->id;
+        }
+
+        $db = Db::getInstance();
+        $dateLimit = date('Y-m-d H:i:s', strtotime("-{$daysBack} days"));
+
+        // Query per trovare prodotti comprati insieme nello stesso ordine
+        // Conta quante volte ogni coppia di prodotti appare negli stessi ordini
+        $sql = '
+            SELECT
+                od1.product_id as product_source,
+                od2.product_id as product_target,
+                COUNT(DISTINCT od1.id_order) as purchase_count
+            FROM ' . _DB_PREFIX_ . 'order_detail od1
+            INNER JOIN ' . _DB_PREFIX_ . 'order_detail od2
+                ON od1.id_order = od2.id_order
+                AND od1.product_id < od2.product_id
+            INNER JOIN ' . _DB_PREFIX_ . 'orders o
+                ON od1.id_order = o.id_order
+            WHERE o.valid = 1
+                AND o.id_shop = ' . (int)$idShop . '
+                AND o.date_add >= "' . pSQL($dateLimit) . '"
+            GROUP BY od1.product_id, od2.product_id
+            HAVING purchase_count >= 2
+            ORDER BY purchase_count DESC
+            LIMIT 10000';
+
+        $correlations = $db->executeS($sql);
+
+        if (!$correlations) {
+            return 0;
+        }
+
+        // Trova il massimo per normalizzare gli score
+        $maxCount = 1;
+        foreach ($correlations as $corr) {
+            if ($corr['purchase_count'] > $maxCount) {
+                $maxCount = $corr['purchase_count'];
+            }
+        }
+
+        $count = 0;
+        $now = date('Y-m-d H:i:s');
+
+        foreach ($correlations as $corr) {
+            // Normalizza score tra 0 e 1
+            $score = round($corr['purchase_count'] / $maxCount, 4);
+            $purchaseCount = (int)$corr['purchase_count'];
+            $productSource = (int)$corr['product_source'];
+            $productTarget = (int)$corr['product_target'];
+
+            // Inserisci/aggiorna in entrambe le direzioni (A->B e B->A)
+            $sqlInsert = '
+                INSERT INTO ' . _DB_PREFIX_ . 'smartsearch_correlations
+                    (id_product_source, id_product_target, correlation_score, purchase_count, id_shop, date_upd)
+                VALUES
+                    (' . $productSource . ', ' . $productTarget . ', ' . $score . ', ' . $purchaseCount . ', ' . (int)$idShop . ', "' . $now . '"),
+                    (' . $productTarget . ', ' . $productSource . ', ' . $score . ', ' . $purchaseCount . ', ' . (int)$idShop . ', "' . $now . '")
+                ON DUPLICATE KEY UPDATE
+                    correlation_score = VALUES(correlation_score),
+                    purchase_count = VALUES(purchase_count),
+                    date_upd = VALUES(date_upd)';
+
+            $db->execute($sqlInsert);
+            $count += 2;
+        }
+
+        return $count;
+    }
+
+    /**
+     * Ottiene i prodotti correlati/consigliati per un prodotto
+     *
+     * @param int $idProduct ID del prodotto
+     * @param int $limit Numero massimo di risultati
+     * @return array Lista di prodotti consigliati
+     */
+    public function getCorrelatedProducts($idProduct, $limit = 8)
+    {
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                c.correlation_score,
+                c.purchase_count,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image
+            FROM ' . _DB_PREFIX_ . 'smartsearch_correlations c
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON c.id_product_target = p.id_product
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            WHERE c.id_product_source = ' . (int)$idProduct . '
+                AND c.id_shop = ' . (int)$idShop . '
+                AND p.active = 1
+                AND ps.active = 1
+            ORDER BY c.correlation_score DESC, c.purchase_count DESC
+            LIMIT ' . (int)$limit;
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if (!$results) {
+            // Fallback: prodotti della stessa categoria
+            return $this->getFallbackRecommendations($idProduct, $limit);
+        }
+
+        return $this->formatRecommendedProducts($results);
+    }
+
+    /**
+     * Ottiene prodotti correlati per multipli prodotti (per il carrello)
+     *
+     * @param array $productIds Array di ID prodotti
+     * @param int $limit Numero massimo di risultati
+     * @return array Lista di prodotti consigliati
+     */
+    public function getCorrelatedProductsForCart($productIds, $limit = 8)
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+        $productIdsStr = implode(',', array_map('intval', $productIds));
+
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                SUM(c.correlation_score) as total_score,
+                SUM(c.purchase_count) as total_purchases,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image
+            FROM ' . _DB_PREFIX_ . 'smartsearch_correlations c
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON c.id_product_target = p.id_product
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            WHERE c.id_product_source IN (' . $productIdsStr . ')
+                AND c.id_product_target NOT IN (' . $productIdsStr . ')
+                AND c.id_shop = ' . (int)$idShop . '
+                AND p.active = 1
+                AND ps.active = 1
+            GROUP BY p.id_product
+            ORDER BY total_score DESC, total_purchases DESC
+            LIMIT ' . (int)$limit;
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if (!$results || count($results) < 4) {
+            // Fallback: bestseller se pochi risultati
+            return $this->getBestsellerRecommendations($productIds, $limit);
+        }
+
+        return $this->formatRecommendedProducts($results);
+    }
+
+    /**
+     * Fallback: prodotti della stessa categoria
+     */
+    protected function getFallbackRecommendations($idProduct, $limit = 8)
+    {
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+
+        // Ottieni categoria del prodotto
+        $idCategory = (int)Db::getInstance()->getValue('
+            SELECT id_category_default FROM ' . _DB_PREFIX_ . 'product WHERE id_product = ' . (int)$idProduct
+        );
+
+        if (!$idCategory) {
+            return [];
+        }
+
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            WHERE p.id_category_default = ' . (int)$idCategory . '
+                AND p.id_product != ' . (int)$idProduct . '
+                AND p.active = 1
+                AND ps.active = 1
+            ORDER BY RAND()
+            LIMIT ' . (int)$limit;
+
+        $results = Db::getInstance()->executeS($sql);
+        return $results ? $this->formatRecommendedProducts($results) : [];
+    }
+
+    /**
+     * Fallback: prodotti bestseller (escludendo quelli nel carrello)
+     */
+    protected function getBestsellerRecommendations($excludeIds, $limit = 8)
+    {
+        $idLang = (int)$this->context->language->id;
+        $idShop = (int)$this->context->shop->id;
+        $excludeStr = implode(',', array_map('intval', $excludeIds));
+
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.id_manufacturer,
+                m.name as manufacturer_name,
+                (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
+                IFNULL(SUM(od.product_quantity), 0) as total_sold
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int)$idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'order_detail od ON od.product_id = p.id_product
+            LEFT JOIN ' . _DB_PREFIX_ . 'orders o ON o.id_order = od.id_order AND o.valid = 1
+            WHERE p.id_product NOT IN (' . $excludeStr . ')
+                AND p.active = 1
+                AND ps.active = 1
+            GROUP BY p.id_product
+            ORDER BY total_sold DESC
+            LIMIT ' . (int)$limit;
+
+        $results = Db::getInstance()->executeS($sql);
+        return $results ? $this->formatRecommendedProducts($results) : [];
+    }
+
+    /**
+     * Formatta i prodotti consigliati per il frontend
+     */
+    protected function formatRecommendedProducts($products)
+    {
+        $idLang = (int)$this->context->language->id;
+        $formatted = [];
+
+        foreach ($products as $row) {
+            $priceDisplay = Product::getPriceStatic($row['id_product'], true);
+            $priceOldDisplay = Product::getPriceStatic($row['id_product'], true, null, 6, null, false, false);
+            $quantity = StockAvailable::getQuantityAvailableByProduct($row['id_product']);
+
+            $imageUrl = '';
+            if (!empty($row['id_image'])) {
+                $imageUrl = $this->context->link->getImageLink(
+                    $row['link_rewrite'],
+                    $row['id_image'],
+                    ImageType::getFormattedName('home')
+                );
+            }
+
+            $formatted[] = [
+                'id' => (int)$row['id_product'],
+                'name' => $row['name'],
+                'url' => $this->context->link->getProductLink($row['id_product'], $row['link_rewrite'], null, null, $idLang),
+                'image' => $imageUrl,
+                'price' => Tools::displayPrice($priceDisplay),
+                'price_raw' => $priceDisplay,
+                'price_old' => ($priceOldDisplay > $priceDisplay) ? Tools::displayPrice($priceOldDisplay) : '',
+                'manufacturer' => $row['manufacturer_name'] ?? '',
+                'in_stock' => $quantity > 0,
+                'quantity' => $quantity
+            ];
+        }
+
+        return $formatted;
+    }
+
+    /**
+     * Hook: Mostra slider prodotti consigliati nella pagina prodotto
+     */
+    public function hookDisplayFooterProduct($params)
+    {
+        if (!self::getConfig('enabled')) {
+            return '';
+        }
+
+        $idProduct = (int)Tools::getValue('id_product');
+        if (!$idProduct && isset($params['product'])) {
+            $idProduct = (int)$params['product']['id_product'];
+        }
+
+        if (!$idProduct) {
+            return '';
+        }
+
+        $recommendations = $this->getCorrelatedProducts($idProduct, 8);
+
+        if (empty($recommendations)) {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'smartsearch_recommendations' => $recommendations,
+            'smartsearch_rec_title' => $this->l('Chi ha acquistato questo prodotto ha comprato anche'),
+            'smartsearch_rec_type' => 'product'
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
+    }
+
+    /**
+     * Hook: Mostra slider prodotti consigliati nel carrello
+     */
+    public function hookDisplayShoppingCartFooter($params)
+    {
+        if (!self::getConfig('enabled')) {
+            return '';
+        }
+
+        // Ottieni prodotti nel carrello
+        $cart = $this->context->cart;
+        if (!$cart || !$cart->id) {
+            return '';
+        }
+
+        $cartProducts = $cart->getProducts();
+        if (empty($cartProducts)) {
+            return '';
+        }
+
+        $productIds = array_column($cartProducts, 'id_product');
+        $recommendations = $this->getCorrelatedProductsForCart($productIds, 8);
+
+        if (empty($recommendations)) {
+            return '';
+        }
+
+        $this->context->smarty->assign([
+            'smartsearch_recommendations' => $recommendations,
+            'smartsearch_rec_title' => $this->l('Completa il tuo ordine'),
+            'smartsearch_rec_type' => 'cart'
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/recommendations.tpl');
     }
 }
