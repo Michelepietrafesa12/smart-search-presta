@@ -268,7 +268,9 @@ class SmartSearch extends Module
             PRIMARY KEY (`id_smartsearch_stats`),
             UNIQUE KEY `query_lang_shop` (`search_query`(191), `id_lang`, `id_shop`),
             INDEX `search_count` (`search_count`),
-            INDEX `id_shop` (`id_shop`)
+            INDEX `id_shop` (`id_shop`),
+            INDEX `idx_zero_results` (`id_shop`, `id_lang`, `results_count`),
+            INDEX `idx_last_search` (`last_search`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
         // Tabella click sui prodotti
@@ -283,9 +285,10 @@ class SmartSearch extends Module
             `session_id` VARCHAR(64),
             `date_add` DATETIME NOT NULL,
             PRIMARY KEY (`id_smartsearch_click`),
-            INDEX `search_query` (`search_query`),
+            INDEX `search_query` (`search_query`(191)),
             INDEX `id_product` (`id_product`),
-            INDEX `date_add` (`date_add`)
+            INDEX `date_add` (`date_add`),
+            INDEX `idx_shop_date` (`id_shop`, `date_add`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
         // Tabella conversioni
@@ -299,8 +302,9 @@ class SmartSearch extends Module
             `id_shop` INT(11) UNSIGNED NOT NULL,
             `date_add` DATETIME NOT NULL,
             PRIMARY KEY (`id_smartsearch_conversion`),
-            INDEX `search_query` (`search_query`),
-            INDEX `id_order` (`id_order`)
+            INDEX `search_query` (`search_query`(191)),
+            INDEX `id_order` (`id_order`),
+            INDEX `idx_shop_date` (`id_shop`, `date_add`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
         // Tabella sinonimi
