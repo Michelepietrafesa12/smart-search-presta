@@ -546,22 +546,10 @@
                         btn.classList.add('added');
                         btn.querySelector('span').textContent = 'Aggiunto!';
 
-                        // Trigger PrestaShop cart update event
-                        if (typeof prestashop !== 'undefined') {
-                            prestashop.emit('updateCart', {
-                                reason: {
-                                    idProduct: idProduct,
-                                    idProductAttribute: 0,
-                                    linkAction: 'add-to-cart'
-                                }
-                            });
-                        }
-
-                        // Reset button after 2 seconds
+                        // Ricarica la pagina del carrello per mostrare il prodotto aggiunto
                         setTimeout(function() {
-                            btn.classList.remove('added');
-                            btn.querySelector('span').textContent = originalText;
-                        }, 2000);
+                            window.location.reload();
+                        }, 800);
                     } else {
                         btn.querySelector('span').textContent = 'Errore';
                         setTimeout(function() {
