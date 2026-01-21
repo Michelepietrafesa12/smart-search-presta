@@ -4,7 +4,7 @@
  *}
 
 {if isset($smartsearch_recommendations) && $smartsearch_recommendations|count > 0}
-<div class="smartsearch-recommendations smartsearch-recommendations-{$smartsearch_rec_type|escape:'html':'UTF-8'}" id="smartsearch-recommendations">
+<div class="smartsearch-recommendations smartsearch-recommendations-{$smartsearch_rec_type|escape:'html':'UTF-8'}" id="smartsearch-recommendations" data-cart-url="{$urls.pages.cart|escape:'html':'UTF-8'}" data-static-token="{$static_token|escape:'html':'UTF-8'}">
     <div class="smartsearch-rec-header">
         <h2 class="smartsearch-rec-title">{$smartsearch_rec_title|escape:'html':'UTF-8'}</h2>
         <div class="smartsearch-rec-nav">
@@ -501,15 +501,38 @@
                 btn.querySelector('span').textContent = 'Aggiungo...';
 
                 // PrestaShop AJAX add to cart
+                var recContainer = document.getElementById('smartsearch-recommendations');
+                var cartUrl = recContainer.getAttribute('data-cart-url');
+                var staticToken = recContainer.getAttribute('data-static-token');
+
+                // Fallback se gli attributi non sono disponibili
+                if (!cartUrl && typeof prestashop !== 'undefined' && prestashop.urls && prestashop.urls.pages) {
+                    cartUrl = prestashop.urls.pages.cart;
+                }
+                if (!staticToken && typeof prestashop !== 'undefined') {
+                    staticToken = prestashop.static_token;
+                }
+
+                if (!cartUrl) {
+                    console.error('SmartSearch: Cart URL not available');
+                    btn.querySelector('span').textContent = 'Errore';
+                    setTimeout(function() {
+                        btn.querySelector('span').textContent = originalText;
+                    }, 2000);
+                    return;
+                }
+
                 var formData = new FormData();
                 formData.append('ajax', '1');
                 formData.append('action', 'update');
                 formData.append('add', '1');
                 formData.append('id_product', idProduct);
                 formData.append('qty', minQty);
-                formData.append('token', prestashop.static_token);
+                if (staticToken) {
+                    formData.append('token', staticToken);
+                }
 
-                fetch(prestashop.urls.pages.cart, {
+                fetch(cartUrl, {
                     method: 'POST',
                     body: formData
                 })
