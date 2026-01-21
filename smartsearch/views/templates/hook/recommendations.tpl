@@ -25,49 +25,68 @@
         <div class="smartsearch-rec-slider" id="smartsearch-rec-slider">
             {foreach from=$smartsearch_recommendations item=product}
             <div class="smartsearch-rec-item" data-product-id="{$product.id|intval}">
-                <a href="{$product.url|escape:'html':'UTF-8'}" class="smartsearch-rec-link">
-                    <div class="smartsearch-rec-image-wrapper">
-                        {if $product.image}
-                        <img src="{$product.image|escape:'html':'UTF-8'}"
-                             alt="{$product.name|escape:'html':'UTF-8'}"
-                             class="smartsearch-rec-image"
-                             loading="lazy">
-                        {else}
-                        <div class="smartsearch-rec-no-image">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                                <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                                <polyline points="21 15 16 10 5 21"></polyline>
-                            </svg>
-                        </div>
-                        {/if}
+                <div class="smartsearch-rec-card">
+                    <a href="{$product.url|escape:'html':'UTF-8'}" class="smartsearch-rec-link">
+                        <div class="smartsearch-rec-image-wrapper">
+                            {if $product.image}
+                            <img src="{$product.image|escape:'html':'UTF-8'}"
+                                 alt="{$product.name|escape:'html':'UTF-8'}"
+                                 class="smartsearch-rec-image"
+                                 loading="lazy">
+                            {else}
+                            <div class="smartsearch-rec-no-image">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                    <polyline points="21 15 16 10 5 21"></polyline>
+                                </svg>
+                            </div>
+                            {/if}
 
-                        {if $product.price_old && $product.price_old_raw > 0}
-                        <span class="smartsearch-rec-discount-badge">
-                            -{math equation="round((1 - new/old) * 100)" new=$product.price_raw old=$product.price_old_raw}%
-                        </span>
-                        {/if}
+                            {if $product.price_old && $product.price_old_raw > 0}
+                            <span class="smartsearch-rec-discount-badge">
+                                -{math equation="round((1 - new/old) * 100)" new=$product.price_raw old=$product.price_old_raw}%
+                            </span>
+                            {/if}
 
-                        {if !$product.in_stock}
-                        <span class="smartsearch-rec-outofstock-badge">Esaurito</span>
-                        {/if}
-                    </div>
-
-                    <div class="smartsearch-rec-info">
-                        {if $product.manufacturer}
-                        <span class="smartsearch-rec-brand">{$product.manufacturer|escape:'html':'UTF-8'}</span>
-                        {/if}
-
-                        <h3 class="smartsearch-rec-name">{$product.name|escape:'html':'UTF-8'}</h3>
-
-                        <div class="smartsearch-rec-price-wrapper">
-                            <span class="smartsearch-rec-price">{$product.price|escape:'html':'UTF-8'}</span>
-                            {if $product.price_old}
-                            <span class="smartsearch-rec-price-old">{$product.price_old|escape:'html':'UTF-8'}</span>
+                            {if !$product.in_stock}
+                            <span class="smartsearch-rec-outofstock-badge">Esaurito</span>
                             {/if}
                         </div>
+
+                        <div class="smartsearch-rec-info">
+                            {if $product.manufacturer}
+                            <span class="smartsearch-rec-brand">{$product.manufacturer|escape:'html':'UTF-8'}</span>
+                            {/if}
+
+                            <h3 class="smartsearch-rec-name">{$product.name|escape:'html':'UTF-8'}</h3>
+
+                            <div class="smartsearch-rec-price-wrapper">
+                                <span class="smartsearch-rec-price">{$product.price|escape:'html':'UTF-8'}</span>
+                                {if $product.price_old}
+                                <span class="smartsearch-rec-price-old">{$product.price_old|escape:'html':'UTF-8'}</span>
+                                {/if}
+                            </div>
+                        </div>
+                    </a>
+
+                    {* Bottone Aggiungi al Carrello - solo nella pagina carrello *}
+                    {if $smartsearch_rec_type == 'cart' && $product.in_stock}
+                    <div class="smartsearch-rec-actions">
+                        <button type="button"
+                                class="smartsearch-rec-addtocart"
+                                data-id-product="{$product.id|intval}"
+                                data-minimal-quantity="1">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="9" cy="21" r="1"></circle>
+                                <circle cx="20" cy="21" r="1"></circle>
+                                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                            </svg>
+                            <span>Aggiungi</span>
+                        </button>
                     </div>
-                </a>
+                    {/if}
+                </div>
             </div>
             {/foreach}
         </div>
@@ -176,27 +195,33 @@
     }
 }
 
-.smartsearch-rec-link {
-    display: block;
+.smartsearch-rec-card {
     background: #fff;
     border-radius: 10px;
     overflow: hidden;
-    text-decoration: none;
-    color: inherit;
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     transition: all 0.2s ease;
     height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
-.smartsearch-rec-link:hover {
+.smartsearch-rec-card:hover {
     transform: translateY(-4px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+}
+
+.smartsearch-rec-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    flex: 1;
 }
 
 .smartsearch-rec-image-wrapper {
     position: relative;
     aspect-ratio: 1;
-    background: #f8fafc;
+    background: #fff;
     overflow: hidden;
 }
 
@@ -285,6 +310,59 @@
     font-size: 0.85rem;
     color: #94a3b8;
     text-decoration: line-through;
+}
+
+/* Bottone Aggiungi al Carrello */
+.smartsearch-rec-actions {
+    padding: 0 12px 12px 12px;
+}
+
+.smartsearch-rec-addtocart {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #059669;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.smartsearch-rec-addtocart:hover {
+    background: #047857;
+    transform: scale(1.02);
+}
+
+.smartsearch-rec-addtocart:active {
+    transform: scale(0.98);
+}
+
+.smartsearch-rec-addtocart.adding {
+    background: #64748b;
+    pointer-events: none;
+}
+
+.smartsearch-rec-addtocart.added {
+    background: #16a34a;
+}
+
+.smartsearch-rec-addtocart.added svg {
+    display: none;
+}
+
+.smartsearch-rec-addtocart.added::before {
+    content: '';
+    width: 16px;
+    height: 16px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
 }
 
 /* Stile specifico per carrello */
@@ -399,6 +477,85 @@
 
         // Initial state
         updateSlider();
+
+        // Init add to cart buttons
+        initAddToCartButtons(container);
+    }
+
+    function initAddToCartButtons(container) {
+        var addToCartBtns = container.querySelectorAll('.smartsearch-rec-addtocart');
+
+        addToCartBtns.forEach(function(btn) {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                var idProduct = btn.getAttribute('data-id-product');
+                var minQty = btn.getAttribute('data-minimal-quantity') || 1;
+
+                if (!idProduct) return;
+
+                // Set loading state
+                btn.classList.add('adding');
+                var originalText = btn.querySelector('span').textContent;
+                btn.querySelector('span').textContent = 'Aggiungo...';
+
+                // PrestaShop AJAX add to cart
+                var formData = new FormData();
+                formData.append('ajax', '1');
+                formData.append('action', 'update');
+                formData.append('add', '1');
+                formData.append('id_product', idProduct);
+                formData.append('qty', minQty);
+                formData.append('token', prestashop.static_token);
+
+                fetch(prestashop.urls.pages.cart, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    btn.classList.remove('adding');
+
+                    if (data.success) {
+                        btn.classList.add('added');
+                        btn.querySelector('span').textContent = 'Aggiunto!';
+
+                        // Trigger PrestaShop cart update event
+                        if (typeof prestashop !== 'undefined') {
+                            prestashop.emit('updateCart', {
+                                reason: {
+                                    idProduct: idProduct,
+                                    idProductAttribute: 0,
+                                    linkAction: 'add-to-cart'
+                                }
+                            });
+                        }
+
+                        // Reset button after 2 seconds
+                        setTimeout(function() {
+                            btn.classList.remove('added');
+                            btn.querySelector('span').textContent = originalText;
+                        }, 2000);
+                    } else {
+                        btn.querySelector('span').textContent = 'Errore';
+                        setTimeout(function() {
+                            btn.querySelector('span').textContent = originalText;
+                        }, 2000);
+                    }
+                })
+                .catch(function(error) {
+                    btn.classList.remove('adding');
+                    btn.querySelector('span').textContent = 'Errore';
+                    setTimeout(function() {
+                        btn.querySelector('span').textContent = originalText;
+                    }, 2000);
+                    console.error('SmartSearch add to cart error:', error);
+                });
+            });
+        });
     }
 })();
 </script>
