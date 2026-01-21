@@ -1431,6 +1431,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
+        // === PENALITÀ PRODOTTI ESAURITI ===
+        // Prodotti senza stock vengono penalizzati del 30%
+        $quantity = StockAvailable::getQuantityAvailableByProduct((int)$product['id_product']);
+        if ($quantity <= 0) {
+            $score = (int)round($score * 0.7); // -30%
+        }
+
         return $score;
     }
 
