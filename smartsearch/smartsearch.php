@@ -223,6 +223,8 @@ class SmartSearch extends Module
 
         // Correlazioni/Raccomandazioni
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_CORRELATIONS_CART_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_DAYS', 180);
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 2);
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_LAST_UPDATE', '');
@@ -247,7 +249,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_FACETS_STOCK', 'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL',
             'SMARTSEARCH_ANALYTICS_ENABLED', 'SMARTSEARCH_ANALYTICS_RETENTION',
             'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
-            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS',
+            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED',
+            'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS',
             'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'SMARTSEARCH_CORRELATIONS_LAST_UPDATE'
         ];
 
@@ -960,7 +963,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
             'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL', 'SMARTSEARCH_ANALYTICS_ENABLED',
             'SMARTSEARCH_ANALYTICS_RETENTION', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
-            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS', 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES'
+            'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED',
+            'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS', 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES'
         ];
 
         foreach ($configs as $config) {
@@ -1187,7 +1191,13 @@ class SmartSearch extends Module
                 'description' => $this->getCorrelationStatsHtml($correlationStats),
                 'input' => [
                     ['type' => 'switch', 'label' => $this->l('Abilita Raccomandazioni'), 'name' => 'SMARTSEARCH_CORRELATIONS_ENABLED', 'is_bool' => true,
-                     'desc' => $this->l('Mostra slider "Chi ha acquistato questo ha comprato anche" nelle pagine prodotto e carrello'),
+                     'desc' => $this->l('Abilita il sistema di raccomandazioni prodotti basato sulle correlazioni d\'acquisto'),
+                     'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
+                    ['type' => 'switch', 'label' => $this->l('Mostra in Pagina Prodotto'), 'name' => 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED', 'is_bool' => true,
+                     'desc' => $this->l('Mostra lo slider "Chi ha acquistato questo ha comprato anche" nella pagina prodotto'),
+                     'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
+                    ['type' => 'switch', 'label' => $this->l('Mostra nel Carrello'), 'name' => 'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'is_bool' => true,
+                     'desc' => $this->l('Mostra lo slider "Completa il tuo ordine" nella pagina carrello'),
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
                     ['type' => 'text', 'label' => $this->l('Periodo analisi (giorni)'), 'name' => 'SMARTSEARCH_CORRELATIONS_DAYS', 'class' => 'fixed-width-sm',
                      'desc' => $this->l('Numero di giorni di storico ordini da analizzare (consigliato: 180)')],
@@ -1247,6 +1257,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_VOICE_ENABLED' => Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
             'SMARTSEARCH_CORRELATIONS_ENABLED' => Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED'),
+            'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED' => Configuration::get('SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED'),
+            'SMARTSEARCH_CORRELATIONS_CART_ENABLED' => Configuration::get('SMARTSEARCH_CORRELATIONS_CART_ENABLED'),
             'SMARTSEARCH_CORRELATIONS_DAYS' => Configuration::get('SMARTSEARCH_CORRELATIONS_DAYS') ?: 180,
             'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES' => Configuration::get('SMARTSEARCH_CORRELATIONS_MIN_PURCHASES') ?: 2,
         ];
@@ -1569,8 +1581,11 @@ class SmartSearch extends Module
                 return '';
             }
 
-            // Verifica se le correlazioni sono abilitate
+            // Verifica se le correlazioni sono abilitate (generale e pagina prodotto)
             if (!Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED')) {
+                return '';
+            }
+            if (!Configuration::get('SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED')) {
                 return '';
             }
 
@@ -1619,8 +1634,11 @@ class SmartSearch extends Module
                 return '';
             }
 
-            // Verifica se le correlazioni sono abilitate
+            // Verifica se le correlazioni sono abilitate (generale e carrello)
             if (!Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED')) {
+                return '';
+            }
+            if (!Configuration::get('SMARTSEARCH_CORRELATIONS_CART_ENABLED')) {
                 return '';
             }
 
