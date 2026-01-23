@@ -610,38 +610,52 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
     /**
      * Recupera l'aliquota IVA di default del negozio
+     * Compatibile con PrestaShop 8.x e MySQL 8.0+
      */
     protected function getDefaultTaxRate()
     {
-        // Prova a ottenere l'IVA dal paese di default del negozio
-        $idCountry = (int)Configuration::get('PS_COUNTRY_DEFAULT');
+        try {
+            // Prova a ottenere l'IVA dal paese di default del negozio
+            $idCountry = (int)Configuration::get('PS_COUNTRY_DEFAULT');
 
-        if ($idCountry) {
-            // Cerca l'aliquota IVA più comune per questo paese
-            $sql = '
-                SELECT t.rate
-                FROM ' . _DB_PREFIX_ . 'tax t
-                INNER JOIN ' . _DB_PREFIX_ . 'tax_rule tr ON t.id_tax = tr.id_tax
-                INNER JOIN ' . _DB_PREFIX_ . 'tax_rules_group trg ON tr.id_tax_rules_group = trg.id_tax_rules_group
-                WHERE tr.id_country = ' . $idCountry . '
-                AND trg.active = 1
-                AND t.active = 1
-                GROUP BY t.rate
-                ORDER BY COUNT(*) DESC
-                LIMIT 1';
+            if ($idCountry) {
+                // Query compatibile con MySQL 8.0+ e PrestaShop 8.x
+                // Usa subquery per evitare problemi con ORDER BY COUNT(*) e GROUP BY
+                $sql = '
+                    SELECT t.rate, COUNT(*) as usage_count
+                    FROM ' . _DB_PREFIX_ . 'tax t
+                    INNER JOIN ' . _DB_PREFIX_ . 'tax_rule tr ON t.id_tax = tr.id_tax
+                    INNER JOIN ' . _DB_PREFIX_ . 'tax_rules_group trg ON tr.id_tax_rules_group = trg.id_tax_rules_group
+                    WHERE tr.id_country = ' . $idCountry . '
+                    AND trg.active = 1
+                    AND t.active = 1
+                    GROUP BY t.id_tax, t.rate
+                    ORDER BY usage_count DESC
+                    LIMIT 1';
 
+                $result = Db::getInstance()->getRow($sql);
+
+                if ($result && isset($result['rate']) && $result['rate'] > 0) {
+                    return (float)$result['rate'];
+                }
+            }
+        } catch (Throwable $e) {
+            // Se la query fallisce, continua con il fallback
+        }
+
+        // Fallback: cerca qualsiasi aliquota IVA attiva
+        try {
+            $sql = 'SELECT rate FROM ' . _DB_PREFIX_ . 'tax WHERE active = 1 ORDER BY rate DESC LIMIT 1';
             $rate = Db::getInstance()->getValue($sql);
 
             if ($rate !== false && $rate > 0) {
                 return (float)$rate;
             }
+        } catch (Throwable $e) {
+            // Ignora errori
         }
 
-        // Fallback: cerca qualsiasi aliquota IVA attiva
-        $sql = 'SELECT rate FROM ' . _DB_PREFIX_ . 'tax WHERE active = 1 ORDER BY rate DESC LIMIT 1';
-        $rate = Db::getInstance()->getValue($sql);
-
-        return $rate !== false ? (float)$rate : 22.0; // Default 22% se non trovata
+        return 22.0; // Default 22% se non trovata
     }
 
     /**
