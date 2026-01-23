@@ -1411,6 +1411,7 @@ class SmartSearch extends Module
         $idShop = (int)$this->context->shop->id;
         $productIdsStr = implode(',', array_map('intval', $productIds));
 
+        // Query compatibile con MySQL 8.0+ (ONLY_FULL_GROUP_BY)
         $sql = '
             SELECT
                 p.id_product,
@@ -1419,23 +1420,26 @@ class SmartSearch extends Module
                 pl.description_short,
                 p.id_manufacturer,
                 m.name as manufacturer_name,
-                SUM(c.correlation_score) as total_score,
-                SUM(c.purchase_count) as total_purchases,
+                scores.total_score,
+                scores.total_purchases,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image
-            FROM ' . _DB_PREFIX_ . 'smartsearch_correlations c
-            INNER JOIN ' . _DB_PREFIX_ . 'product p ON c.id_product_target = p.id_product
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN (
+                SELECT c.id_product_target, SUM(c.correlation_score) as total_score, SUM(c.purchase_count) as total_purchases
+                FROM ' . _DB_PREFIX_ . 'smartsearch_correlations c
+                WHERE c.id_product_source IN (' . $productIdsStr . ')
+                    AND c.id_product_target NOT IN (' . $productIdsStr . ')
+                    AND c.id_shop = ' . (int)$idShop . '
+                GROUP BY c.id_product_target
+            ) scores ON scores.id_product_target = p.id_product
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
                 AND ps.id_shop = ' . (int)$idShop . '
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
-            WHERE c.id_product_source IN (' . $productIdsStr . ')
-                AND c.id_product_target NOT IN (' . $productIdsStr . ')
-                AND c.id_shop = ' . (int)$idShop . '
-                AND p.active = 1
+            WHERE p.active = 1
                 AND ps.active = 1
-            GROUP BY p.id_product
-            ORDER BY total_score DESC, total_purchases DESC
+            ORDER BY scores.total_score DESC, scores.total_purchases DESC
             LIMIT ' . (int)$limit;
 
         $results = Db::getInstance()->executeS($sql);
@@ -1500,6 +1504,7 @@ class SmartSearch extends Module
         $idShop = (int)$this->context->shop->id;
         $excludeStr = implode(',', array_map('intval', $excludeIds));
 
+        // Query compatibile con MySQL 8.0+ (ONLY_FULL_GROUP_BY)
         $sql = '
             SELECT
                 p.id_product,
@@ -1509,19 +1514,22 @@ class SmartSearch extends Module
                 p.id_manufacturer,
                 m.name as manufacturer_name,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
-                IFNULL(SUM(od.product_quantity), 0) as total_sold
+                IFNULL(sales.total_sold, 0) as total_sold
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . (int)$idLang . ' AND pl.id_shop = ' . (int)$idShop . '
             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
                 AND ps.id_shop = ' . (int)$idShop . '
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
-            LEFT JOIN ' . _DB_PREFIX_ . 'order_detail od ON od.product_id = p.id_product
-            LEFT JOIN ' . _DB_PREFIX_ . 'orders o ON o.id_order = od.id_order AND o.valid = 1
+            LEFT JOIN (
+                SELECT od.product_id, SUM(od.product_quantity) as total_sold
+                FROM ' . _DB_PREFIX_ . 'order_detail od
+                INNER JOIN ' . _DB_PREFIX_ . 'orders o ON o.id_order = od.id_order AND o.valid = 1
+                GROUP BY od.product_id
+            ) sales ON sales.product_id = p.id_product
             WHERE p.id_product NOT IN (' . $excludeStr . ')
                 AND p.active = 1
                 AND ps.active = 1
-            GROUP BY p.id_product
             ORDER BY total_sold DESC
             LIMIT ' . (int)$limit;
 

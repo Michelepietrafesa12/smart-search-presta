@@ -862,10 +862,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
     /**
      * Ottieni i prodotti più venduti dal database ordini
+     * Compatibile con MySQL 8.0+ (ONLY_FULL_GROUP_BY)
      */
     protected function getBestsellers($idLang, $idShop, $limit = 12)
     {
-        // Query per trovare i prodotti più venduti basandosi sugli ordini
+        // Query compatibile con MySQL 8.0+ usando subquery per aggregazione
         $sql = '
             SELECT
                 p.id_product,
@@ -878,7 +879,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 m.name as manufacturer_name,
                 cl.name as category_name,
                 (SELECT id_image FROM ' . _DB_PREFIX_ . 'image i WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) as id_image,
-                IFNULL(SUM(od.product_quantity), 0) as total_sold
+                IFNULL(sales.total_sold, 0) as total_sold
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl
                 ON p.id_product = pl.id_product
@@ -892,16 +893,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl
                 ON p.id_category_default = cl.id_category
                 AND cl.id_lang = ' . (int)$idLang . '
-            LEFT JOIN ' . _DB_PREFIX_ . 'order_detail od
-                ON od.product_id = p.id_product
-            LEFT JOIN ' . _DB_PREFIX_ . 'orders o
-                ON o.id_order = od.id_order
-                AND o.valid = 1
+            LEFT JOIN (
+                SELECT od.product_id, SUM(od.product_quantity) as total_sold
+                FROM ' . _DB_PREFIX_ . 'order_detail od
+                INNER JOIN ' . _DB_PREFIX_ . 'orders o ON o.id_order = od.id_order AND o.valid = 1
+                GROUP BY od.product_id
+            ) sales ON sales.product_id = p.id_product
             WHERE p.active = 1
             AND ps.active = 1
-            GROUP BY p.id_product
-            HAVING total_sold > 0
-            ORDER BY total_sold DESC, pl.name ASC
+            AND IFNULL(sales.total_sold, 0) > 0
+            ORDER BY sales.total_sold DESC, pl.name ASC
             LIMIT ' . (int)$limit;
 
         $results = Db::getInstance()->executeS($sql);
