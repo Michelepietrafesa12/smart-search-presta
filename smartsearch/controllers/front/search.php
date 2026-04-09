@@ -2076,24 +2076,41 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         foreach ($words as $word) {
             if (mb_strlen($word) >= 3) {
-                // Escape dei caratteri wildcard LIKE prima di pSQL
-                $word = pSQL($this->escapeLikeWildcards($word));
                 $wordConditions = [];
 
-                // 1. Ricerca SOUNDEX (fonetica)
-                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$word}')";
-                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$word}')";
+                // Fuzzy pattern va generato PRIMA dell'escape (contiene % intenzionali)
+                $fuzzyPattern = pSQL($this->createFuzzyPattern($word));
+
+                // Consonant pattern va generato PRIMA dell'escape
+                $consonants = $this->extractConsonants($word);
+                $consonantPattern = '';
+                if (mb_strlen($consonants) >= 3) {
+                    $consonantPattern = pSQL('%' . implode('%', str_split($consonants)) . '%');
+                }
+
+                // Escape dei caratteri wildcard LIKE per i match esatti
+                $wordEscaped = pSQL($this->escapeLikeWildcards($word));
+
+                // Substr senza prima/ultima lettera (dopo escape per i LIKE contains)
+                $withoutFirst = '';
+                $withoutLast = '';
+                if (mb_strlen($word) > 3) {
+                    $withoutFirst = pSQL($this->escapeLikeWildcards(mb_substr($word, 1)));
+                    $withoutLast = pSQL($this->escapeLikeWildcards(mb_substr($word, 0, -1)));
+                }
+
+                // 1. Ricerca SOUNDEX (fonetica) — usa parola non-escaped
+                $wordSoundex = pSQL($word);
+                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$wordSoundex}')";
+                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$wordSoundex}')";
 
                 // 2. Ricerca con wildcard tra le lettere (per typos)
-                $fuzzyPattern = $this->createFuzzyPattern($word);
                 $wordConditions[] = "pl.name LIKE '{$fuzzyPattern}'";
                 $wordConditions[] = "pl.description LIKE '{$fuzzyPattern}'";
                 $wordConditions[] = "m.name LIKE '{$fuzzyPattern}'";
 
                 // 3. Ricerca senza la prima/ultima lettera (per errori comuni)
-                if (mb_strlen($word) > 3) {
-                    $withoutFirst = mb_substr($word, 1);
-                    $withoutLast = mb_substr($word, 0, -1);
+                if ($withoutFirst !== '') {
                     $wordConditions[] = "pl.name LIKE '%{$withoutFirst}%'";
                     $wordConditions[] = "pl.name LIKE '%{$withoutLast}%'";
                     $wordConditions[] = "pl.description LIKE '%{$withoutFirst}%'";
@@ -2102,9 +2119,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
 
                 // 4. Ricerca con consonanti (ignora vocali)
-                $consonants = $this->extractConsonants($word);
-                if (mb_strlen($consonants) >= 3) {
-                    $consonantPattern = '%' . implode('%', str_split($consonants)) . '%';
+                if ($consonantPattern !== '') {
                     $wordConditions[] = "pl.name LIKE '{$consonantPattern}'";
                     $wordConditions[] = "pl.description LIKE '{$consonantPattern}'";
                     $wordConditions[] = "m.name LIKE '{$consonantPattern}'";
@@ -2503,7 +2518,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
             WHERE id_lang = ' . $idLang . '
             AND id_shop = ' . $idShop . '
-            AND search_query LIKE \'' . pSQL($query) . '%\'
+            AND search_query LIKE \'' . pSQL($this->escapeLikeWildcards($query)) . '%\'
             AND results_count > 0
             AND search_count >= 2
             ORDER BY search_count DESC
@@ -2534,7 +2549,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
                 WHERE id_lang = ' . $idLang . '
                 AND id_shop = ' . $idShop . '
-                AND search_query LIKE \'%' . pSQL($query) . '%\'
+                AND search_query LIKE \'%' . pSQL($this->escapeLikeWildcards($query)) . '%\'
                 AND results_count > 0
                 AND search_count >= 2
                 ' . $excludeList . '
@@ -2566,7 +2581,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps ON pl.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
                 WHERE pl.id_lang = ' . $idLang . '
                 AND ps.active = 1
-                AND pl.name LIKE \'' . pSQL($query) . '%\'
+                AND pl.name LIKE \'' . pSQL($this->escapeLikeWildcards($query)) . '%\'
                 ORDER BY pl.name ASC
                 LIMIT ' . (5 - count($suggestions)) . '
             ';
@@ -2594,7 +2609,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 FROM `' . _DB_PREFIX_ . 'manufacturer` m
                 INNER JOIN `' . _DB_PREFIX_ . 'product` p ON p.id_manufacturer = m.id_manufacturer
                 INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps ON p.id_product = ps.id_product AND ps.id_shop = ' . $idShop . '
-                WHERE m.name LIKE \'' . pSQL($query) . '%\'
+                WHERE m.name LIKE \'' . pSQL($this->escapeLikeWildcards($query)) . '%\'
                 AND p.active = 1
                 LIMIT 3
             ';
@@ -3033,7 +3048,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             SELECT DISTINCT m.name
             FROM ' . _DB_PREFIX_ . 'manufacturer m
             WHERE m.active = 1
-            AND m.name LIKE \'%' . pSQL($query) . '%\'
+            AND m.name LIKE \'%' . pSQL($this->escapeLikeWildcards($query)) . '%\'
             LIMIT 5';
 
         $results = Db::getInstance()->executeS($sql);
