@@ -920,9 +920,23 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         if (Tools::getValue('ajax') || Tools::isSubmit('ajax')) {
+            // Rate limiting per IP
+            $action = Tools::getValue('action', 'search');
+            $maxRequests = ($action === 'analytics') ? 10 : 30;
+            if (!$this->checkRateLimit($maxRequests, 60)) {
+                header('Content-Type: application/json; charset=utf-8');
+                header('Retry-After: 60');
+                http_response_code(429);
+                die(json_encode([
+                    'error' => true,
+                    'message' => 'Too many requests. Please try again later.',
+                    'products' => [],
+                    'total' => 0
+                ], JSON_UNESCAPED_UNICODE));
+            }
+
             // Catch ALL errors including TypeError, etc.
             try {
-                $action = Tools::getValue('action', 'search');
 
                 switch ($action) {
                     case 'analytics':
@@ -2315,6 +2329,81 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         return $result;
+    }
+
+    // =========================================================================
+    // RATE LIMITING
+    // =========================================================================
+
+    /**
+     * Controlla il rate limit per l'IP corrente.
+     * Usa file temporanei per evitare query DB su ogni richiesta.
+     *
+     * @param int $maxRequests Numero massimo di richieste nella finestra
+     * @param int $windowSeconds Dimensione della finestra in secondi
+     * @return bool true se la richiesta è consentita, false se limitata
+     */
+    protected function checkRateLimit($maxRequests = 30, $windowSeconds = 60)
+    {
+        $ip = Tools::getRemoteAddr();
+        if (empty($ip)) {
+            return true;
+        }
+
+        $rateLimitDir = _PS_CACHE_DIR_ . 'smartsearch/ratelimit/';
+        if (!is_dir($rateLimitDir)) {
+            @mkdir($rateLimitDir, 0755, true);
+        }
+
+        $file = $rateLimitDir . md5($ip) . '.json';
+        $now = time();
+
+        $timestamps = [];
+        if (file_exists($file)) {
+            $data = @file_get_contents($file);
+            if ($data !== false) {
+                $timestamps = json_decode($data, true);
+                if (!is_array($timestamps)) {
+                    $timestamps = [];
+                }
+            }
+        }
+
+        // Rimuovi timestamp fuori dalla finestra
+        $timestamps = array_values(array_filter($timestamps, function ($ts) use ($now, $windowSeconds) {
+            return ($now - $ts) < $windowSeconds;
+        }));
+
+        if (count($timestamps) >= $maxRequests) {
+            return false;
+        }
+
+        $timestamps[] = $now;
+        @file_put_contents($file, json_encode($timestamps), LOCK_EX);
+
+        // Pulizia periodica file scaduti (1% probabilità per richiesta)
+        if (mt_rand(1, 100) === 1) {
+            $this->cleanRateLimitFiles($rateLimitDir, $windowSeconds);
+        }
+
+        return true;
+    }
+
+    /**
+     * Rimuove i file di rate limit scaduti
+     */
+    protected function cleanRateLimitFiles($dir, $windowSeconds)
+    {
+        $files = @glob($dir . '*.json');
+        if (!is_array($files)) {
+            return;
+        }
+        $now = time();
+        foreach ($files as $file) {
+            if (($now - filemtime($file)) > $windowSeconds * 2) {
+                @unlink($file);
+            }
+        }
     }
 
     // =========================================================================
