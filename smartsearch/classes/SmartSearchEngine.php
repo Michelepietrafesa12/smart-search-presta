@@ -510,6 +510,13 @@ class SmartSearchEngine
             return [];
         }
 
+        // Costruisci CASE WHEN per assegnare lo score corretto a ciascun prodotto
+        $caseWhen = 'CASE p.id_product';
+        foreach ($topIds as $id) {
+            $caseWhen .= ' WHEN ' . (int) $id . ' THEN ' . (float) $matches[$id];
+        }
+        $caseWhen .= ' ELSE 0 END';
+
         // Recupera i dettagli completi
         $sql = '
             SELECT DISTINCT
@@ -523,7 +530,7 @@ class SmartSearchEngine
                 cl.name AS category_name,
                 m.name AS manufacturer_name,
                 i.id_image,
-                ' . $matches[$topIds[0]] . ' AS fuzzy_score
+                ' . $caseWhen . ' AS fuzzy_score
             FROM `' . _DB_PREFIX_ . 'product` p
             INNER JOIN `' . _DB_PREFIX_ . 'product_lang` pl ON p.id_product = pl.id_product
                 AND pl.id_lang = ' . $this->idLang . '
@@ -531,14 +538,20 @@ class SmartSearchEngine
                 AND cl.id_lang = ' . $this->idLang . '
             LEFT JOIN `' . _DB_PREFIX_ . 'manufacturer` m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN `' . _DB_PREFIX_ . 'image` i ON p.id_product = i.id_product AND i.cover = 1
-            WHERE p.id_product IN (' . implode(',', $topIds) . ')';
+            WHERE p.id_product IN (' . implode(',', $topIds) . ')
+            ORDER BY fuzzy_score DESC';
 
         $results = Db::getInstance()->executeS($sql);
 
-        // Aggiungi fuzzy score ai risultati
+        // Riassegna fuzzy score dai valori calcolati in PHP e riordina
         foreach ($results as &$result) {
             $result['fuzzy_score'] = $matches[$result['id_product']] ?? 0;
         }
+        unset($result);
+
+        usort($results, function ($a, $b) {
+            return $b['fuzzy_score'] <=> $a['fuzzy_score'];
+        });
 
         return $results ?: [];
     }
