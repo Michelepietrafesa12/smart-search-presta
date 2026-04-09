@@ -1371,7 +1371,7 @@
      */
     function showLoader() {
         const main = overlay.querySelector('.smartsearch-main');
-        const count = 8;
+        const count = RESULTS_PER_PAGE;
         let cards = '';
         for (let i = 0; i < count; i++) {
             cards += `

@@ -796,7 +796,7 @@
 .smartsearch-skeleton-image {
     width: 100%;
     padding-top: 100%;
-    background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+    background: linear-gradient(90deg, var(--ss-skeleton-base, #e5e7eb) 25%, var(--ss-skeleton-shine, #f3f4f6) 50%, var(--ss-skeleton-base, #e5e7eb) 75%);
     background-size: 800px 100%;
     animation: shimmer 1.5s infinite ease-in-out;
 }
@@ -811,7 +811,7 @@
 .smartsearch-skeleton-line {
     height: 14px;
     border-radius: 4px;
-    background: linear-gradient(90deg, #eee 25%, #f5f5f5 50%, #eee 75%);
+    background: linear-gradient(90deg, var(--ss-skeleton-base, #e5e7eb) 25%, var(--ss-skeleton-shine, #f3f4f6) 50%, var(--ss-skeleton-base, #e5e7eb) 75%);
     background-size: 800px 100%;
     animation: shimmer 1.5s infinite ease-in-out;
 }
