@@ -616,8 +616,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         // Recupera l'IVA di default dal paese del negozio
         $taxRate = $this->getDefaultTaxRate();
-        $minPrice = (int)($result['min_price'] ?? 0);
-        $maxPrice = (int)(($result['max_price'] ?? 1000) * (1 + $taxRate / 100));
+        $taxMultiplier = 1 + $taxRate / 100;
+        $minPrice = (int)(($result['min_price'] ?? 0) * $taxMultiplier);
+        $maxPrice = (int)(($result['max_price'] ?? 1000) * $taxMultiplier);
 
         return [
             'min' => $minPrice,
@@ -793,9 +794,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                         break;
                     case 'price':
                         $taxRate = $this->getDefaultTaxRate();
+                        $taxMultiplier = 1 + $taxRate / 100;
                         $facets['price_range'] = [
-                            'min' => (int) ($row['min_val'] ?? 0),
-                            'max' => (int) (($row['max_val'] ?? 1000) * (1 + $taxRate / 100)),
+                            'min' => (int) (($row['min_val'] ?? 0) * $taxMultiplier),
+                            'max' => (int) (($row['max_val'] ?? 1000) * $taxMultiplier),
                         ];
                         break;
                 }
