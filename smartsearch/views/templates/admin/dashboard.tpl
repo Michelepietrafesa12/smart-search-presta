@@ -12,7 +12,7 @@
                     <i class="icon-search"></i> Smart Search 2.0
                     <small class="text-muted">v{$module_version}</small>
                 </h2>
-                <p class="text-muted">{l s='Ricerca dinamica intelligente con AI, fuzzy search, sinonimi e analytics' mod='smartsearch'}</p>
+                <p class="text-muted">{l s='Ricerca dinamica intelligente con AI, fuzzy search, sinonimi e filtri avanzati' mod='smartsearch'}</p>
             </div>
             <div class="col-md-4 text-right">
                 <div class="smartsearch-stats">

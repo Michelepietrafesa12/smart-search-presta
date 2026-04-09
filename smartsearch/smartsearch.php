@@ -1,7 +1,7 @@
 <?php
 /**
  * SmartSearch 2.0 - Modulo di ricerca dinamica intelligente per PrestaShop
- * Simile a Doofinder con AI, fuzzy search, sinonimi, filtri e analytics
+ * Simile a Doofinder con AI, fuzzy search, sinonimi e filtri
  *
  * @author Michele Pietrafesa
  * @copyright 2024
@@ -15,7 +15,6 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/classes/SmartSearchEngine.php';
 require_once dirname(__FILE__) . '/classes/SmartSearchCache.php';
-require_once dirname(__FILE__) . '/classes/SmartSearchAnalytics.php';
 
 class SmartSearch extends Module
 {
@@ -53,7 +52,6 @@ class SmartSearch extends Module
                 'facets_enabled' => (bool)Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
                 'voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
                 'banners_enabled' => (bool)Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
-                'analytics_webhook_url' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
                 'cache_enabled' => (bool)Configuration::get('SMARTSEARCH_CACHE_ENABLED'),
             ];
         }
@@ -122,7 +120,7 @@ class SmartSearch extends Module
         parent::__construct();
 
         $this->displayName = $this->l('Smart Search 2.0');
-        $this->description = $this->l('Ricerca dinamica intelligente con AI, fuzzy search, sinonimi, filtri avanzati e analytics - simile a Doofinder');
+        $this->description = $this->l('Ricerca dinamica intelligente con AI, fuzzy search, sinonimi e filtri avanzati - simile a Doofinder');
         $this->confirmUninstall = $this->l('Sei sicuro di voler disinstallare questo modulo? Tutti i dati delle ricerche verranno persi.');
 
         // Definizione tabs admin - Solo Dashboard principale (contiene tutto)
@@ -152,7 +150,6 @@ class SmartSearch extends Module
             && $this->registerHook('actionProductAdd')
             && $this->registerHook('actionProductUpdate')
             && $this->registerHook('actionProductDelete')
-            && $this->registerHook('actionOrderStatusPostUpdate')
             && $this->registerHook('displayFooterProduct')
             && $this->registerHook('displayShoppingCartFooter')
             && $this->installDb()
@@ -210,11 +207,6 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_CACHE_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_CACHE_TTL', 3600);
 
-        // Analytics
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_ENABLED', 1);
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_RETENTION', 90);
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'https://vmi2924756.contaboserver.net/webhook/smartsearch-analytics');
-
         // Voice Search
         Configuration::updateValue('SMARTSEARCH_VOICE_ENABLED', 1);
 
@@ -247,8 +239,7 @@ class SmartSearch extends Module
             'SMARTSEARCH_SYNONYMS_ENABLED', 'SMARTSEARCH_FACETS_ENABLED', 'SMARTSEARCH_FACETS_CATEGORIES',
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
             'SMARTSEARCH_FACETS_STOCK', 'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL',
-            'SMARTSEARCH_ANALYTICS_ENABLED', 'SMARTSEARCH_ANALYTICS_RETENTION',
-            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
+            'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
             'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED',
             'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS',
             'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'SMARTSEARCH_CORRELATIONS_LAST_UPDATE'
@@ -284,40 +275,6 @@ class SmartSearch extends Module
             INDEX `id_shop` (`id_shop`),
             INDEX `idx_zero_results` (`id_shop`, `id_lang`, `results_count`),
             INDEX `idx_last_search` (`last_search`)
-        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
-
-        // Tabella click sui prodotti
-        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_clicks` (
-            `id_smartsearch_click` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `search_query` VARCHAR(255) NOT NULL,
-            `id_product` INT(11) UNSIGNED NOT NULL,
-            `position` INT(11) NOT NULL DEFAULT 0,
-            `id_customer` INT(11) UNSIGNED DEFAULT NULL,
-            `id_lang` INT(11) UNSIGNED NOT NULL,
-            `id_shop` INT(11) UNSIGNED NOT NULL,
-            `session_id` VARCHAR(64),
-            `date_add` DATETIME NOT NULL,
-            PRIMARY KEY (`id_smartsearch_click`),
-            INDEX `search_query` (`search_query`(191)),
-            INDEX `id_product` (`id_product`),
-            INDEX `date_add` (`date_add`),
-            INDEX `idx_shop_date` (`id_shop`, `date_add`)
-        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
-
-        // Tabella conversioni
-        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_conversions` (
-            `id_smartsearch_conversion` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
-            `search_query` VARCHAR(255) NOT NULL,
-            `id_product` INT(11) UNSIGNED NOT NULL,
-            `id_order` INT(11) UNSIGNED NOT NULL,
-            `amount` DECIMAL(20,6) NOT NULL DEFAULT 0,
-            `id_lang` INT(11) UNSIGNED NOT NULL,
-            `id_shop` INT(11) UNSIGNED NOT NULL,
-            `date_add` DATETIME NOT NULL,
-            PRIMARY KEY (`id_smartsearch_conversion`),
-            INDEX `search_query` (`search_query`(191)),
-            INDEX `id_order` (`id_order`),
-            INDEX `idx_shop_date` (`id_shop`, `date_add`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
         // Tabella sinonimi
@@ -467,8 +424,6 @@ class SmartSearch extends Module
     {
         $tables = [
             'smartsearch_stats',
-            'smartsearch_clicks',
-            'smartsearch_conversions',
             'smartsearch_synonyms',
             'smartsearch_boost',
             'smartsearch_banners',
@@ -536,7 +491,6 @@ class SmartSearch extends Module
             'AdminSmartSearchSynonyms',
             'AdminSmartSearchBoost',
             'AdminSmartSearchBanners',
-            'AdminSmartSearchAnalytics',
         ];
 
         foreach ($tabsToRemove as $className) {
@@ -589,16 +543,6 @@ class SmartSearch extends Module
             return '';
         }
 
-        // Auto-imposta webhook URL predefinito se vuoto (per installazioni esistenti)
-        $webhookUrl = self::getConfig('analytics_webhook_url');
-        $defaultWebhook = 'https://vmi2924756.contaboserver.net/webhook/smartsearch-analytics';
-        if (empty($webhookUrl)) {
-            Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', $defaultWebhook);
-            $webhookUrl = $defaultWebhook;
-            // Invalida cache statica
-            self::$configCache = null;
-        }
-
         // Passa SOLO le configurazioni essenziali al JavaScript
         // Usa la cache statica invece di query multiple
         Media::addJsDef([
@@ -613,8 +557,6 @@ class SmartSearch extends Module
                 'facets_enabled' => self::getConfig('facets_enabled'),
                 'show_bestseller_badge' => self::getConfig('show_bestseller_badge'),
 
-                // Analytics - sempre configurato (usa default se vuoto)
-                'analytics_webhook_url' => $webhookUrl,
                 'shop_id' => (int)$this->context->shop->id,
 
                 // Valuta - minimale
@@ -708,263 +650,6 @@ class SmartSearch extends Module
         }
         if ($idProduct) {
             $this->deleteProductIndex($idProduct);
-        }
-    }
-
-    /**
-     * Hook per tracciare conversioni
-     * IMPORTANTE: Questo hook è fail-safe - non deve mai bloccare il checkout
-     */
-    public function hookActionOrderStatusPostUpdate($params)
-    {
-        // Tutto in try/catch per non bloccare MAI il checkout
-        try {
-            // Verifica parametri obbligatori
-            if (!isset($params['newOrderStatus']) || !isset($params['id_order'])) {
-                return;
-            }
-
-            $newStatus = $params['newOrderStatus'];
-
-            // Verifica che sia un oggetto valido con proprietà paid
-            if (!is_object($newStatus) || !isset($newStatus->paid) || !$newStatus->paid) {
-                return;
-            }
-
-            $orderId = (int)$params['id_order'];
-            if ($orderId <= 0) {
-                return;
-            }
-
-            // Carica ordine e verifica che esista
-            $order = new Order($orderId);
-            if (!Validate::isLoadedObject($order)) {
-                return;
-            }
-
-            // Recupera dati dalla sessione/cookie in modo sicuro
-            // NOTA: I cookie sono settati via JavaScript (document.cookie), quindi vanno letti da $_COOKIE
-            $lastSearch = '';
-            $sessionId = '';
-            $searchHistory = [];
-            $clickHistory = [];
-            $lastClick = null;
-
-            // Leggi da $_COOKIE (cookie standard settati da JavaScript)
-            if (isset($_COOKIE['smartsearch_last_query'])) {
-                $lastSearch = urldecode((string)$_COOKIE['smartsearch_last_query']);
-            }
-            if (isset($_COOKIE['smartsearch_session_id'])) {
-                $sessionId = urldecode((string)$_COOKIE['smartsearch_session_id']);
-            }
-
-            // Recupera storico ricerche (nuovo sistema di attribuzione)
-            if (isset($_COOKIE['smartsearch_search_history'])) {
-                $decoded = json_decode(urldecode($_COOKIE['smartsearch_search_history']), true);
-                if (is_array($decoded)) {
-                    $searchHistory = $decoded;
-                }
-            }
-
-            // Recupera storico click (nuovo sistema di attribuzione)
-            if (isset($_COOKIE['smartsearch_click_history'])) {
-                $decoded = json_decode(urldecode($_COOKIE['smartsearch_click_history']), true);
-                if (is_array($decoded)) {
-                    $clickHistory = $decoded;
-                }
-            }
-
-            // Recupera ultimo click
-            if (isset($_COOKIE['smartsearch_last_click'])) {
-                $decoded = json_decode(urldecode($_COOKIE['smartsearch_last_click']), true);
-                if (is_array($decoded)) {
-                    $lastClick = $decoded;
-                }
-            }
-
-            // Prepara i dati dei prodotti
-            $products = $order->getProducts();
-            if (!is_array($products)) {
-                $products = [];
-            }
-
-            $productsData = [];
-            $totalRevenue = 0;
-
-            foreach ($products as $product) {
-                if (!is_array($product)) {
-                    continue;
-                }
-                $productsData[] = [
-                    'product_id' => isset($product['product_id']) ? (int)$product['product_id'] : 0,
-                    'product_name' => isset($product['product_name']) ? (string)$product['product_name'] : '',
-                    'quantity' => isset($product['product_quantity']) ? (int)$product['product_quantity'] : 0,
-                    'price' => isset($product['unit_price_tax_incl']) ? (float)$product['unit_price_tax_incl'] : 0,
-                    'total' => isset($product['total_price_tax_incl']) ? (float)$product['total_price_tax_incl'] : 0
-                ];
-                $totalRevenue += isset($product['total_price_tax_incl']) ? (float)$product['total_price_tax_incl'] : 0;
-            }
-
-            // Ottieni valuta in modo sicuro
-            $currency = 'EUR';
-            if ($order->id_currency) {
-                $currencyIso = Currency::getIsoCodeById((int)$order->id_currency);
-                if ($currencyIso) {
-                    $currency = $currencyIso;
-                }
-            }
-
-            // Calcola attribuzione - cerca se i prodotti ordinati sono stati cliccati dalla ricerca
-            $attributedProducts = [];
-            foreach ($productsData as $product) {
-                $productId = $product['product_id'];
-                // Cerca nel click history se questo prodotto è stato cliccato
-                foreach ($clickHistory as $click) {
-                    if (isset($click['product_id']) && (int)$click['product_id'] === $productId) {
-                        $attributedProducts[] = [
-                            'product_id' => $productId,
-                            'product_name' => $product['product_name'],
-                            'search_query' => isset($click['query']) ? $click['query'] : '',
-                            'click_position' => isset($click['position']) ? $click['position'] : 0,
-                            'click_timestamp' => isset($click['timestamp']) ? $click['timestamp'] : null,
-                            'quantity' => $product['quantity'],
-                            'revenue' => $product['total']
-                        ];
-                        break;
-                    }
-                }
-            }
-
-            // Invia al webhook n8n (non bloccante, con timeout basso)
-            $this->sendConversionToWebhook([
-                'event_type' => 'conversion',
-                'order_id' => $orderId,
-                'order_reference' => $order->reference ?? '',
-                'session_id' => $sessionId,
-                'last_search_query' => $lastSearch,
-                'last_click' => $lastClick,
-                'customer_id' => (int)$order->id_customer,
-                'products' => $productsData,
-                'products_count' => count($productsData),
-                'revenue' => round($totalRevenue, 2),
-                'currency' => $currency,
-                'shop_id' => (int)$this->context->shop->id,
-                'timestamp' => date('c'),
-                // Nuovo sistema di attribuzione
-                'search_history' => $searchHistory,
-                'click_history' => $clickHistory,
-                'attributed_products' => $attributedProducts,
-                'attribution' => [
-                    'total_searches' => count($searchHistory),
-                    'total_clicks' => count($clickHistory),
-                    'attributed_revenue' => array_sum(array_column($attributedProducts, 'revenue')),
-                    'attribution_rate' => count($productsData) > 0 ? round(count($attributedProducts) / count($productsData) * 100, 2) : 0
-                ]
-            ]);
-
-            // Traccia anche internamente se abilitato
-            if (Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED') && !empty($lastSearch)) {
-                $this->trackConversionInternal($lastSearch, $products, $orderId);
-            }
-
-        } catch (Throwable $e) {
-            // Log silenzioso - NON bloccare mai il checkout
-            // Throwable cattura sia Exception che Error (PHP 7+)
-            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                PrestaShopLogger::addLog(
-                    'SmartSearch conversion tracking error: ' . $e->getMessage(),
-                    2,
-                    null,
-                    'SmartSearch'
-                );
-            }
-        }
-    }
-
-    /**
-     * Traccia conversione internamente (separato per gestione errori)
-     */
-    protected function trackConversionInternal($lastSearch, $products, $orderId)
-    {
-        try {
-            $analytics = new SmartSearchAnalytics(
-                $this->context->language->id,
-                $this->context->shop->id
-            );
-
-            foreach ($products as $product) {
-                if (!is_array($product)) {
-                    continue;
-                }
-                $analytics->trackConversion(
-                    $lastSearch,
-                    isset($product['product_id']) ? $product['product_id'] : 0,
-                    $orderId,
-                    isset($product['total_price_tax_incl']) ? $product['total_price_tax_incl'] : 0
-                );
-            }
-        } catch (Throwable $e) {
-            // Ignora errori di tracking interno - non bloccare mai il checkout
-        }
-    }
-
-    /**
-     * Invia dati conversione al webhook n8n
-     * Timeout molto basso per non bloccare il checkout
-     */
-    protected function sendConversionToWebhook($data)
-    {
-        $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
-
-        if (empty($webhookUrl)) {
-            return false;
-        }
-
-        // Verifica che cURL sia disponibile
-        if (!function_exists('curl_init')) {
-            return false;
-        }
-
-        try {
-            $ch = curl_init($webhookUrl);
-
-            if ($ch === false) {
-                return false;
-            }
-
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($data),
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'Accept: application/json'
-                ],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 2,           // Max 2 secondi totali
-                CURLOPT_CONNECTTIMEOUT => 1,    // Max 1 secondo per connessione
-                CURLOPT_NOSIGNAL => 1,          // Necessario per timeout < 1s su alcuni sistemi
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_FOLLOWLOCATION => false // Non seguire redirect
-            ]);
-
-            curl_exec($ch);
-            $error = curl_error($ch);
-            curl_close($ch);
-
-            // Log errori solo in dev mode
-            if ($error && _PS_MODE_DEV_) {
-                PrestaShopLogger::addLog(
-                    'SmartSearch webhook error: ' . $error,
-                    2,
-                    null,
-                    'SmartSearch'
-                );
-            }
-
-            return empty($error);
-
-        } catch (Exception $e) {
-            return false;
         }
     }
 
@@ -1284,8 +969,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_FUZZY_THRESHOLD', 'SMARTSEARCH_PHONETIC_ENABLED', 'SMARTSEARCH_STEMMING_ENABLED',
             'SMARTSEARCH_SYNONYMS_ENABLED', 'SMARTSEARCH_FACETS_ENABLED', 'SMARTSEARCH_FACETS_CATEGORIES',
             'SMARTSEARCH_FACETS_PRICE', 'SMARTSEARCH_FACETS_MANUFACTURER', 'SMARTSEARCH_FACETS_ATTRIBUTES',
-            'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL', 'SMARTSEARCH_ANALYTICS_ENABLED',
-            'SMARTSEARCH_ANALYTICS_RETENTION', 'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
+            'SMARTSEARCH_CACHE_ENABLED', 'SMARTSEARCH_CACHE_TTL',
+            'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
             'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED',
             'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS', 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES'
         ];
@@ -1293,9 +978,6 @@ class SmartSearch extends Module
         foreach ($configs as $config) {
             Configuration::updateValue($config, (int)Tools::getValue($config));
         }
-
-        // Salva separatamente i campi stringa
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', Tools::getValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'));
 
         $this->invalidateCache();
     }
@@ -1479,22 +1161,8 @@ class SmartSearch extends Module
             ]
         ];
 
-        // Form Analytics
-        $fields_form[5] = [
-            'form' => [
-                'legend' => ['title' => $this->l('Analytics'), 'icon' => 'icon-bar-chart'],
-                'input' => [
-                    ['type' => 'switch', 'label' => $this->l('Abilita Analytics'), 'name' => 'SMARTSEARCH_ANALYTICS_ENABLED', 'is_bool' => true,
-                     'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
-                    ['type' => 'text', 'label' => $this->l('Retention (giorni)'), 'name' => 'SMARTSEARCH_ANALYTICS_RETENTION', 'class' => 'fixed-width-sm'],
-                    ['type' => 'text', 'label' => $this->l('Webhook URL (n8n)'), 'name' => 'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'class' => 'fixed-width-xxl',
-                     'desc' => $this->l('URL del webhook n8n per inviare gli eventi analytics (es. https://tuo-n8n.com/webhook/smartsearch-analytics)')],
-                ]
-            ]
-        ];
-
         // Form Extra
-        $fields_form[6] = [
+        $fields_form[5] = [
             'form' => [
                 'legend' => ['title' => $this->l('Funzionalità Extra'), 'icon' => 'icon-star'],
                 'input' => [
@@ -1511,7 +1179,7 @@ class SmartSearch extends Module
 
         // Form Correlazioni/Raccomandazioni
         $correlationStats = $this->getCorrelationStats();
-        $fields_form[7] = [
+        $fields_form[6] = [
             'form' => [
                 'legend' => ['title' => $this->l('Prodotti Consigliati (Correlazioni)'), 'icon' => 'icon-link'],
                 'description' => $this->getCorrelationStatsHtml($correlationStats),
@@ -1577,9 +1245,6 @@ class SmartSearch extends Module
             'SMARTSEARCH_FACETS_ATTRIBUTES' => Configuration::get('SMARTSEARCH_FACETS_ATTRIBUTES'),
             'SMARTSEARCH_CACHE_ENABLED' => Configuration::get('SMARTSEARCH_CACHE_ENABLED'),
             'SMARTSEARCH_CACHE_TTL' => Configuration::get('SMARTSEARCH_CACHE_TTL'),
-            'SMARTSEARCH_ANALYTICS_ENABLED' => Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED'),
-            'SMARTSEARCH_ANALYTICS_RETENTION' => Configuration::get('SMARTSEARCH_ANALYTICS_RETENTION'),
-            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
             'SMARTSEARCH_VOICE_ENABLED' => Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
             'SMARTSEARCH_CORRELATIONS_ENABLED' => Configuration::get('SMARTSEARCH_CORRELATIONS_ENABLED'),

@@ -38,165 +38,6 @@
     // Lazy loading overlay - creato solo al primo utilizzo
     let overlayCreated = false;
 
-    // Analytics
-    const sessionId = getOrCreateSessionId();
-
-    /**
-     * Get or create session ID for analytics
-     */
-    function getOrCreateSessionId() {
-        let sid = sessionStorage.getItem('smartsearch_session_id');
-        if (!sid) {
-            sid = 'ss_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            sessionStorage.setItem('smartsearch_session_id', sid);
-        }
-        // Salva anche in cookie per PHP (conversioni)
-        setCookie('smartsearch_session_id', sid, 30);
-        return sid;
-    }
-
-    /**
-     * Set cookie
-     */
-    function setCookie(name, value, days) {
-        const expires = new Date(Date.now() + days * 864e5).toUTCString();
-        document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Lax';
-    }
-
-    /**
-     * Get device type
-     */
-    function getDeviceType() {
-        const width = window.innerWidth;
-        if (width < 768) return 'mobile';
-        if (width < 1024) return 'tablet';
-        return 'desktop';
-    }
-
-    /**
-     * Send analytics event via PrestaShop proxy (avoids CORS issues)
-     */
-    function sendAnalyticsEvent(eventType, data) {
-        // Skip if webhook not configured
-        if (!config.analytics_webhook_url) {
-            return;
-        }
-
-        const payload = {
-            event_type: eventType,
-            shop_id: config.shop_id || window.location.hostname,
-            session_id: sessionId,
-            user_agent: navigator.userAgent,
-            device_type: getDeviceType(),
-            timestamp: new Date().toISOString(),
-            page_url: window.location.href,
-            ...data
-        };
-
-        // Send to PrestaShop proxy (non-blocking)
-        fetch(config.ajax_url + '?ajax=1&action=analytics', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            keepalive: true
-        }).catch(() => {
-            // Silently ignore analytics errors - never block user experience
-        });
-    }
-
-    /**
-     * Track search event
-     * Salva storico completo delle ricerche per attribuzione conversioni
-     */
-    function trackSearch(query, resultsCount) {
-        if (query && resultsCount > 0) {
-            // Salva ultima ricerca (retrocompatibilità)
-            setCookie('smartsearch_last_query', query, 7);
-
-            // Salva storico ricerche della sessione (max 10)
-            const searchHistory = getSearchHistory();
-            searchHistory.push({
-                query: query,
-                results: resultsCount,
-                timestamp: Date.now()
-            });
-            // Mantieni solo le ultime 10 ricerche
-            if (searchHistory.length > 10) searchHistory.shift();
-            setCookie('smartsearch_search_history', JSON.stringify(searchHistory), 7);
-        }
-
-        sendAnalyticsEvent(resultsCount > 0 ? 'search' : 'no_results', {
-            query: query,
-            results_count: resultsCount
-        });
-    }
-
-    /**
-     * Track product click event
-     * Salva storico completo dei click per attribuzione conversioni
-     */
-    function trackClick(productId, productName, position, price) {
-        const clickData = {
-            product_id: productId,
-            product_name: productName,
-            price: price,
-            query: currentQuery,
-            position: position,
-            timestamp: Date.now()
-        };
-
-        // Salva ultimo click (retrocompatibilità)
-        setCookie('smartsearch_last_click', JSON.stringify(clickData), 7);
-
-        // Salva storico click della sessione (max 20)
-        const clickHistory = getClickHistory();
-        clickHistory.push(clickData);
-        // Mantieni solo gli ultimi 20 click
-        if (clickHistory.length > 20) clickHistory.shift();
-        setCookie('smartsearch_click_history', JSON.stringify(clickHistory), 7);
-
-        sendAnalyticsEvent('click', {
-            query: currentQuery,
-            product_id: productId,
-            product_name: productName,
-            position: position,
-            price: price
-        });
-    }
-
-    /**
-     * Get search history from cookie
-     */
-    function getSearchHistory() {
-        try {
-            const cookie = getCookie('smartsearch_search_history');
-            return cookie ? JSON.parse(cookie) : [];
-        } catch (e) {
-            return [];
-        }
-    }
-
-    /**
-     * Get click history from cookie
-     */
-    function getClickHistory() {
-        try {
-            const cookie = getCookie('smartsearch_click_history');
-            return cookie ? JSON.parse(cookie) : [];
-        } catch (e) {
-            return [];
-        }
-    }
-
-    /**
-     * Get cookie value
-     */
-    function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
-        return null;
-    }
 
     // Icons SVG
     const icons = {
@@ -1322,8 +1163,6 @@
 
             renderResults(data);
             saveRecentSearch(query);
-            // Track search analytics
-            trackSearch(query, totalResultsCount);
         })
         .catch(error => {
             // Ignora errori di abort (richiesta cancellata intenzionalmente)
@@ -1439,9 +1278,7 @@
                 </div>
             `;
 
-            // Bind click event for analytics
             card.addEventListener('click', () => {
-                trackProductClick(product.id, currentQuery, startIndex + index);
             });
 
             grid.appendChild(card);
@@ -1518,9 +1355,7 @@
                 </div>
             `;
 
-            // Bind click event for analytics
             card.addEventListener('click', () => {
-                trackProductClick(product.id, currentQuery, index);
             });
 
             grid.appendChild(card);
@@ -1784,18 +1619,6 @@
      */
     function bindResultEvents() {
         const main = overlay.querySelector('.smartsearch-main');
-
-        // Product clicks
-        main.querySelectorAll('.smartsearch-product-card').forEach(card => {
-            card.addEventListener('click', (e) => {
-                const productId = parseInt(card.dataset.productId);
-                const position = parseInt(card.dataset.index);
-                const productName = card.querySelector('.smartsearch-product-name')?.textContent || '';
-                const price = parseFloat(card.dataset.price) || 0;
-                // Track click to n8n analytics
-                trackClick(productId, productName, position, price);
-            });
-        });
 
         // Mobile filter toggle
         const filterToggle = main.querySelector('.smartsearch-filter-toggle-mobile');

@@ -203,10 +203,8 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             ],
             [
                 'form' => [
-                    'legend' => ['title' => $this->l('Analytics'), 'icon' => 'icon-bar-chart'],
+                    'legend' => ['title' => $this->l('Extra'), 'icon' => 'icon-star'],
                     'input' => [
-                        ['type' => 'switch', 'label' => $this->l('Abilita Analytics'), 'name' => 'SMARTSEARCH_ANALYTICS_ENABLED', 'is_bool' => true, 'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]]],
-                        ['type' => 'text', 'label' => $this->l('Webhook URL (n8n)'), 'name' => 'SMARTSEARCH_ANALYTICS_WEBHOOK_URL', 'class' => 'fixed-width-xxl', 'desc' => $this->l('URL per inviare analytics')],
                         ['type' => 'switch', 'label' => $this->l('Banner Promozionali'), 'name' => 'SMARTSEARCH_BANNERS_ENABLED', 'is_bool' => true, 'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]]],
                     ],
                     'submit' => ['title' => $this->l('Salva Impostazioni')],
@@ -220,8 +218,6 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'SMARTSEARCH_MAX_RESULTS' => Configuration::get('SMARTSEARCH_MAX_RESULTS') ?: 8,
             'SMARTSEARCH_FUZZY_ENABLED' => Configuration::get('SMARTSEARCH_FUZZY_ENABLED'),
             'SMARTSEARCH_FACETS_ENABLED' => Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
-            'SMARTSEARCH_ANALYTICS_ENABLED' => Configuration::get('SMARTSEARCH_ANALYTICS_ENABLED'),
-            'SMARTSEARCH_ANALYTICS_WEBHOOK_URL' => Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'),
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
         ];
 
@@ -654,8 +650,6 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         Configuration::updateValue('SMARTSEARCH_MAX_RESULTS', (int)Tools::getValue('SMARTSEARCH_MAX_RESULTS'));
         Configuration::updateValue('SMARTSEARCH_FUZZY_ENABLED', (int)Tools::getValue('SMARTSEARCH_FUZZY_ENABLED'));
         Configuration::updateValue('SMARTSEARCH_FACETS_ENABLED', (int)Tools::getValue('SMARTSEARCH_FACETS_ENABLED'));
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_ENABLED', (int)Tools::getValue('SMARTSEARCH_ANALYTICS_ENABLED'));
-        Configuration::updateValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL', Tools::getValue('SMARTSEARCH_ANALYTICS_WEBHOOK_URL'));
         Configuration::updateValue('SMARTSEARCH_BANNERS_ENABLED', (int)Tools::getValue('SMARTSEARCH_BANNERS_ENABLED'));
     }
 

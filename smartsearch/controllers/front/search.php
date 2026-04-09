@@ -1049,7 +1049,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         if (Tools::getValue('ajax') || Tools::isSubmit('ajax')) {
             // Rate limiting per IP
             $action = Tools::getValue('action', 'search');
-            $maxRequests = ($action === 'analytics') ? 10 : 30;
+            $maxRequests = 30;
             if (!$this->checkRateLimit($maxRequests, 60)) {
                 header('Content-Type: application/json; charset=utf-8');
                 header('Retry-After: 60');
@@ -1066,9 +1066,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             try {
 
                 switch ($action) {
-                    case 'analytics':
-                        $this->displayAjaxAnalytics();
-                        break;
                     case 'filters':
                         $this->displayAjaxFilters();
                         break;
@@ -2234,154 +2231,6 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         return $categories;
-    }
-
-    /**
-     * AJAX endpoint proxy per analytics - evita CORS
-     * Riceve dati dal frontend e li inoltra a n8n server-side
-     * Fail-safe: non deve mai bloccare il frontend
-     */
-    public function displayAjaxAnalytics()
-    {
-        // Pulisci qualsiasi output precedente
-        if (ob_get_level()) {
-            ob_end_clean();
-        }
-
-        header('Content-Type: application/json; charset=utf-8');
-        header('Access-Control-Allow-Origin: *');
-        header('Cache-Control: no-cache, no-store, must-revalidate');
-
-        try {
-            // Verifica che cURL sia disponibile
-            if (!function_exists('curl_init')) {
-                die(json_encode(['success' => false, 'error' => 'Server configuration error']));
-            }
-
-            // Leggi il body JSON della richiesta
-            $inputJSON = file_get_contents('php://input');
-            if (empty($inputJSON)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid request']));
-            }
-
-            $data = json_decode($inputJSON, true);
-
-            if (!$data || !is_array($data)) {
-                die(json_encode(['success' => false, 'error' => 'Invalid request']));
-            }
-
-            // Sanitizza i dati (rimuovi potenziali script injection)
-            $data = $this->sanitizeAnalyticsData($data);
-
-            // Ottieni URL webhook dalla configurazione
-            $webhookUrl = Configuration::get('SMARTSEARCH_ANALYTICS_WEBHOOK_URL');
-
-            if (empty($webhookUrl) || !filter_var($webhookUrl, FILTER_VALIDATE_URL)) {
-                // Silently fail - analytics shouldn't block user experience
-                die(json_encode(['success' => true]));
-            }
-
-            // Inoltra i dati a n8n con timeout basso
-            $ch = curl_init($webhookUrl);
-
-            if ($ch === false) {
-                die(json_encode(['success' => false, 'error' => 'Server error']));
-            }
-
-            $jsonPayload = json_encode($data, JSON_UNESCAPED_UNICODE);
-
-            curl_setopt_array($ch, [
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => $jsonPayload,
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'Accept: application/json',
-                    'Content-Length: ' . strlen($jsonPayload)
-                ],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 10,          // Max 10 secondi
-                CURLOPT_CONNECTTIMEOUT => 5,    // Max 5 secondi per connessione
-                CURLOPT_NOSIGNAL => 1,
-                // Disabilita verifica SSL per server locali/self-signed (n8n spesso ha certificati self-signed)
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => 0,
-                CURLOPT_FOLLOWLOCATION => true,
-                CURLOPT_MAXREDIRS => 3,
-                CURLOPT_USERAGENT => 'SmartSearch/2.0 PrestaShop Analytics'
-            ]);
-
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $error = curl_error($ch);
-            $errno = curl_errno($ch);
-            curl_close($ch);
-
-            if ($error) {
-                if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                    PrestaShopLogger::addLog('SmartSearch webhook error: ' . $error, 2, null, 'SmartSearch');
-                }
-                die(json_encode([
-                    'success' => false,
-                    'error' => 'Connection error'
-                ]));
-            }
-
-            // Considera successo se HTTP 2xx
-            $success = $httpCode >= 200 && $httpCode < 300;
-
-            die(json_encode([
-                'success' => $success
-            ]));
-
-        } catch (Throwable $e) {
-            if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                PrestaShopLogger::addLog('SmartSearch analytics error: ' . $e->getMessage(), 3, null, 'SmartSearch');
-            }
-            die(json_encode([
-                'success' => false,
-                'error' => 'Server error'
-            ]));
-        }
-    }
-
-    /**
-     * Sanitizza dati analytics per sicurezza
-     */
-    protected function sanitizeAnalyticsData($data, $depth = 0)
-    {
-        // Previeni ricorsione infinita
-        if ($depth > 5) {
-            return [];
-        }
-
-        // Non filtrare troppo - permetti tutti i campi ma sanitizza i valori
-        $sanitized = [];
-
-        foreach ($data as $key => $value) {
-            // Sanitizza la chiave
-            $cleanKey = preg_replace('/[^a-zA-Z0-9_]/', '', $key);
-            if (empty($cleanKey) || strlen($cleanKey) > 50) {
-                continue;
-            }
-
-            // Sanitizza il valore in base al tipo
-            if (is_string($value)) {
-                // Rimuovi tag HTML e limita lunghezza
-                $sanitized[$cleanKey] = strip_tags(mb_substr($value, 0, 1000));
-            } elseif (is_numeric($value)) {
-                $sanitized[$cleanKey] = $value;
-            } elseif (is_array($value)) {
-                // Limita dimensione array e ricorsivamente sanitizza
-                $limitedArray = array_slice($value, 0, 100);
-                $sanitized[$cleanKey] = $this->sanitizeAnalyticsData($limitedArray, $depth + 1);
-            } elseif (is_bool($value)) {
-                $sanitized[$cleanKey] = $value;
-            } elseif (is_null($value)) {
-                $sanitized[$cleanKey] = null;
-            }
-        }
-
-        return $sanitized;
     }
 
     /**
