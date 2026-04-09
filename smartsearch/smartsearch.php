@@ -1116,12 +1116,20 @@ class SmartSearch extends Module
      */
     public function rebuildSearchIndex()
     {
+        $db = Db::getInstance();
+        $liveTable = '`' . _DB_PREFIX_ . 'smartsearch_index`';
+        $tmpTable  = '`' . _DB_PREFIX_ . 'smartsearch_index_tmp`';
+        $oldTable  = '`' . _DB_PREFIX_ . 'smartsearch_index_old`';
+
+        // 1. Crea tabella temporanea con la stessa struttura
         try {
-            Db::getInstance()->execute('TRUNCATE TABLE `' . _DB_PREFIX_ . 'smartsearch_index`');
+            $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
+            $db->execute('CREATE TABLE ' . $tmpTable . ' LIKE ' . $liveTable);
         } catch (Throwable $e) {
             return false;
         }
 
+        // 2. Popola la tabella temporanea (la live resta intatta)
         $languages = Language::getLanguages(true);
         $shops = Shop::getShops(true);
 
@@ -1131,7 +1139,7 @@ class SmartSearch extends Module
                 $idLang = (int) $lang['id_lang'];
 
                 $sql = '
-                    INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_index`
+                    INSERT INTO ' . $tmpTable . '
                     (id_product, id_lang, id_shop, product_name, search_content, link_rewrite,
                      description_short, reference, ean13, id_category_default, category_name,
                      id_manufacturer, manufacturer_name, id_image, sales_count, date_add, active, date_indexed)
@@ -1176,8 +1184,10 @@ class SmartSearch extends Module
                     WHERE ps.active = 1';
 
                 try {
-                    Db::getInstance()->execute($sql);
+                    $db->execute($sql);
                 } catch (Throwable $e) {
+                    // Cleanup e abort: la live table non è stata toccata
+                    $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
                     if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
                         PrestaShopLogger::addLog(
                             'SmartSearch index rebuild error: ' . $e->getMessage(),
@@ -1187,6 +1197,22 @@ class SmartSearch extends Module
                     return false;
                 }
             }
+        }
+
+        // 3. Swap atomico: tmp → live, vecchia live → old, drop old
+        try {
+            $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
+            $db->execute(
+                'RENAME TABLE '
+                . $liveTable . ' TO ' . $oldTable . ', '
+                . $tmpTable . ' TO ' . $liveTable
+            );
+            $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
+        } catch (Throwable $e) {
+            // Fallback: se il RENAME fallisce, pulisci la tmp
+            $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
+            $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
+            return false;
         }
 
         return true;
