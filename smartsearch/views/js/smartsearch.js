@@ -82,7 +82,7 @@
 
         let html = '';
         banners.forEach(banner => {
-            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
             const linkClose = banner.link ? '</a>' : '</div>';
 
             html += `
@@ -1599,7 +1599,7 @@
 
         let html = '';
         banners.forEach(banner => {
-            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
             const linkClose = banner.link ? '</a>' : '</div>';
 
             html += `
