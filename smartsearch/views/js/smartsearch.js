@@ -1278,9 +1278,6 @@
                 </div>
             `;
 
-            card.addEventListener('click', () => {
-            });
-
             grid.appendChild(card);
         });
 
@@ -1354,9 +1351,6 @@
                     ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
                 </div>
             `;
-
-            card.addEventListener('click', () => {
-            });
 
             grid.appendChild(card);
         });
