@@ -1343,7 +1343,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * Cache statica per la disponibilità dell'indice pre-calcolato
      */
-    protected static $searchIndexAvailable = null;
+    public static $searchIndexAvailable = null;
+
+    /**
+     * Resetta la cache statica di isSearchIndexAvailable()
+     */
+    public static function resetSearchIndexCache()
+    {
+        self::$searchIndexAvailable = null;
+    }
 
     /**
      * Verifica se la tabella smartsearch_index è popolata

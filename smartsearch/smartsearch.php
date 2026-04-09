@@ -1215,6 +1215,12 @@ class SmartSearch extends Module
             return false;
         }
 
+        // Resetta la cache statica per evitare che isSearchIndexAvailable()
+        // resti false nella stessa request (es. rebuild da admin)
+        if (class_exists('SmartsearchSearchModuleFrontController')) {
+            SmartsearchSearchModuleFrontController::resetSearchIndexCache();
+        }
+
         return true;
     }
 
