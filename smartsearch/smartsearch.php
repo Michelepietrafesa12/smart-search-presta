@@ -349,6 +349,7 @@ class SmartSearch extends Module
             `id_lang` INT(11) UNSIGNED NOT NULL,
             `id_shop` INT(11) UNSIGNED NOT NULL,
             `product_name` VARCHAR(255) NOT NULL,
+            `name_only_content` TEXT NOT NULL,
             `search_content` TEXT NOT NULL,
             `link_rewrite` VARCHAR(255) NOT NULL DEFAULT \'\',
             `description_short` TEXT,
@@ -365,6 +366,7 @@ class SmartSearch extends Module
             `date_indexed` DATETIME NOT NULL,
             PRIMARY KEY (`id_product`, `id_lang`, `id_shop`),
             FULLTEXT INDEX `ft_search_content` (`search_content`),
+            FULLTEXT INDEX `ft_name_only` (`name_only_content`),
             FULLTEXT INDEX `ft_product_name` (`product_name`),
             INDEX `idx_active_shop_lang` (`active`, `id_shop`, `id_lang`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
@@ -412,6 +414,22 @@ class SmartSearch extends Module
             );
         } catch (Throwable $e) {
             // L'indice potrebbe già esistere
+        }
+
+        // Migrazione: aggiunge name_only_content se mancante (aggiornamento da versione precedente)
+        try {
+            $cols = Db::getInstance()->executeS(
+                'SHOW COLUMNS FROM `' . _DB_PREFIX_ . 'smartsearch_index` LIKE \'name_only_content\''
+            );
+            if (empty($cols)) {
+                Db::getInstance()->execute(
+                    'ALTER TABLE `' . _DB_PREFIX_ . 'smartsearch_index` '
+                    . 'ADD COLUMN `name_only_content` TEXT NOT NULL AFTER `product_name`, '
+                    . 'ADD FULLTEXT INDEX `ft_name_only` (`name_only_content`)'
+                );
+            }
+        } catch (Throwable $e) {
+            // Tabella potrebbe non esistere ancora (prima installazione)
         }
 
         return true;
@@ -756,7 +774,14 @@ class SmartSearch extends Module
             return;
         }
 
-        // Concatena tutti i campi ricercabili in search_content
+        // Campi ad alto peso (nome, brand, reference) — peso doppio nel FULLTEXT
+        $nameOnlyContent = implode(' ', array_filter([
+            $product['name'],
+            $product['manufacturer_name'],
+            $product['reference'],
+        ]));
+
+        // Tutti i campi ricercabili (inclusa descrizione lunga)
         $searchContent = implode(' ', array_filter([
             $product['name'],
             strip_tags($product['description_short'] ?? ''),
@@ -768,7 +793,7 @@ class SmartSearch extends Module
         ]));
 
         $sql = 'REPLACE INTO `' . _DB_PREFIX_ . 'smartsearch_index`
-            (id_product, id_lang, id_shop, product_name, search_content, link_rewrite,
+            (id_product, id_lang, id_shop, product_name, name_only_content, search_content, link_rewrite,
              description_short, reference, ean13, id_category_default, category_name,
              id_manufacturer, manufacturer_name, id_image, sales_count, date_add, active, date_indexed)
             VALUES (
@@ -776,6 +801,7 @@ class SmartSearch extends Module
                 ' . (int) $idLang . ',
                 ' . (int) $idShop . ',
                 \'' . pSQL($product['name']) . '\',
+                \'' . pSQL($nameOnlyContent) . '\',
                 \'' . pSQL($searchContent) . '\',
                 \'' . pSQL($product['link_rewrite'] ?? '') . '\',
                 \'' . pSQL($product['description_short'] ?? '') . '\',
@@ -827,7 +853,7 @@ class SmartSearch extends Module
 
                 $sql = '
                     INSERT INTO ' . $tmpTable . '
-                    (id_product, id_lang, id_shop, product_name, search_content, link_rewrite,
+                    (id_product, id_lang, id_shop, product_name, name_only_content, search_content, link_rewrite,
                      description_short, reference, ean13, id_category_default, category_name,
                      id_manufacturer, manufacturer_name, id_image, sales_count, date_add, active, date_indexed)
                     SELECT
@@ -835,6 +861,11 @@ class SmartSearch extends Module
                         ' . $idLang . ',
                         ' . $idShop . ',
                         pl.name,
+                        CONCAT_WS(\' \',
+                            pl.name,
+                            IFNULL(m.name, \'\'),
+                            IFNULL(p.reference, \'\')
+                        ),
                         CONCAT_WS(\' \',
                             pl.name,
                             REGEXP_REPLACE(IFNULL(pl.description_short, \'\'), \'<[^>]+>\', \' \'),

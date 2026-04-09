@@ -1430,9 +1430,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         if (!empty($ftTerms)) {
             $ftQueryStr = implode(' ', $ftTerms);
-            $ftMatchExpr = "MATCH(si.search_content) AGAINST('" . pSQL($ftQueryStr) . "' IN BOOLEAN MODE)";
-            $whereConditions[] = $ftMatchExpr;
-            $ftScoreExpr = $ftMatchExpr;
+            $ftMatchAll = "MATCH(si.search_content) AGAINST('" . pSQL($ftQueryStr) . "' IN BOOLEAN MODE)";
+            $ftMatchName = "MATCH(si.name_only_content) AGAINST('" . pSQL($ftQueryStr) . "' IN BOOLEAN MODE)";
+            // Match su almeno uno dei due indici
+            $whereConditions[] = '(' . $ftMatchAll . ' OR ' . $ftMatchName . ')';
+            // Score pesato: nome/brand/ref conta il doppio della descrizione
+            $ftScoreExpr = '(' . $ftMatchName . ' * 2 + ' . $ftMatchAll . ')';
         }
         if (!empty($likeShort)) {
             $whereConditions = array_merge($whereConditions, $likeShort);
