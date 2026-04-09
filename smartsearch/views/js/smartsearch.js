@@ -174,6 +174,8 @@
                 --ss-sidebar-text: ${s.sidebar_text};
                 --ss-button-bg: ${s.button_bg};
                 --ss-button-text: ${s.button_text};
+                --ss-skeleton-base: color-mix(in srgb, ${s.card_bg} 85%, #888);
+                --ss-skeleton-shine: color-mix(in srgb, ${s.card_bg} 95%, #fff);
             }
         `;
 
@@ -901,7 +903,7 @@
                         ${showBestseller && product.is_bestseller ? `<span class="smartsearch-bestseller-badge">${t.bestseller || 'Più acquistato'}</span>` : ''}
                     </div>
                     <div class="smartsearch-product-info">
-                        <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
+                        <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
                         <div class="smartsearch-product-prices">
                             ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
                             <span class="smartsearch-product-price">${product.price}</span>
@@ -1714,7 +1716,7 @@
                                 <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
                             </div>
                             <div class="smartsearch-product-info">
-                                <div class="smartsearch-product-name">${escapeHtml(product.name)}</div>
+                                <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
                                 <div class="smartsearch-product-prices">
                                     ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
                                     <span class="smartsearch-product-price">${product.price}</span>

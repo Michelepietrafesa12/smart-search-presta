@@ -545,6 +545,12 @@ class SmartSearch extends Module
             return;
         }
 
+        // Non caricare JS/CSS su checkout e conferma ordine
+        $excludedControllers = ['order', 'orderopc', 'orderosc', 'orderconfirmation'];
+        if (in_array(strtolower(Tools::getValue('controller', '')), $excludedControllers)) {
+            return;
+        }
+
         // CSS - caricato normalmente ma con priority bassa (non blocca render)
         $this->context->controller->registerStylesheet(
             'smartsearch-css',
@@ -571,6 +577,12 @@ class SmartSearch extends Module
     public function hookDisplayHeader($params)
     {
         if (!self::getConfig('enabled')) {
+            return '';
+        }
+
+        // Non caricare su checkout e conferma ordine
+        $excludedControllers = ['order', 'orderopc', 'orderosc', 'orderconfirmation'];
+        if (in_array(strtolower(Tools::getValue('controller', '')), $excludedControllers)) {
             return '';
         }
 

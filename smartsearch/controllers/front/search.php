@@ -1533,6 +1533,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $whereConditions = array_merge($whereConditions, $likeShort);
         }
 
+        // LIKE safety net su nome e brand per parole >= 3 chars
+        // Copre i casi in cui FULLTEXT non trova (token non indicizzati, innodb_ft_min_token_size, ecc.)
+        foreach ($words as $word) {
+            if (mb_strlen($word) >= 3) {
+                $ws = pSQL($this->escapeLikeWildcards($word));
+                $whereConditions[] = "si.product_name LIKE '%{$ws}%'";
+                $whereConditions[] = "si.manufacturer_name LIKE '%{$ws}%'";
+            }
+        }
+
         if (empty($whereConditions)) {
             return [];
         }
