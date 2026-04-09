@@ -776,13 +776,8 @@
         const main = overlay.querySelector('.smartsearch-main');
         // NON toccare la sidebar - i filtri sono renderizzati separatamente
 
-        // Mostra loader
-        main.innerHTML = `
-            <div class="smartsearch-loader">
-                <div class="smartsearch-spinner"></div>
-                <span>Caricamento prodotti...</span>
-            </div>
-        `;
+        // Mostra skeleton loader
+        showLoader();
 
         // Chiama l'API per i bestseller
         const url = config.ajax_url + '?ajax=1&action=bestsellers';
@@ -1211,7 +1206,7 @@
         const loadMoreIndicator = document.createElement('div');
         loadMoreIndicator.className = 'smartsearch-load-more';
         loadMoreIndicator.innerHTML = `
-            <div class="smartsearch-spinner" style="width:30px;height:30px;border-width:3px;margin:0 auto 10px;"></div>
+            <div class="smartsearch-spinner"></div>
             <span>${t.loading_more || 'Caricamento...'}</span>
         `;
         main.appendChild(loadMoreIndicator);
@@ -1372,16 +1367,24 @@
     }
 
     /**
-     * Show loader
+     * Show skeleton loader (shimmer cards)
      */
     function showLoader() {
         const main = overlay.querySelector('.smartsearch-main');
-        main.innerHTML = `
-            <div class="smartsearch-loader">
-                <div class="smartsearch-spinner"></div>
-                <span>Ricerca in corso...</span>
-            </div>
-        `;
+        const count = 8;
+        let cards = '';
+        for (let i = 0; i < count; i++) {
+            cards += `
+                <div class="smartsearch-skeleton-card">
+                    <div class="smartsearch-skeleton-image"></div>
+                    <div class="smartsearch-skeleton-info">
+                        <div class="smartsearch-skeleton-line medium"></div>
+                        <div class="smartsearch-skeleton-line short"></div>
+                        <div class="smartsearch-skeleton-line price"></div>
+                    </div>
+                </div>`;
+        }
+        main.innerHTML = `<div class="smartsearch-products-grid">${cards}</div>`;
     }
 
     /**
@@ -1647,9 +1650,15 @@
                     <span>${t.featured_products || 'Prodotti in evidenza'}</span>
                 </div>
                 <div class="smartsearch-products-grid smartsearch-featured-products">
-                    <div class="smartsearch-loader">
-                        <div class="smartsearch-spinner"></div>
-                    </div>
+                    ${Array.from({length: 4}, () => `
+                        <div class="smartsearch-skeleton-card">
+                            <div class="smartsearch-skeleton-image"></div>
+                            <div class="smartsearch-skeleton-info">
+                                <div class="smartsearch-skeleton-line medium"></div>
+                                <div class="smartsearch-skeleton-line short"></div>
+                                <div class="smartsearch-skeleton-line price"></div>
+                            </div>
+                        </div>`).join('')}
                 </div>
             </div>
         `;
