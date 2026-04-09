@@ -421,6 +421,16 @@ class SmartSearch extends Module
             }
         }
 
+        // Aggiungi FULLTEXT index su product_lang per ricerca veloce
+        try {
+            Db::getInstance()->execute(
+                'ALTER TABLE `' . _DB_PREFIX_ . 'product_lang` '
+                . 'ADD FULLTEXT INDEX `ft_smartsearch` (`name`, `description_short`)'
+            );
+        } catch (Throwable $e) {
+            // L'indice potrebbe già esistere
+        }
+
         return true;
     }
 
@@ -442,6 +452,15 @@ class SmartSearch extends Module
 
         foreach ($tables as $table) {
             Db::getInstance()->execute('DROP TABLE IF EXISTS `' . _DB_PREFIX_ . $table . '`');
+        }
+
+        // Rimuovi FULLTEXT index da product_lang
+        try {
+            Db::getInstance()->execute(
+                'ALTER TABLE `' . _DB_PREFIX_ . 'product_lang` DROP INDEX `ft_smartsearch`'
+            );
+        } catch (Throwable $e) {
+            // Ignora se non esiste
         }
 
         return true;

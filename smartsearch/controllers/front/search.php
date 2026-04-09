@@ -1209,7 +1209,32 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Ricerca prodotti con calcolo score di rilevanza
+     * Cache statica per la disponibilità FULLTEXT
+     */
+    protected static $fulltextAvailable = null;
+
+    /**
+     * Verifica se l'indice FULLTEXT ft_smartsearch esiste su product_lang
+     */
+    protected function isFulltextAvailable()
+    {
+        if (self::$fulltextAvailable === null) {
+            try {
+                $result = Db::getInstance()->executeS(
+                    'SHOW INDEX FROM `' . _DB_PREFIX_ . 'product_lang` WHERE Key_name = \'ft_smartsearch\''
+                );
+                self::$fulltextAvailable = !empty($result);
+            } catch (Throwable $e) {
+                self::$fulltextAvailable = false;
+            }
+        }
+        return self::$fulltextAvailable;
+    }
+
+    /**
+     * Ricerca prodotti con calcolo score di rilevanza.
+     * Usa FULLTEXT MATCH() AGAINST() quando l'indice è disponibile,
+     * altrimenti fallback a LIKE.
      */
     protected function searchProductsWithScoring($query, $idLang, $idShop, $filters = [])
     {
@@ -1225,20 +1250,58 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Espandi le parole con variazioni singolare/plurale italiano
         $expandedWords = $this->expandQueryWords($words);
 
-        // Costruisci condizioni OR (trova prodotti che matchano ALMENO una parola o variazione)
+        // Costruisci condizioni WHERE e score FULLTEXT
         $orConditions = [];
+        $ftScoreExpr = '0';
+
+        if ($this->isFulltextAvailable()) {
+            // Prepara termini FULLTEXT (min 3 char per innodb_ft_min_token_size)
+            $ftTerms = [];
+            foreach ($expandedWords as $word) {
+                $clean = preg_replace('/[+\-><\(\)~*\"@]/', '', $word);
+                if (mb_strlen($clean) >= 3) {
+                    $ftTerms[] = pSQL($clean) . '*';
+                }
+            }
+
+            if (!empty($ftTerms)) {
+                $ftQueryStr = implode(' ', $ftTerms);
+                $ftMatchExpr = "MATCH(pl.name, pl.description_short) AGAINST('" . pSQL($ftQueryStr) . "' IN BOOLEAN MODE)";
+                $orConditions[] = $ftMatchExpr;
+                $ftScoreExpr = $ftMatchExpr;
+            }
+
+            // LIKE fallback per parole corte (< 3 char) su name/description_short
+            foreach ($expandedWords as $word) {
+                if (mb_strlen($word) < 3) {
+                    $ws = pSQL($word);
+                    $orConditions[] = "pl.name LIKE '%{$ws}%'";
+                    $orConditions[] = "pl.description_short LIKE '%{$ws}%'";
+                }
+            }
+        } else {
+            // Nessun FULLTEXT: LIKE su name e description_short
+            foreach ($expandedWords as $word) {
+                $ws = pSQL($word);
+                $orConditions[] = "pl.name LIKE '%{$ws}%'";
+                $orConditions[] = "pl.description_short LIKE '%{$ws}%'";
+            }
+        }
+
+        // LIKE per description (non coperto da FULLTEXT), reference e manufacturer
+        foreach ($expandedWords as $word) {
+            $ws = pSQL($word);
+            $orConditions[] = "pl.description LIKE '%{$ws}%'";
+            $orConditions[] = "p.reference LIKE '%{$ws}%'";
+            $orConditions[] = "m.name LIKE '%{$ws}%'";
+        }
+
+        // Per ordinamento SQL: conta quante parole matchano nel nome
         $nameMatchCases = [];
         foreach ($expandedWords as $word) {
-            $wordSafe = pSQL($word);
-            $orConditions[] = "pl.name LIKE '%{$wordSafe}%'";
-            $orConditions[] = "pl.description_short LIKE '%{$wordSafe}%'";
-            $orConditions[] = "pl.description LIKE '%{$wordSafe}%'";
-            $orConditions[] = "p.reference LIKE '%{$wordSafe}%'";
-            $orConditions[] = "m.name LIKE '%{$wordSafe}%'";
-            // Per ordinamento SQL: conta quante parole matchano nel nome
-            $nameMatchCases[] = "(CASE WHEN pl.name LIKE '%{$wordSafe}%' THEN 1 ELSE 0 END)";
+            $ws = pSQL($word);
+            $nameMatchCases[] = "(CASE WHEN pl.name LIKE '%{$ws}%' THEN 1 ELSE 0 END)";
         }
-        // Campo calcolato per ordinare per numero di parole matchate nel nome
         $nameMatchScore = '(' . implode(' + ', $nameMatchCases) . ')';
 
         // Costruisci condizioni filtro
@@ -1262,6 +1325,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 COALESCE((SELECT SUM(od.product_quantity) FROM ' . _DB_PREFIX_ . 'order_detail od
                     INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order AND o.valid = 1
                     WHERE od.product_id = p.id_product), 0) as sales_count,
+                ' . $ftScoreExpr . ' as ft_score,
                 ' . $nameMatchScore . ' as name_match_count
             FROM ' . _DB_PREFIX_ . 'product p
             INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
@@ -1275,7 +1339,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             WHERE p.active = 1 AND ps.active = 1
             AND (' . implode(' OR ', $orConditions) . ')
             ' . $filterConditions . '
-            ORDER BY name_match_count DESC, pl.name ASC
+            ORDER BY ft_score DESC, name_match_count DESC, pl.name ASC
             LIMIT 300';
 
         $results = Db::getInstance()->executeS($sql);
