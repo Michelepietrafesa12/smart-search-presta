@@ -1034,6 +1034,7 @@ class SmartSearch extends Module
                 pl.name,
                 pl.link_rewrite,
                 pl.description_short,
+                pl.description,
                 p.reference,
                 p.ean13,
                 p.id_category_default,
@@ -1074,6 +1075,7 @@ class SmartSearch extends Module
         $searchContent = implode(' ', array_filter([
             $product['name'],
             strip_tags($product['description_short'] ?? ''),
+            strip_tags($product['description'] ?? ''),
             $product['reference'],
             $product['manufacturer_name'],
             $product['category_name'],
@@ -1151,6 +1153,7 @@ class SmartSearch extends Module
                         CONCAT_WS(\' \',
                             pl.name,
                             IFNULL(pl.description_short, \'\'),
+                            IFNULL(pl.description, \'\'),
                             IFNULL(p.reference, \'\'),
                             IFNULL(m.name, \'\'),
                             IFNULL(cl.name, \'\'),
