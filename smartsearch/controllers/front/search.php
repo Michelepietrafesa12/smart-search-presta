@@ -1386,7 +1386,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             if (mb_strlen($clean) >= 3) {
                 $ftTerms[] = pSQL($clean) . '*';
             } else {
-                $ws = pSQL($word);
+                $ws = pSQL($this->escapeLikeWildcards($word));
                 $likeShort[] = "si.product_name LIKE '%{$ws}%'";
                 $likeShort[] = "si.search_content LIKE '%{$ws}%'";
             }
@@ -1412,7 +1412,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Name match count per scoring
         $nameMatchCases = [];
         foreach ($expandedWords as $word) {
-            $ws = pSQL($word);
+            $ws = pSQL($this->escapeLikeWildcards($word));
             $nameMatchCases[] = "(CASE WHEN si.product_name LIKE '%{$ws}%' THEN 1 ELSE 0 END)";
         }
         $nameMatchScore = '(' . implode(' + ', $nameMatchCases) . ')';
@@ -1522,7 +1522,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // LIKE fallback per parole corte (< 3 char) su name/description_short
             foreach ($expandedWords as $word) {
                 if (mb_strlen($word) < 3) {
-                    $ws = pSQL($word);
+                    $ws = pSQL($this->escapeLikeWildcards($word));
                     $orConditions[] = "pl.name LIKE '%{$ws}%'";
                     $orConditions[] = "pl.description_short LIKE '%{$ws}%'";
                 }
@@ -1530,7 +1530,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         } else {
             // Nessun FULLTEXT: LIKE su name e description_short
             foreach ($expandedWords as $word) {
-                $ws = pSQL($word);
+                $ws = pSQL($this->escapeLikeWildcards($word));
                 $orConditions[] = "pl.name LIKE '%{$ws}%'";
                 $orConditions[] = "pl.description_short LIKE '%{$ws}%'";
             }
@@ -1538,7 +1538,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         // LIKE per description (non coperto da FULLTEXT), reference e manufacturer
         foreach ($expandedWords as $word) {
-            $ws = pSQL($word);
+            $ws = pSQL($this->escapeLikeWildcards($word));
             $orConditions[] = "pl.description LIKE '%{$ws}%'";
             $orConditions[] = "p.reference LIKE '%{$ws}%'";
             $orConditions[] = "m.name LIKE '%{$ws}%'";
@@ -1547,7 +1547,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Per ordinamento SQL: conta quante parole matchano nel nome
         $nameMatchCases = [];
         foreach ($expandedWords as $word) {
-            $ws = pSQL($word);
+            $ws = pSQL($this->escapeLikeWildcards($word));
             $nameMatchCases[] = "(CASE WHEN pl.name LIKE '%{$ws}%' THEN 1 ELSE 0 END)";
         }
         $nameMatchScore = '(' . implode(' + ', $nameMatchCases) . ')';
@@ -1643,6 +1643,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         return 'AND ' . implode(' AND ', $conditions);
+    }
+
+    /**
+     * Escape dei caratteri wildcard LIKE (%, _, \) nell'input utente.
+     * Da chiamare PRIMA di pSQL() quando il valore viene usato in un pattern LIKE.
+     */
+    protected function escapeLikeWildcards($value)
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     /**
@@ -2029,7 +2038,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         foreach ($words as $word) {
             if (mb_strlen($word) >= 2) {
-                $word = pSQL($word);
+                $word = pSQL($this->escapeLikeWildcards($word));
                 $conditions[] = "(
                     pl.name LIKE '%{$word}%'
                     OR pl.description_short LIKE '%{$word}%'
@@ -2058,14 +2067,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         foreach ($words as $word) {
             if (mb_strlen($word) >= 3) {
                 // Escape dei caratteri wildcard LIKE prima di pSQL
-                $wordEscaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $word);
-                $word = pSQL($wordEscaped);
+                $word = pSQL($this->escapeLikeWildcards($word));
                 $wordConditions = [];
 
-                // 1. Ricerca SOUNDEX (fonetica) — usa il valore originale senza escape LIKE
-                $wordSoundex = pSQL($wordEscaped);
-                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$wordSoundex}')";
-                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$wordSoundex}')";
+                // 1. Ricerca SOUNDEX (fonetica)
+                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$word}')";
+                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$word}')";
 
                 // 2. Ricerca con wildcard tra le lettere (per typos)
                 $fuzzyPattern = $this->createFuzzyPattern($word);
@@ -2178,7 +2185,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 AND cs.id_shop = ' . (int)$idShop . '
             WHERE c.active = 1
             AND c.id_category > 2
-            AND cl.name LIKE \'%' . pSQL($query) . '%\'
+            AND cl.name LIKE \'%' . pSQL($this->escapeLikeWildcards($query)) . '%\'
             ORDER BY cl.name ASC
             LIMIT 5';
 
@@ -2972,7 +2979,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Cerca prodotti con nomi simili
         $likeConditions = [];
         foreach ($words as $word) {
-            $likeConditions[] = "pl.name LIKE '%" . pSQL($word) . "%'";
+            $likeConditions[] = "pl.name LIKE '%" . pSQL($this->escapeLikeWildcards($word)) . "%'";
         }
 
         $sql = '
