@@ -408,9 +408,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $offset = max(0, (int)Tools::getValue('offset', 0));
             $limit = min(50, max(10, (int)Tools::getValue('limit', 24))); // min 10, max 50, default 24
 
-            // Controlla cache per query popolari (include offset/limit nella chiave)
+            // Parametro ordinamento
+            $sort = Tools::getValue('sort', 'relevance');
+            $allowedSorts = ['relevance', 'price_asc', 'price_desc', 'name_asc', 'name_desc'];
+            if (!in_array($sort, $allowedSorts)) {
+                $sort = 'relevance';
+            }
+
+            // Controlla cache per query popolari (include offset/limit/sort nella chiave)
             $filterHash = md5(json_encode($filters));
-            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop . '_' . $offset . '_' . $limit . '_' . $filterHash);
+            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop . '_' . $offset . '_' . $limit . '_' . $sort . '_' . $filterHash);
             $cachedResult = $this->getFromCache($cacheKey);
 
             if ($cachedResult !== false) {
@@ -421,6 +428,25 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
             // Ricerca prodotti con filtri
             $allProducts = $this->searchProducts($query, $idLang, $idShop, $filters);
+
+            // Applica ordinamento server-side
+            if ($sort !== 'relevance') {
+                usort($allProducts, function ($a, $b) use ($sort) {
+                    switch ($sort) {
+                        case 'price_asc':
+                            return ((float)($a['price_raw'] ?? 0)) <=> ((float)($b['price_raw'] ?? 0));
+                        case 'price_desc':
+                            return ((float)($b['price_raw'] ?? 0)) <=> ((float)($a['price_raw'] ?? 0));
+                        case 'name_asc':
+                            return strcasecmp($a['name'] ?? '', $b['name'] ?? '');
+                        case 'name_desc':
+                            return strcasecmp($b['name'] ?? '', $a['name'] ?? '');
+                        default:
+                            return 0;
+                    }
+                });
+            }
+
             $totalCount = count($allProducts);
 
             // Applica paginazione

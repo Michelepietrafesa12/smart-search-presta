@@ -386,6 +386,11 @@
     // Stato filtri
     let availableFilters = { brands: [], categories: [], price_range: { min: 0, max: 1000 } };
     let selectedFilters = { brands: [], categories: [], price_min: null, price_max: null };
+    const defaultSelectedFilters = { brands: [], categories: [], price_min: null, price_max: null };
+
+    // Cache client-side per filtri e bestsellers (evita AJAX ad ogni apertura)
+    let filtersCache = null;
+    let bestsellersCache = null;
 
     /**
      * Open overlay
@@ -395,9 +400,19 @@
         document.body.style.overflow = 'hidden';
         setTimeout(() => searchInput.focus(), 100);
 
-        // Carica filtri e prodotti in parallelo
-        loadFilters();
-        loadBestsellers();
+        // Carica filtri e prodotti (usa cache client se disponibile)
+        if (filtersCache) {
+            availableFilters = filtersCache;
+            renderFilters();
+        } else {
+            loadFilters();
+        }
+
+        if (bestsellersCache) {
+            renderBestsellers(bestsellersCache);
+        } else {
+            loadBestsellers();
+        }
     }
 
     /**
@@ -413,6 +428,7 @@
         .then(response => response.json())
         .then(data => {
             availableFilters = data;
+            filtersCache = data;
             renderFilters();
         })
         .catch(error => {
@@ -783,6 +799,7 @@
         })
         .then(data => {
             if (data.products && data.products.length > 0) {
+                bestsellersCache = data.products;
                 renderBestsellers(data.products);
             } else if (data.error) {
                 loadFallbackProducts();
@@ -922,6 +939,8 @@
         document.body.style.overflow = '';
         currentQuery = '';
         currentFilters = {};
+        selectedFilters = { ...defaultSelectedFilters, brands: [], categories: [] };
+        currentSortOrder = 'relevance';
         searchInput.value = '';
         renderInitialState();
     }
@@ -1132,6 +1151,7 @@
         // Aggiungi ajax=1 e action=search per PrestaShop
         let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(query);
         url += '&offset=0&limit=' + RESULTS_PER_PAGE;
+        if (currentSortOrder && currentSortOrder !== 'relevance') url += '&sort=' + currentSortOrder;
 
         if (filters.category && filters.category.length) url += '&category=' + filters.category.join(',');
         if (filters.manufacturer && filters.manufacturer.length) url += '&manufacturer=' + filters.manufacturer.join(',');
@@ -1157,8 +1177,6 @@
             hasMoreResults = data.has_more || false;
             totalResultsCount = data.total_count || data.total || 0;
 
-            // Reset sort to relevance and store products for sorting
-            currentSortOrder = 'relevance';
             allLoadedProducts = data.products ? [...data.products] : [];
 
             renderResults(data);
@@ -1200,6 +1218,7 @@
 
         let url = config.ajax_url + '?ajax=1&action=search&q=' + encodeURIComponent(currentQuery);
         url += '&offset=' + currentOffset + '&limit=' + RESULTS_PER_PAGE;
+        if (currentSortOrder && currentSortOrder !== 'relevance') url += '&sort=' + currentSortOrder;
 
         if (currentFilters.category && currentFilters.category.length) url += '&category=' + currentFilters.category.join(',');
         if (currentFilters.manufacturer && currentFilters.manufacturer.length) url += '&manufacturer=' + currentFilters.manufacturer.join(',');
@@ -1286,74 +1305,12 @@
     }
 
     /**
-     * Sort products by current sort order
-     */
-    function sortProducts(products) {
-        const sorted = [...products];
-
-        switch (currentSortOrder) {
-            case 'price_asc':
-                sorted.sort((a, b) => (parseFloat(a.price_raw) || 0) - (parseFloat(b.price_raw) || 0));
-                break;
-            case 'price_desc':
-                sorted.sort((a, b) => (parseFloat(b.price_raw) || 0) - (parseFloat(a.price_raw) || 0));
-                break;
-            case 'name_asc':
-                sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                break;
-            case 'name_desc':
-                sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
-                break;
-            case 'relevance':
-            default:
-                // Keep original order (by relevance score from server)
-                break;
-        }
-
-        return sorted;
-    }
-
-    /**
-     * Sort and re-render all loaded products
+     * Sort products — re-fetches from server with sort parameter
+     * so the full result set is sorted, not just the loaded subset
      */
     function sortAndRenderProducts() {
-        if (allLoadedProducts.length === 0) return;
-
-        const sorted = sortProducts(allLoadedProducts);
-        const grid = overlay.querySelector('.smartsearch-products-grid');
-        if (!grid) return;
-
-        // Clear grid and re-render sorted products
-        grid.innerHTML = '';
-
-        sorted.forEach((product, index) => {
-            const discount = product.price_old ? calculateDiscount(product.price_old_raw, product.price_raw) : 0;
-            const savings = product.price_old ? calculateSavings(product.price_old_raw, product.price_raw) : 0;
-
-            const card = document.createElement('a');
-            card.href = product.url;
-            card.className = 'smartsearch-product-card';
-            card.dataset.productId = product.id;
-            card.dataset.index = index;
-            card.dataset.price = product.price_raw || 0;
-
-            card.innerHTML = `
-                ${discount > 0 ? `<span class="smartsearch-discount-badge">-${discount}%</span>` : ''}
-                <div class="smartsearch-product-image">
-                    <img src="${product.image}" alt="${escapeHtml(product.name)}" loading="lazy">
-                </div>
-                <div class="smartsearch-product-info">
-                    <div class="smartsearch-product-name">${highlightText(product.name, currentQuery)}</div>
-                    <div class="smartsearch-product-prices">
-                        ${product.price_old ? `<span class="smartsearch-product-old-price">${product.price_old}</span>` : ''}
-                        <span class="smartsearch-product-price">${product.price}</span>
-                    </div>
-                    ${savings > 0 ? `<div class="smartsearch-product-savings">Risparmi ${formatSavings(savings)}</div>` : ''}
-                </div>
-            `;
-
-            grid.appendChild(card);
-        });
+        if (!currentQuery) return;
+        performSearch(currentQuery, currentFilters);
     }
 
     /**
