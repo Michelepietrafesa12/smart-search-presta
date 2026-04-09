@@ -416,7 +416,16 @@ class SmartSearch extends Module
             // L'indice potrebbe già esistere
         }
 
-        // Migrazione: aggiunge name_only_content se mancante (aggiornamento da versione precedente)
+        return true;
+    }
+
+    /**
+     * Esegue le migrazioni di schema per aggiornamenti in-place.
+     * Chiamato da getContent() così gira anche su installazioni esistenti.
+     */
+    protected function runMigrations()
+    {
+        // Migrazione v7: aggiunge name_only_content per scoring pesato FULLTEXT
         try {
             $cols = Db::getInstance()->executeS(
                 'SHOW COLUMNS FROM `' . _DB_PREFIX_ . 'smartsearch_index` LIKE \'name_only_content\''
@@ -427,12 +436,16 @@ class SmartSearch extends Module
                     . 'ADD COLUMN `name_only_content` TEXT NOT NULL AFTER `product_name`, '
                     . 'ADD FULLTEXT INDEX `ft_name_only` (`name_only_content`)'
                 );
+                // Popola la colonna per i record esistenti
+                Db::getInstance()->execute(
+                    'UPDATE `' . _DB_PREFIX_ . 'smartsearch_index` '
+                    . 'SET `name_only_content` = CONCAT_WS(\' \', `product_name`, IFNULL(`manufacturer_name`, \'\'), IFNULL(`reference`, \'\')) '
+                    . 'WHERE `name_only_content` = \'\''
+                );
             }
         } catch (Throwable $e) {
-            // Tabella potrebbe non esistere ancora (prima installazione)
+            // Tabella potrebbe non esistere ancora
         }
-
-        return true;
     }
 
     /**
@@ -948,6 +961,8 @@ class SmartSearch extends Module
      */
     public function getContent()
     {
+        $this->runMigrations();
+
         $output = '';
 
         if (Tools::isSubmit('submitSmartSearchConfig')) {
