@@ -1109,8 +1109,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // 2. Ricerca con scoring
-        $results = $this->searchProductsWithScoring($query, $idLang, $idShop, $filters);
+        // 2. Ricerca: usa indice pre-calcolato se disponibile, altrimenti query dirette
+        if ($this->isSearchIndexAvailable()) {
+            $results = $this->searchFromIndex($query, $idLang, $idShop, $filters);
+        } else {
+            $results = $this->searchProductsWithScoring($query, $idLang, $idShop, $filters);
+        }
 
         // 2b. Applica filtri (prezzo con IVA, stock, etc.)
         if (!empty($filters)) {
@@ -1306,6 +1310,147 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
         return self::$fulltextAvailable;
+    }
+
+    /**
+     * Cache statica per la disponibilità dell'indice pre-calcolato
+     */
+    protected static $searchIndexAvailable = null;
+
+    /**
+     * Verifica se la tabella smartsearch_index è popolata
+     */
+    protected function isSearchIndexAvailable()
+    {
+        if (self::$searchIndexAvailable === null) {
+            try {
+                $count = (int) Db::getInstance()->getValue(
+                    'SELECT 1 FROM `' . _DB_PREFIX_ . 'smartsearch_index` LIMIT 1'
+                );
+                self::$searchIndexAvailable = ($count > 0);
+            } catch (Throwable $e) {
+                self::$searchIndexAvailable = false;
+            }
+        }
+        return self::$searchIndexAvailable;
+    }
+
+    /**
+     * Ricerca dall'indice pre-calcolato (smartsearch_index).
+     * Usa FULLTEXT su search_content — una sola tabella, nessun JOIN.
+     */
+    protected function searchFromIndex($query, $idLang, $idShop, $filters = [])
+    {
+        $queryLower = mb_strtolower(trim($query));
+        $words = array_filter(explode(' ', $queryLower), function ($w) {
+            return mb_strlen($w) >= 2;
+        });
+
+        if (empty($words)) {
+            return [];
+        }
+
+        $expandedWords = $this->expandQueryWords($words);
+
+        // Prepara termini FULLTEXT
+        $ftTerms = [];
+        $likeShort = [];
+        foreach ($expandedWords as $word) {
+            $clean = preg_replace('/[+\-><\(\)~*\"@]/', '', $word);
+            if (mb_strlen($clean) >= 3) {
+                $ftTerms[] = pSQL($clean) . '*';
+            } else {
+                $ws = pSQL($word);
+                $likeShort[] = "si.product_name LIKE '%{$ws}%'";
+                $likeShort[] = "si.search_content LIKE '%{$ws}%'";
+            }
+        }
+
+        $whereConditions = [];
+        $ftScoreExpr = '0';
+
+        if (!empty($ftTerms)) {
+            $ftQueryStr = implode(' ', $ftTerms);
+            $ftMatchExpr = "MATCH(si.search_content) AGAINST('" . pSQL($ftQueryStr) . "' IN BOOLEAN MODE)";
+            $whereConditions[] = $ftMatchExpr;
+            $ftScoreExpr = $ftMatchExpr;
+        }
+        if (!empty($likeShort)) {
+            $whereConditions = array_merge($whereConditions, $likeShort);
+        }
+
+        if (empty($whereConditions)) {
+            return [];
+        }
+
+        // Name match count per scoring
+        $nameMatchCases = [];
+        foreach ($expandedWords as $word) {
+            $ws = pSQL($word);
+            $nameMatchCases[] = "(CASE WHEN si.product_name LIKE '%{$ws}%' THEN 1 ELSE 0 END)";
+        }
+        $nameMatchScore = '(' . implode(' + ', $nameMatchCases) . ')';
+
+        // Filtri
+        $filterConds = [];
+        $joinCategory = '';
+        if (!empty($filters['category']) && is_array($filters['category'])) {
+            $catIds = array_map('intval', $filters['category']);
+            $joinCategory = 'INNER JOIN ' . _DB_PREFIX_ . 'category_product cp ON si.id_product = cp.id_product';
+            $filterConds[] = 'cp.id_category IN (' . implode(',', $catIds) . ')';
+        }
+        if (!empty($filters['manufacturer']) && is_array($filters['manufacturer'])) {
+            $mfrIds = array_map('intval', $filters['manufacturer']);
+            $filterConds[] = 'si.id_manufacturer IN (' . implode(',', $mfrIds) . ')';
+        }
+        if (!empty($filters['in_stock'])) {
+            $filterConds[] = '(SELECT SUM(sa.quantity) FROM ' . _DB_PREFIX_ . 'stock_available sa
+                WHERE sa.id_product = si.id_product AND sa.id_shop = ' . (int) $idShop . ') > 0';
+        }
+
+        $sql = '
+            SELECT
+                si.id_product,
+                si.product_name AS name,
+                si.link_rewrite,
+                si.description_short,
+                \'\' AS description,
+                si.reference,
+                si.ean13,
+                si.id_category_default,
+                si.id_manufacturer,
+                si.date_add,
+                si.manufacturer_name,
+                si.category_name,
+                si.id_image,
+                si.sales_count,
+                ' . $ftScoreExpr . ' AS ft_score,
+                ' . $nameMatchScore . ' AS name_match_count
+            FROM `' . _DB_PREFIX_ . 'smartsearch_index` si
+            ' . $joinCategory . '
+            WHERE si.active = 1
+            AND si.id_lang = ' . (int) $idLang . '
+            AND si.id_shop = ' . (int) $idShop . '
+            AND (' . implode(' OR ', $whereConditions) . ')
+            ' . (!empty($filterConds) ? 'AND ' . implode(' AND ', $filterConds) : '') . '
+            ORDER BY ft_score DESC, name_match_count DESC
+            LIMIT 300';
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if (!$results) {
+            return [];
+        }
+
+        foreach ($results as &$product) {
+            $product['_relevance_score'] = $this->calculateRelevanceScore($product, $queryLower, $words);
+        }
+
+        usort($results, function ($a, $b) {
+            return ($b['_relevance_score'] ?? 0) <=> ($a['_relevance_score'] ?? 0);
+        });
+
+        return $results;
     }
 
     /**

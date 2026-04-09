@@ -386,6 +386,32 @@ class SmartSearch extends Module
             INDEX `created_at` (`created_at`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
+        // Indice di ricerca pre-calcolato (denormalizzato, con FULLTEXT)
+        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_index` (
+            `id_product` INT(11) UNSIGNED NOT NULL,
+            `id_lang` INT(11) UNSIGNED NOT NULL,
+            `id_shop` INT(11) UNSIGNED NOT NULL,
+            `product_name` VARCHAR(255) NOT NULL,
+            `search_content` TEXT NOT NULL,
+            `link_rewrite` VARCHAR(255) NOT NULL DEFAULT \'\',
+            `description_short` TEXT,
+            `reference` VARCHAR(64) DEFAULT NULL,
+            `ean13` VARCHAR(13) DEFAULT NULL,
+            `id_category_default` INT(11) UNSIGNED DEFAULT NULL,
+            `category_name` VARCHAR(128) DEFAULT NULL,
+            `id_manufacturer` INT(11) UNSIGNED DEFAULT NULL,
+            `manufacturer_name` VARCHAR(128) DEFAULT NULL,
+            `id_image` INT(11) UNSIGNED DEFAULT NULL,
+            `sales_count` INT(11) NOT NULL DEFAULT 0,
+            `date_add` DATETIME DEFAULT NULL,
+            `active` TINYINT(1) NOT NULL DEFAULT 1,
+            `date_indexed` DATETIME NOT NULL,
+            PRIMARY KEY (`id_product`, `id_lang`, `id_shop`),
+            FULLTEXT INDEX `ft_search_content` (`search_content`),
+            FULLTEXT INDEX `ft_product_name` (`product_name`),
+            INDEX `idx_active_shop_lang` (`active`, `id_shop`, `id_lang`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
         // Tabella correlazioni prodotti (per raccomandazioni)
         $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_correlations` (
             `id_smartsearch_correlation` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -447,6 +473,7 @@ class SmartSearch extends Module
             'smartsearch_boost',
             'smartsearch_banners',
             'smartsearch_cache',
+            'smartsearch_index',
             'smartsearch_correlations'
         ];
 
@@ -651,16 +678,37 @@ class SmartSearch extends Module
     public function hookActionProductAdd($params)
     {
         $this->invalidateCache();
+        $idProduct = isset($params['id_product']) ? (int) $params['id_product'] : 0;
+        if (!$idProduct && isset($params['product']) && is_object($params['product'])) {
+            $idProduct = (int) $params['product']->id;
+        }
+        if ($idProduct) {
+            $this->updateProductIndex($idProduct);
+        }
     }
 
     public function hookActionProductUpdate($params)
     {
         $this->invalidateCache();
+        $idProduct = isset($params['id_product']) ? (int) $params['id_product'] : 0;
+        if (!$idProduct && isset($params['product']) && is_object($params['product'])) {
+            $idProduct = (int) $params['product']->id;
+        }
+        if ($idProduct) {
+            $this->updateProductIndex($idProduct);
+        }
     }
 
     public function hookActionProductDelete($params)
     {
         $this->invalidateCache();
+        $idProduct = isset($params['id_product']) ? (int) $params['id_product'] : 0;
+        if (!$idProduct && isset($params['product']) && is_object($params['product'])) {
+            $idProduct = (int) $params['product']->id;
+        }
+        if ($idProduct) {
+            $this->deleteProductIndex($idProduct);
+        }
     }
 
     /**
@@ -937,6 +985,213 @@ class SmartSearch extends Module
         }
     }
 
+    // =========================================================================
+    // SEARCH INDEX
+    // =========================================================================
+
+    /**
+     * Aggiorna l'indice di ricerca per un singolo prodotto (tutte le lingue/shop)
+     */
+    public function updateProductIndex($idProduct)
+    {
+        try {
+            $idProduct = (int) $idProduct;
+            $languages = Language::getLanguages(true);
+            $shops = Shop::getShops(true);
+
+            foreach ($shops as $shop) {
+                foreach ($languages as $lang) {
+                    $this->indexProduct($idProduct, (int) $lang['id_lang'], (int) $shop['id_shop']);
+                }
+            }
+        } catch (Throwable $e) {
+            // Non bloccare il flusso principale
+        }
+    }
+
+    /**
+     * Rimuove un prodotto dall'indice
+     */
+    public function deleteProductIndex($idProduct)
+    {
+        try {
+            Db::getInstance()->execute(
+                'DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_index` WHERE id_product = ' . (int) $idProduct
+            );
+        } catch (Throwable $e) {
+            // Ignora
+        }
+    }
+
+    /**
+     * Indicizza un singolo prodotto per lingua e shop
+     */
+    protected function indexProduct($idProduct, $idLang, $idShop)
+    {
+        $sql = '
+            SELECT
+                p.id_product,
+                pl.name,
+                pl.link_rewrite,
+                pl.description_short,
+                p.reference,
+                p.ean13,
+                p.id_category_default,
+                p.id_manufacturer,
+                p.active,
+                p.date_add,
+                m.name AS manufacturer_name,
+                cl.name AS category_name,
+                (SELECT i.id_image FROM ' . _DB_PREFIX_ . 'image i
+                 WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1) AS id_image,
+                COALESCE((SELECT SUM(od.product_quantity)
+                 FROM ' . _DB_PREFIX_ . 'order_detail od
+                 INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order AND o.valid = 1
+                 WHERE od.product_id = p.id_product), 0) AS sales_count
+            FROM ' . _DB_PREFIX_ . 'product p
+            INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                AND pl.id_lang = ' . (int) $idLang . ' AND pl.id_shop = ' . (int) $idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int) $idShop . '
+            LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+            LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
+                AND cl.id_lang = ' . (int) $idLang . '
+            WHERE p.id_product = ' . (int) $idProduct;
+
+        $product = Db::getInstance()->getRow($sql);
+
+        if (!$product) {
+            Db::getInstance()->execute(
+                'DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_index`
+                 WHERE id_product = ' . (int) $idProduct
+                . ' AND id_lang = ' . (int) $idLang
+                . ' AND id_shop = ' . (int) $idShop
+            );
+            return;
+        }
+
+        // Concatena tutti i campi ricercabili in search_content
+        $searchContent = implode(' ', array_filter([
+            $product['name'],
+            strip_tags($product['description_short'] ?? ''),
+            $product['reference'],
+            $product['manufacturer_name'],
+            $product['category_name'],
+            $product['ean13'],
+        ]));
+
+        $sql = 'REPLACE INTO `' . _DB_PREFIX_ . 'smartsearch_index`
+            (id_product, id_lang, id_shop, product_name, search_content, link_rewrite,
+             description_short, reference, ean13, id_category_default, category_name,
+             id_manufacturer, manufacturer_name, id_image, sales_count, date_add, active, date_indexed)
+            VALUES (
+                ' . (int) $product['id_product'] . ',
+                ' . (int) $idLang . ',
+                ' . (int) $idShop . ',
+                \'' . pSQL($product['name']) . '\',
+                \'' . pSQL($searchContent) . '\',
+                \'' . pSQL($product['link_rewrite'] ?? '') . '\',
+                \'' . pSQL($product['description_short'] ?? '') . '\',
+                ' . ($product['reference'] ? '\'' . pSQL($product['reference']) . '\'' : 'NULL') . ',
+                ' . ($product['ean13'] ? '\'' . pSQL($product['ean13']) . '\'' : 'NULL') . ',
+                ' . (int) ($product['id_category_default'] ?? 0) . ',
+                ' . ($product['category_name'] ? '\'' . pSQL($product['category_name']) . '\'' : 'NULL') . ',
+                ' . (int) ($product['id_manufacturer'] ?? 0) . ',
+                ' . ($product['manufacturer_name'] ? '\'' . pSQL($product['manufacturer_name']) . '\'' : 'NULL') . ',
+                ' . (int) ($product['id_image'] ?? 0) . ',
+                ' . (int) ($product['sales_count'] ?? 0) . ',
+                ' . ($product['date_add'] ? '\'' . pSQL($product['date_add']) . '\'' : 'NOW()') . ',
+                ' . (int) ($product['active'] ?? 0) . ',
+                NOW()
+            )';
+
+        Db::getInstance()->execute($sql);
+    }
+
+    /**
+     * Ricostruisce completamente l'indice di ricerca.
+     * Usa INSERT ... SELECT per bulk-inserire senza loop PHP.
+     *
+     * @return bool
+     */
+    public function rebuildSearchIndex()
+    {
+        try {
+            Db::getInstance()->execute('TRUNCATE TABLE `' . _DB_PREFIX_ . 'smartsearch_index`');
+        } catch (Throwable $e) {
+            return false;
+        }
+
+        $languages = Language::getLanguages(true);
+        $shops = Shop::getShops(true);
+
+        foreach ($shops as $shop) {
+            $idShop = (int) $shop['id_shop'];
+            foreach ($languages as $lang) {
+                $idLang = (int) $lang['id_lang'];
+
+                $sql = '
+                    INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_index`
+                    (id_product, id_lang, id_shop, product_name, search_content, link_rewrite,
+                     description_short, reference, ean13, id_category_default, category_name,
+                     id_manufacturer, manufacturer_name, id_image, sales_count, date_add, active, date_indexed)
+                    SELECT
+                        p.id_product,
+                        ' . $idLang . ',
+                        ' . $idShop . ',
+                        pl.name,
+                        CONCAT_WS(\' \',
+                            pl.name,
+                            IFNULL(pl.description_short, \'\'),
+                            IFNULL(p.reference, \'\'),
+                            IFNULL(m.name, \'\'),
+                            IFNULL(cl.name, \'\'),
+                            IFNULL(p.ean13, \'\')
+                        ),
+                        IFNULL(pl.link_rewrite, \'\'),
+                        pl.description_short,
+                        p.reference,
+                        p.ean13,
+                        p.id_category_default,
+                        cl.name,
+                        p.id_manufacturer,
+                        m.name,
+                        (SELECT i.id_image FROM ' . _DB_PREFIX_ . 'image i
+                         WHERE i.id_product = p.id_product AND i.cover = 1 LIMIT 1),
+                        COALESCE((SELECT SUM(od.product_quantity)
+                         FROM ' . _DB_PREFIX_ . 'order_detail od
+                         INNER JOIN ' . _DB_PREFIX_ . 'orders o ON od.id_order = o.id_order AND o.valid = 1
+                         WHERE od.product_id = p.id_product), 0),
+                        p.date_add,
+                        p.active,
+                        NOW()
+                    FROM ' . _DB_PREFIX_ . 'product p
+                    INNER JOIN ' . _DB_PREFIX_ . 'product_lang pl ON p.id_product = pl.id_product
+                        AND pl.id_lang = ' . $idLang . ' AND pl.id_shop = ' . $idShop . '
+                    INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                        AND ps.id_shop = ' . $idShop . '
+                    LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
+                    LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
+                        AND cl.id_lang = ' . $idLang . '
+                    WHERE ps.active = 1';
+
+                try {
+                    Db::getInstance()->execute($sql);
+                } catch (Throwable $e) {
+                    if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
+                        PrestaShopLogger::addLog(
+                            'SmartSearch index rebuild error: ' . $e->getMessage(),
+                            3, null, 'SmartSearch'
+                        );
+                    }
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     /**
      * Configurazione del modulo nel back-office
      */
@@ -952,6 +1207,20 @@ class SmartSearch extends Module
         if (Tools::isSubmit('clearCache')) {
             $this->invalidateCache();
             $output .= $this->displayConfirmation($this->l('Cache svuotata con successo'));
+        }
+
+        if (Tools::isSubmit('rebuildIndex')) {
+            $result = $this->rebuildSearchIndex();
+            if ($result) {
+                $count = (int) Db::getInstance()->getValue(
+                    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_index`'
+                );
+                $output .= $this->displayConfirmation(
+                    sprintf($this->l('Indice di ricerca ricostruito! %d voci indicizzate.'), $count)
+                );
+            } else {
+                $output .= $this->displayError($this->l('Errore nella ricostruzione dell\'indice.'));
+            }
         }
 
         if (Tools::isSubmit('calculateCorrelations')) {
@@ -1168,7 +1437,10 @@ class SmartSearch extends Module
                      'values' => [['id' => 'on', 'value' => 1, 'label' => $this->l('Sì')], ['id' => 'off', 'value' => 0, 'label' => $this->l('No')]]],
                     ['type' => 'text', 'label' => $this->l('Durata Cache (sec)'), 'name' => 'SMARTSEARCH_CACHE_TTL', 'class' => 'fixed-width-md'],
                 ],
-                'buttons' => [['title' => $this->l('Svuota Cache'), 'name' => 'clearCache', 'type' => 'submit', 'class' => 'btn btn-default', 'icon' => 'process-icon-eraser']]
+                'buttons' => [
+                    ['title' => $this->l('Svuota Cache'), 'name' => 'clearCache', 'type' => 'submit', 'class' => 'btn btn-default', 'icon' => 'process-icon-eraser'],
+                    ['title' => $this->l('Ricostruisci Indice'), 'name' => 'rebuildIndex', 'type' => 'submit', 'class' => 'btn btn-default', 'icon' => 'process-icon-refresh'],
+                ]
             ]
         ];
 
