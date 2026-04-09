@@ -492,19 +492,30 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $idLang = (int)$this->context->language->id;
             $idShop = (int)$this->context->shop->id;
 
-            // Ottieni marche con conteggio prodotti
-            $brands = $this->getAvailableBrands($idLang, $idShop);
+            // Riusa buildFacets() che ha la propria cache dedicata
+            $facets = $this->buildFacets($idLang, $idShop);
 
-            // Ottieni categorie con conteggio prodotti
-            $categories = $this->getAvailableCategories($idLang, $idShop);
+            // Mappa al formato atteso dall'endpoint /filters
+            $brands = array_map(function ($m) {
+                return [
+                    'id' => $m['id_manufacturer'],
+                    'name' => $m['name'],
+                    'count' => $m['count']
+                ];
+            }, $facets['manufacturers'] ?? []);
 
-            // Ottieni range prezzi
-            $priceRange = $this->getPriceRange($idShop);
+            $categories = array_map(function ($c) {
+                return [
+                    'id' => $c['id_category'],
+                    'name' => $c['name'],
+                    'count' => $c['count']
+                ];
+            }, $facets['categories'] ?? []);
 
             die(json_encode([
                 'brands' => $brands,
                 'categories' => $categories,
-                'price_range' => $priceRange
+                'price_range' => $facets['price_range'] ?? ['min' => 0, 'max' => 1000]
             ], JSON_UNESCAPED_UNICODE));
 
         } catch (Throwable $e) {
@@ -659,10 +670,18 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Costruisce i facets per i filtri della sidebar
+     * Costruisce i facets per i filtri della sidebar.
+     * I facets dipendono solo da idLang/idShop, non dalla query,
+     * quindi vengono cachati con chiave dedicata (TTL 10 min).
      */
     protected function buildFacets($idLang, $idShop)
     {
+        $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop;
+        $cached = $this->getFromCache($cacheKey, 600);
+        if ($cached !== false) {
+            return $cached;
+        }
+
         $facets = [];
 
         // Price range
@@ -687,6 +706,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 'count' => $cat['count']
             ];
         }, $categories);
+
+        // Cache 10 minuti — i facets cambiano solo quando il catalogo cambia
+        $this->saveToCache($cacheKey, $facets, 600);
 
         return $facets;
     }
@@ -2412,9 +2434,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
     /**
      * Recupera risultati dalla cache
-     * Cache valida per 5 minuti (300 secondi)
+     *
+     * @param string $key   Chiave cache
+     * @param int    $ttl   TTL in secondi (default 300 = 5 minuti)
+     * @return array|false
      */
-    protected function getFromCache($key)
+    protected function getFromCache($key, $ttl = 300)
     {
         // Usa la cache di PrestaShop se disponibile
         if (class_exists('Cache') && method_exists('Cache', 'getInstance')) {
@@ -2427,10 +2452,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // Fallback: cache su database (cache valida per 5 minuti)
+        // Fallback: cache su database
         $sql = 'SELECT result_data FROM `' . _DB_PREFIX_ . 'smartsearch_cache`
                 WHERE cache_key = \'' . pSQL($key) . '\'
-                AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                AND created_at > DATE_SUB(NOW(), INTERVAL ' . (int) $ttl . ' SECOND)
                 LIMIT 1';
 
         try {
