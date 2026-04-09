@@ -538,8 +538,7 @@ class SmartSearchEngine
                 AND cl.id_lang = ' . $this->idLang . '
             LEFT JOIN `' . _DB_PREFIX_ . 'manufacturer` m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN `' . _DB_PREFIX_ . 'image` i ON p.id_product = i.id_product AND i.cover = 1
-            WHERE p.id_product IN (' . implode(',', $topIds) . ')
-            ORDER BY fuzzy_score DESC';
+            WHERE p.id_product IN (' . implode(',', $topIds) . ')';
 
         $results = Db::getInstance()->executeS($sql);
 

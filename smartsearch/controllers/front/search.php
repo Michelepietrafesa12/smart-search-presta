@@ -433,8 +433,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Ottieni banner attivi per questa query (solo alla prima richiesta)
             $banners = ($offset === 0) ? $this->getBannersForQuery($query, $idShop) : [];
 
-            // Costruisci facets per i filtri (solo alla prima richiesta)
-            $facets = ($offset === 0) ? $this->buildFacets($idLang, $idShop) : [];
+            // Costruisci facets filtrati per i prodotti trovati (solo alla prima richiesta)
+            $facets = [];
+            if ($offset === 0) {
+                $matchedIds = array_map(function ($p) {
+                    return (int) ($p['id_product'] ?? 0);
+                }, $allProducts);
+                $facets = $this->buildFacets($idLang, $idShop, $matchedIds);
+            }
 
             // Genera suggerimenti "Forse cercavi..." se pochi risultati (solo alla prima richiesta)
             $didYouMean = [];
@@ -680,18 +686,38 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
     /**
      * Costruisce i facets per i filtri della sidebar.
-     * I facets dipendono solo da idLang/idShop, non dalla query,
-     * quindi vengono cachati con chiave dedicata (TTL 10 min).
+     * Usa una singola query UNION ALL per brand + categorie + prezzo.
      *
-     * Usa una singola query UNION ALL per brand + categorie + prezzo
-     * invece di 3-4 query separate.
+     * Se $productIds è fornito, i facets riflettono solo quei prodotti
+     * (facets contestuali alla ricerca). Se vuoto, restituisce i facets
+     * globali dell'intero catalogo (cachati 10 min).
+     *
+     * @param int   $idLang
+     * @param int   $idShop
+     * @param int[] $productIds  ID dei prodotti matchati (opzionale)
      */
-    protected function buildFacets($idLang, $idShop)
+    protected function buildFacets($idLang, $idShop, array $productIds = [])
     {
-        $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop;
-        $cached = $this->getFromCache($cacheKey, 600);
+        // Facets globali (no productIds): cachati 10 min
+        // Facets contestuali: cachati con hash degli ID (più breve TTL)
+        $isFiltered = !empty($productIds);
+        if ($isFiltered) {
+            sort($productIds);
+            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop . '_' . md5(implode(',', $productIds));
+            $cached = $this->getFromCache($cacheKey, 300);
+        } else {
+            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop;
+            $cached = $this->getFromCache($cacheKey, 600);
+        }
         if ($cached !== false) {
             return $cached;
+        }
+
+        // Condizione filtro prodotti per facets contestuali
+        $productFilter = '';
+        if ($isFiltered) {
+            $safeIds = array_map('intval', array_slice($productIds, 0, 500));
+            $productFilter = ' AND p.id_product IN (' . implode(',', $safeIds) . ')';
         }
 
         // Query aggregata unica: brand + categorie + price range
@@ -705,7 +731,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_manufacturer = m.id_manufacturer
             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
                 AND ps.id_shop = ' . (int) $idShop . '
-            WHERE p.active = 1 AND ps.active = 1
+            WHERE p.active = 1 AND ps.active = 1' . $productFilter . '
             GROUP BY m.id_manufacturer, m.name
             HAVING product_count > 0
 
@@ -725,7 +751,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             INNER JOIN ' . _DB_PREFIX_ . 'product p ON cp.id_product = p.id_product
             INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
                 AND ps.id_shop = ' . (int) $idShop . '
-            WHERE c.active = 1 AND p.active = 1 AND ps.active = 1 AND c.id_category > 2
+            WHERE c.active = 1 AND p.active = 1 AND ps.active = 1 AND c.id_category > 2' . $productFilter . '
             GROUP BY c.id_category, cl.name
             HAVING product_count > 0
 
@@ -738,7 +764,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             FROM ' . _DB_PREFIX_ . 'product_shop ps
             INNER JOIN ' . _DB_PREFIX_ . 'product p ON ps.id_product = p.id_product
             WHERE ps.id_shop = ' . (int) $idShop . '
-            AND p.active = 1 AND ps.active = 1';
+            AND p.active = 1 AND ps.active = 1' . $productFilter;
 
         $rows = Db::getInstance()->executeS($sql);
 
@@ -784,8 +810,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return strcmp($a['name'], $b['name']);
         });
 
-        // Cache 10 minuti — i facets cambiano solo quando il catalogo cambia
-        $this->saveToCache($cacheKey, $facets, 600);
+        $ttl = $isFiltered ? 300 : 600;
+        $this->saveToCache($cacheKey, $facets, $ttl);
 
         return $facets;
     }
@@ -2031,12 +2057,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         foreach ($words as $word) {
             if (mb_strlen($word) >= 3) {
-                $word = pSQL($word);
+                // Escape dei caratteri wildcard LIKE prima di pSQL
+                $wordEscaped = str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $word);
+                $word = pSQL($wordEscaped);
                 $wordConditions = [];
 
-                // 1. Ricerca SOUNDEX (fonetica)
-                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$word}')";
-                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$word}')";
+                // 1. Ricerca SOUNDEX (fonetica) — usa il valore originale senza escape LIKE
+                $wordSoundex = pSQL($wordEscaped);
+                $wordConditions[] = "SOUNDEX(pl.name) = SOUNDEX('{$wordSoundex}')";
+                $wordConditions[] = "SOUNDEX(m.name) = SOUNDEX('{$wordSoundex}')";
 
                 // 2. Ricerca con wildcard tra le lettere (per typos)
                 $fuzzyPattern = $this->createFuzzyPattern($word);
@@ -2665,36 +2694,49 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         $file = $rateLimitDir . md5($ip) . '.json';
         $now = time();
+        $allowed = true;
 
-        $timestamps = [];
-        if (file_exists($file)) {
-            $data = @file_get_contents($file);
-            if ($data !== false) {
-                $timestamps = json_decode($data, true);
-                if (!is_array($timestamps)) {
-                    $timestamps = [];
+        // Operazione atomica con flock per evitare race condition TOCTOU
+        $fp = @fopen($file, 'c+');
+        if (!$fp) {
+            return true; // Se non riusciamo ad aprire il file, non bloccare
+        }
+
+        if (flock($fp, LOCK_EX)) {
+            $data = stream_get_contents($fp);
+            $timestamps = [];
+            if (!empty($data)) {
+                $decoded = json_decode($data, true);
+                if (is_array($decoded)) {
+                    $timestamps = $decoded;
                 }
             }
+
+            // Rimuovi timestamp fuori dalla finestra
+            $timestamps = array_values(array_filter($timestamps, function ($ts) use ($now, $windowSeconds) {
+                return ($now - $ts) < $windowSeconds;
+            }));
+
+            if (count($timestamps) >= $maxRequests) {
+                $allowed = false;
+            } else {
+                $timestamps[] = $now;
+                ftruncate($fp, 0);
+                rewind($fp);
+                fwrite($fp, json_encode($timestamps));
+            }
+
+            flock($fp, LOCK_UN);
         }
 
-        // Rimuovi timestamp fuori dalla finestra
-        $timestamps = array_values(array_filter($timestamps, function ($ts) use ($now, $windowSeconds) {
-            return ($now - $ts) < $windowSeconds;
-        }));
-
-        if (count($timestamps) >= $maxRequests) {
-            return false;
-        }
-
-        $timestamps[] = $now;
-        @file_put_contents($file, json_encode($timestamps), LOCK_EX);
+        fclose($fp);
 
         // Pulizia periodica file scaduti (1% probabilità per richiesta)
-        if (mt_rand(1, 100) === 1) {
+        if ($allowed && mt_rand(1, 100) === 1) {
             $this->cleanRateLimitFiles($rateLimitDir, $windowSeconds);
         }
 
-        return true;
+        return $allowed;
     }
 
     /**
@@ -2727,13 +2769,25 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     protected function getFromCache($key, $ttl = 300)
     {
-        // Usa la cache di PrestaShop se disponibile
+        // Cache PS nativa: salviamo un wrapper {ts, data} per validare il TTL
         if (class_exists('Cache') && method_exists('Cache', 'getInstance')) {
             $cache = Cache::getInstance();
             if ($cache->exists($key)) {
-                $data = $cache->get($key);
-                if ($data !== false) {
-                    return json_decode($data, true);
+                $raw = $cache->get($key);
+                if ($raw !== false) {
+                    $wrapper = json_decode($raw, true);
+                    if (is_array($wrapper) && isset($wrapper['_ts'], $wrapper['_data'])) {
+                        if ((time() - $wrapper['_ts']) < $ttl) {
+                            return $wrapper['_data'];
+                        }
+                        // Scaduto per il nostro TTL: ignora e prosegui
+                    } else {
+                        // Formato vecchio (pre-wrapper): decodifica direttamente
+                        $decoded = is_string($raw) ? json_decode($raw, true) : null;
+                        if ($decoded !== null) {
+                            return $decoded;
+                        }
+                    }
                 }
             }
         }
@@ -2761,18 +2815,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     protected function saveToCache($key, $data, $ttl = 300)
     {
-        $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE);
+        // Wrappa i dati con timestamp per validare il TTL nella cache PS nativa
+        $wrapper = json_encode(['_ts' => time(), '_data' => $data], JSON_UNESCAPED_UNICODE);
 
-        // Usa la cache di PrestaShop se disponibile
+        // Cache PS nativa: salva wrapper con timestamp
         if (class_exists('Cache') && method_exists('Cache', 'getInstance')) {
             $cache = Cache::getInstance();
-            $cache->set($key, $jsonData, $ttl);
+            $cache->set($key, $wrapper, $ttl);
         }
 
-        // Salva anche su database
+        // Salva anche su database (dati raw, il TTL è controllato da created_at)
         $idLang = (int)$this->context->language->id;
         $idShop = (int)$this->context->shop->id;
         $query = Tools::getValue('q', '');
+        $jsonData = json_encode($data, JSON_UNESCAPED_UNICODE);
 
         // Usa REPLACE per aggiornare se esiste
         $sql = 'REPLACE INTO `' . _DB_PREFIX_ . 'smartsearch_cache`
@@ -2798,8 +2854,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     public static function cleanExpiredCache()
     {
+        // Usa 1 ora per coprire il TTL massimo (facets = 600s) con margine
         $sql = 'DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_cache`
-                WHERE created_at < DATE_SUB(NOW(), INTERVAL 10 MINUTE)';
+                WHERE created_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)';
         try {
             Db::getInstance()->execute($sql);
         } catch (Throwable $e) {
