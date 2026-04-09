@@ -623,8 +623,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      * Recupera l'aliquota IVA di default del negozio
      * Compatibile con PrestaShop 8.x e MySQL 8.0+
      */
+    protected static $defaultTaxRateCache = null;
+
     protected function getDefaultTaxRate()
     {
+        if (self::$defaultTaxRateCache !== null) {
+            return self::$defaultTaxRateCache;
+        }
+
         try {
             // Prova a ottenere l'IVA dal paese di default del negozio
             $idCountry = (int)Configuration::get('PS_COUNTRY_DEFAULT');
@@ -647,7 +653,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $result = Db::getInstance()->getRow($sql);
 
                 if ($result && isset($result['rate']) && $result['rate'] > 0) {
-                    return (float)$result['rate'];
+                    self::$defaultTaxRateCache = (float)$result['rate'];
+                    return self::$defaultTaxRateCache;
                 }
             }
         } catch (Throwable $e) {
@@ -660,19 +667,24 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $rate = Db::getInstance()->getValue($sql);
 
             if ($rate !== false && $rate > 0) {
-                return (float)$rate;
+                self::$defaultTaxRateCache = (float)$rate;
+                return self::$defaultTaxRateCache;
             }
         } catch (Throwable $e) {
             // Ignora errori
         }
 
-        return 22.0; // Default 22% se non trovata
+        self::$defaultTaxRateCache = 22.0;
+        return self::$defaultTaxRateCache; // Default 22% se non trovata
     }
 
     /**
      * Costruisce i facets per i filtri della sidebar.
      * I facets dipendono solo da idLang/idShop, non dalla query,
      * quindi vengono cachati con chiave dedicata (TTL 10 min).
+     *
+     * Usa una singola query UNION ALL per brand + categorie + prezzo
+     * invece di 3-4 query separate.
      */
     protected function buildFacets($idLang, $idShop)
     {
@@ -682,30 +694,95 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return $cached;
         }
 
-        $facets = [];
+        // Query aggregata unica: brand + categorie + price range
+        $sql = '
+            SELECT \'brand\' AS facet_type,
+                   m.id_manufacturer AS facet_id,
+                   m.name AS facet_name,
+                   COUNT(DISTINCT p.id_product) AS product_count,
+                   0 AS min_val, 0 AS max_val
+            FROM ' . _DB_PREFIX_ . 'manufacturer m
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON p.id_manufacturer = m.id_manufacturer
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int) $idShop . '
+            WHERE p.active = 1 AND ps.active = 1
+            GROUP BY m.id_manufacturer, m.name
+            HAVING product_count > 0
 
-        // Price range
-        $facets['price_range'] = $this->getPriceRange($idShop);
+            UNION ALL
 
-        // Manufacturers (brands) - formato compatibile con JS
-        $brands = $this->getAvailableBrands($idLang, $idShop);
-        $facets['manufacturers'] = array_map(function($brand) {
-            return [
-                'id_manufacturer' => $brand['id'],
-                'name' => $brand['name'],
-                'count' => $brand['count']
-            ];
-        }, $brands);
+            SELECT \'category\' AS facet_type,
+                   c.id_category AS facet_id,
+                   cl.name AS facet_name,
+                   COUNT(DISTINCT cp.id_product) AS product_count,
+                   0, 0
+            FROM ' . _DB_PREFIX_ . 'category c
+            INNER JOIN ' . _DB_PREFIX_ . 'category_lang cl ON c.id_category = cl.id_category
+                AND cl.id_lang = ' . (int) $idLang . ' AND cl.id_shop = ' . (int) $idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'category_shop cs ON c.id_category = cs.id_category
+                AND cs.id_shop = ' . (int) $idShop . '
+            INNER JOIN ' . _DB_PREFIX_ . 'category_product cp ON c.id_category = cp.id_category
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON cp.id_product = p.id_product
+            INNER JOIN ' . _DB_PREFIX_ . 'product_shop ps ON p.id_product = ps.id_product
+                AND ps.id_shop = ' . (int) $idShop . '
+            WHERE c.active = 1 AND p.active = 1 AND ps.active = 1 AND c.id_category > 2
+            GROUP BY c.id_category, cl.name
+            HAVING product_count > 0
 
-        // Categories - formato compatibile con JS (usa id_category)
-        $categories = $this->getAvailableCategories($idLang, $idShop);
-        $facets['categories'] = array_map(function($cat) {
-            return [
-                'id_category' => $cat['id'],
-                'name' => $cat['name'],
-                'count' => $cat['count']
-            ];
-        }, $categories);
+            UNION ALL
+
+            SELECT \'price\' AS facet_type,
+                   0, NULL, 0,
+                   FLOOR(MIN(ps.price)),
+                   CEIL(MAX(ps.price))
+            FROM ' . _DB_PREFIX_ . 'product_shop ps
+            INNER JOIN ' . _DB_PREFIX_ . 'product p ON ps.id_product = p.id_product
+            WHERE ps.id_shop = ' . (int) $idShop . '
+            AND p.active = 1 AND ps.active = 1';
+
+        $rows = Db::getInstance()->executeS($sql);
+
+        $facets = [
+            'manufacturers' => [],
+            'categories' => [],
+            'price_range' => ['min' => 0, 'max' => 1000],
+        ];
+
+        if ($rows) {
+            foreach ($rows as $row) {
+                switch ($row['facet_type']) {
+                    case 'brand':
+                        $facets['manufacturers'][] = [
+                            'id_manufacturer' => (int) $row['facet_id'],
+                            'name' => $row['facet_name'],
+                            'count' => (int) $row['product_count'],
+                        ];
+                        break;
+                    case 'category':
+                        $facets['categories'][] = [
+                            'id_category' => (int) $row['facet_id'],
+                            'name' => $row['facet_name'],
+                            'count' => (int) $row['product_count'],
+                        ];
+                        break;
+                    case 'price':
+                        $taxRate = $this->getDefaultTaxRate();
+                        $facets['price_range'] = [
+                            'min' => (int) ($row['min_val'] ?? 0),
+                            'max' => (int) (($row['max_val'] ?? 1000) * (1 + $taxRate / 100)),
+                        ];
+                        break;
+                }
+            }
+        }
+
+        // Ordina brand e categorie per nome
+        usort($facets['manufacturers'], function ($a, $b) {
+            return strcmp($a['name'], $b['name']);
+        });
+        usort($facets['categories'], function ($a, $b) {
+            return strcmp($a['name'], $b['name']);
+        });
 
         // Cache 10 minuti — i facets cambiano solo quando il catalogo cambia
         $this->saveToCache($cacheKey, $facets, 600);
