@@ -307,65 +307,157 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
-     * Genera variazioni per unità di misura
-     * Es: "350g" -> ["350g", "350 g", "350gr", "350 gr"]
+     * Genera variazioni per unità di misura.
+     * Oltre ai sinonimi formato (350g/350 g/350gr), genera conversioni
+     * cross-unità: 1kg → 1000g, 1000mg → 1g, 500ml → 0.5l, etc.
      */
     protected function getUnitVariations($word)
     {
         $variations = [];
 
-        // Pattern: numero + unità (es: 350g, 500ml, 1kg)
-        if (preg_match('/^(\d+)(g|gr|kg|mg|ml|l|cl|oz|lb|caps|cps|tab|tabs|compresse|bustine|porzioni)$/i', $word, $matches)) {
-            $number = $matches[1];
+        // Pattern: numero (intero o decimale con . o ,) + unità
+        if (preg_match('/^(\d+(?:[.,]\d+)?)(g|gr|kg|mg|ml|l|lt|cl|oz|lb|caps|cps|tab|tabs|compresse|bustine|porzioni)$/i', $word, $matches)) {
+            $numberRaw = $matches[1];
+            $number = str_replace(',', '.', $numberRaw);
+            $value = (float) $number;
             $unit = mb_strtolower($matches[2]);
 
-            // Variazioni base
-            $variations[] = $number . $unit;           // 350g
-            $variations[] = $number . ' ' . $unit;     // 350 g
+            // Variazioni formato base (con/senza spazio, sinonimi unità)
+            foreach ($this->getUnitSynonyms($unit) as $syn) {
+                $variations[] = $numberRaw . $syn;
+                $variations[] = $numberRaw . ' ' . $syn;
+            }
 
-            // Variazioni specifiche per unità
-            if ($unit === 'g' || $unit === 'gr') {
-                $variations[] = $number . 'g';
-                $variations[] = $number . ' g';
-                $variations[] = $number . 'gr';
-                $variations[] = $number . ' gr';
-            } elseif ($unit === 'kg') {
-                $variations[] = $number . 'kg';
-                $variations[] = $number . ' kg';
-            } elseif ($unit === 'mg') {
-                $variations[] = $number . 'mg';
-                $variations[] = $number . ' mg';
-            } elseif ($unit === 'ml') {
-                $variations[] = $number . 'ml';
-                $variations[] = $number . ' ml';
-            } elseif ($unit === 'l') {
-                $variations[] = $number . 'l';
-                $variations[] = $number . ' l';
-                $variations[] = $number . 'lt';
-                $variations[] = $number . ' lt';
-            } elseif ($unit === 'caps' || $unit === 'cps') {
-                $variations[] = $number . 'caps';
-                $variations[] = $number . ' caps';
-                $variations[] = $number . 'cps';
-                $variations[] = $number . ' cps';
-                $variations[] = $number . ' capsule';
-            } elseif ($unit === 'tab' || $unit === 'tabs') {
-                $variations[] = $number . 'tab';
-                $variations[] = $number . ' tab';
-                $variations[] = $number . 'tabs';
-                $variations[] = $number . ' tabs';
-                $variations[] = $number . ' compresse';
+            // Conversioni cross-unità (1kg → 1000g, 1000mg → 1g, etc.)
+            foreach ($this->convertUnit($value, $unit) as $conv) {
+                $convNum = $this->formatUnitNumber($conv['value']);
+                if ($convNum === null) {
+                    continue; // Numero con troppe cifre decimali, skip
+                }
+                foreach ($this->getUnitSynonyms($conv['unit']) as $syn) {
+                    $variations[] = $convNum . $syn;
+                    $variations[] = $convNum . ' ' . $syn;
+                }
             }
         }
 
-        // Pattern: numero con spazio + unità (es: "350 g")
-        // Questo viene gestito come due parole separate, quindi aggiungiamo la versione unita
-        if (preg_match('/^(\d+)$/', $word)) {
-            // È solo un numero, potrebbe essere seguito da un'unità
+        // Solo numero — potrebbe essere seguito da unità come parola separata
+        if (preg_match('/^\d+$/', $word)) {
             $variations[] = $word;
         }
 
         return array_unique($variations);
+    }
+
+    /**
+     * Restituisce i sinonimi di formato per un'unità di misura.
+     * Es: "g" → ["g", "gr"], "l" → ["l", "lt"]
+     */
+    protected function getUnitSynonyms($unit)
+    {
+        $map = [
+            'g'  => ['g', 'gr'],
+            'gr' => ['g', 'gr'],
+            'kg' => ['kg'],
+            'mg' => ['mg'],
+            'ml' => ['ml'],
+            'l'  => ['l', 'lt'],
+            'lt' => ['l', 'lt'],
+            'cl' => ['cl'],
+            'caps' => ['caps', 'cps', 'capsule'],
+            'cps'  => ['caps', 'cps', 'capsule'],
+            'tab'  => ['tab', 'tabs', 'compresse'],
+            'tabs' => ['tab', 'tabs', 'compresse'],
+            'compresse' => ['tab', 'tabs', 'compresse'],
+            'bustine'   => ['bustine'],
+            'porzioni'  => ['porzioni'],
+            'oz' => ['oz'],
+            'lb' => ['lb'],
+        ];
+        return $map[$unit] ?? [$unit];
+    }
+
+    /**
+     * Conversioni cross-unità di misura.
+     * Restituisce array di [value, unit] equivalenti in altre unità.
+     */
+    protected function convertUnit($value, $unit)
+    {
+        $conversions = [];
+
+        switch ($unit) {
+            case 'g':
+            case 'gr':
+                // g → kg (1000g = 1kg)
+                if ($value >= 100) {
+                    $conversions[] = ['value' => $value / 1000, 'unit' => 'kg'];
+                }
+                // g → mg (per piccoli valori, es. vitamine: 1g = 1000mg)
+                if ($value <= 10) {
+                    $conversions[] = ['value' => $value * 1000, 'unit' => 'mg'];
+                }
+                break;
+
+            case 'kg':
+                // kg → g (1kg = 1000g)
+                $conversions[] = ['value' => $value * 1000, 'unit' => 'g'];
+                break;
+
+            case 'mg':
+                // mg → g (1000mg = 1g)
+                if ($value >= 100) {
+                    $conversions[] = ['value' => $value / 1000, 'unit' => 'g'];
+                }
+                break;
+
+            case 'ml':
+                // ml → l (1000ml = 1l)
+                if ($value >= 100) {
+                    $conversions[] = ['value' => $value / 1000, 'unit' => 'l'];
+                }
+                break;
+
+            case 'l':
+            case 'lt':
+                // l → ml (1l = 1000ml)
+                $conversions[] = ['value' => $value * 1000, 'unit' => 'ml'];
+                break;
+
+            case 'cl':
+                // cl → ml (1cl = 10ml)
+                $conversions[] = ['value' => $value * 10, 'unit' => 'ml'];
+                // cl → l (100cl = 1l)
+                if ($value >= 10) {
+                    $conversions[] = ['value' => $value / 100, 'unit' => 'l'];
+                }
+                break;
+        }
+
+        return $conversions;
+    }
+
+    /**
+     * Formatta un numero per le variazioni unità.
+     * Restituisce null se il numero ha troppe cifre decimali.
+     */
+    protected function formatUnitNumber($value)
+    {
+        // Intero
+        if (abs($value - round($value)) < 0.001) {
+            return (string) (int) round($value);
+        }
+        // Max 1 decimale
+        $r1 = round($value, 1);
+        if (abs($value - $r1) < 0.01) {
+            return number_format($r1, 1, '.', '');
+        }
+        // Max 2 decimali
+        $r2 = round($value, 2);
+        if (abs($value - $r2) < 0.001) {
+            return number_format($r2, 2, '.', '');
+        }
+        // Troppi decimali — non utile come termine di ricerca
+        return null;
     }
 
     public function displayAjaxSearch()
