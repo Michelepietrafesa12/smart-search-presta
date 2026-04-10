@@ -1162,12 +1162,17 @@
             signal: searchAbortController.signal
         })
         .then(response => {
+            if (response.status === 429) {
+                showRateLimitMessage();
+                return;
+            }
             if (!response.ok) {
                 throw new Error('HTTP error ' + response.status);
             }
             return response.json();
         })
         .then(data => {
+            if (!data) return; // 429 handled above
             lastResults = data;
             // Update pagination state
             currentOffset = data.offset + data.products.length;
@@ -1610,6 +1615,18 @@
     /**
      * Render no results - mostra suggerimenti e prodotti in evidenza
      */
+    function showRateLimitMessage() {
+        const main = overlay.querySelector('.smartsearch-main');
+        if (!main) return;
+        main.innerHTML = `
+            <div class="smartsearch-no-results-header" style="padding: 40px 24px; text-align: center;">
+                <p style="font-size: 15px; color: var(--ss-card-title);">
+                    Stai cercando molto velocemente.<br>
+                    <span style="font-size: 13px; opacity: 0.7;">Attendi un secondo e riprova.</span>
+                </p>
+            </div>`;
+    }
+
     function renderNoResults(data) {
         const main = overlay.querySelector('.smartsearch-main');
 

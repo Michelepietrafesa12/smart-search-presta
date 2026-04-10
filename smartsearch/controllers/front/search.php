@@ -518,6 +518,19 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 die(json_encode($cachedResult, JSON_UNESCAPED_UNICODE));
             }
 
+            // Rate limit solo per ricerche non in cache
+            $maxRequests = 60;
+            if (!$this->checkRateLimit($maxRequests, 60)) {
+                header('Retry-After: 60');
+                http_response_code(429);
+                die(json_encode([
+                    'error' => true,
+                    'message' => 'Too many requests. Please try again later.',
+                    'products' => [],
+                    'total' => 0
+                ], JSON_UNESCAPED_UNICODE));
+            }
+
             // Ricerca prodotti con filtri
             $allProducts = $this->searchProducts($query, $idLang, $idShop, $filters);
 
@@ -1165,36 +1178,38 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     public function initContent()
     {
         if (Tools::getValue('ajax') || Tools::isSubmit('ajax')) {
-            // Rate limiting per IP
             $action = Tools::getValue('action', 'search');
-            $maxRequests = 30;
-            if (!$this->checkRateLimit($maxRequests, 60)) {
-                header('Content-Type: application/json; charset=utf-8');
-                header('Retry-After: 60');
-                http_response_code(429);
-                die(json_encode([
-                    'error' => true,
-                    'message' => 'Too many requests. Please try again later.',
-                    'products' => [],
-                    'total' => 0
-                ], JSON_UNESCAPED_UNICODE));
-            }
 
             // Catch ALL errors including TypeError, etc.
             try {
 
                 switch ($action) {
                     case 'filters':
-                        $this->displayAjaxFilters();
-                        break;
                     case 'bestsellers':
-                        $this->displayAjaxBestsellers();
-                        break;
                     case 'banners':
-                        $this->displayAjaxBanners();
-                        break;
                     case 'suggestions':
-                        $this->displayAjaxSuggestions();
+                        // Rate limit per azioni non-search (non cachate)
+                        $maxRequests = 60;
+                        if (!$this->checkRateLimit($maxRequests, 60)) {
+                            header('Content-Type: application/json; charset=utf-8');
+                            header('Retry-After: 60');
+                            http_response_code(429);
+                            die(json_encode([
+                                'error' => true,
+                                'message' => 'Too many requests. Please try again later.',
+                                'products' => [],
+                                'total' => 0
+                            ], JSON_UNESCAPED_UNICODE));
+                        }
+                        if ($action === 'filters') {
+                            $this->displayAjaxFilters();
+                        } elseif ($action === 'bestsellers') {
+                            $this->displayAjaxBestsellers();
+                        } elseif ($action === 'banners') {
+                            $this->displayAjaxBanners();
+                        } else {
+                            $this->displayAjaxSuggestions();
+                        }
                         break;
                     case 'search':
                     default:
