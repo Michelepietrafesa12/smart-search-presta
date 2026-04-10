@@ -642,6 +642,7 @@ class SmartSearch extends Module
         $this->context->smarty->assign([
             'smartsearch_placeholder' => $this->l('Cerca prodotti...'),
             'smartsearch_search_url' => $this->context->link->getPageLink('search', true),
+            'smartsearch_voice_enabled' => (bool)Configuration::get('SMARTSEARCH_VOICE_ENABLED'),
         ]);
 
         return $this->display(__FILE__, 'views/templates/hook/searchbar.tpl');
