@@ -1385,12 +1385,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         // Deve sembrare un CODICE, non un nome di brand/prodotto:
         // - Almeno 4 caratteri
-        // - Deve contenere almeno un numero OPPURE essere tutto maiuscolo OPPURE contenere trattini/underscore
-        // - Non deve essere una parola comune (tutto lettere minuscole)
+        // - Deve contenere almeno un numero OPPURE contenere trattini/underscore
+        // - Una parola tutta maiuscola senza numeri è un brand in caps lock, non un codice
+        // - I codici reali (EAN, UPC, SKU) contengono sempre numeri o trattini/underscore
         $hasNumber = preg_match('/[0-9]/', $code);
         $hasSpecialChar = preg_match('/[\-_]/', $code);
-        $isAllUppercase = $code === strtoupper($code) && preg_match('/[A-Z]/', $code);
-        $isLikelyCode = $hasNumber || $hasSpecialChar || $isAllUppercase;
+        $isLikelyCode = $hasNumber || $hasSpecialChar;
 
         if (strlen($code) < 4 || !preg_match('/^[a-zA-Z0-9\-_]+$/', $code) || !$isLikelyCode) {
             return [];
