@@ -519,16 +519,8 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
 
             // Rate limit solo per ricerche non in cache
-            $maxRequests = 60;
-            if (!$this->checkRateLimit($maxRequests, 60)) {
-                header('Retry-After: 60');
-                http_response_code(429);
-                die(json_encode([
-                    'error' => true,
-                    'message' => 'Too many requests. Please try again later.',
-                    'products' => [],
-                    'total' => 0
-                ], JSON_UNESCAPED_UNICODE));
+            if (!$this->checkRateLimit(120, 60, 'search')) {
+                $this->dieRateLimit();
             }
 
             // Ricerca prodotti con filtri
@@ -1185,31 +1177,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
                 switch ($action) {
                     case 'filters':
+                        if (!$this->checkRateLimit(10, 60, 'static')) { $this->dieRateLimit(); }
+                        $this->displayAjaxFilters();
+                        break;
                     case 'bestsellers':
+                        if (!$this->checkRateLimit(10, 60, 'static')) { $this->dieRateLimit(); }
+                        $this->displayAjaxBestsellers();
+                        break;
                     case 'banners':
+                        if (!$this->checkRateLimit(60, 60, 'banners')) { $this->dieRateLimit(); }
+                        $this->displayAjaxBanners();
+                        break;
                     case 'suggestions':
-                        // Rate limit per azioni non-search (non cachate)
-                        $maxRequests = 60;
-                        if (!$this->checkRateLimit($maxRequests, 60)) {
-                            header('Content-Type: application/json; charset=utf-8');
-                            header('Retry-After: 60');
-                            http_response_code(429);
-                            die(json_encode([
-                                'error' => true,
-                                'message' => 'Too many requests. Please try again later.',
-                                'products' => [],
-                                'total' => 0
-                            ], JSON_UNESCAPED_UNICODE));
-                        }
-                        if ($action === 'filters') {
-                            $this->displayAjaxFilters();
-                        } elseif ($action === 'bestsellers') {
-                            $this->displayAjaxBestsellers();
-                        } elseif ($action === 'banners') {
-                            $this->displayAjaxBanners();
-                        } else {
-                            $this->displayAjaxSuggestions();
-                        }
+                        if (!$this->checkRateLimit(200, 60, 'suggestions')) { $this->dieRateLimit(); }
+                        $this->displayAjaxSuggestions();
                         break;
                     case 'search':
                     default:
@@ -2707,7 +2688,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      * @param int $windowSeconds Dimensione della finestra in secondi
      * @return bool true se la richiesta è consentita, false se limitata
      */
-    protected function checkRateLimit($maxRequests = 30, $windowSeconds = 60)
+    protected function dieRateLimit()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Retry-After: 60');
+        http_response_code(429);
+        die(json_encode([
+            'error' => true,
+            'message' => 'Too many requests. Please try again later.',
+            'products' => [],
+            'total' => 0
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    protected function checkRateLimit($maxRequests = 30, $windowSeconds = 60, $key = 'search')
     {
         $ip = Tools::getRemoteAddr();
         if (empty($ip)) {
@@ -2719,7 +2713,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             @mkdir($rateLimitDir, 0755, true);
         }
 
-        $file = $rateLimitDir . md5($ip) . '.json';
+        $file = $rateLimitDir . md5($ip . '_' . $key) . '.json';
         $now = time();
         $allowed = true;
 
