@@ -827,7 +827,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         Db::getInstance()->update(
             'smartsearch_synonym_candidates',
             ['status' => 'approved', 'date_upd' => date('Y-m-d H:i:s')],
-            'id_candidate = ' . $id
+            'id_candidate = ' . $id . ' AND id_shop = ' . $idShop
         );
 
         // I sinonimi sono cambiati: svuota la cache dei risultati
@@ -859,7 +859,8 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
         if ($existing) {
             $current = array_filter(array_map('trim', explode(',', $existing['synonyms'])));
-            if (!in_array($target, $current, true)) {
+            $currentLower = array_map('mb_strtolower', $current);
+            if (!in_array(mb_strtolower($target), $currentLower, true)) {
                 $current[] = $target;
             }
             return Db::getInstance()->update(

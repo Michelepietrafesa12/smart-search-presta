@@ -53,6 +53,12 @@ class SmartSearchLearner
     /** @var array set di query a risultato > 0 (per target comportamentali) */
     protected $successful = [];
 
+    /** @var int Numero massimo di prodotti scansionati per costruire il vocabolario */
+    protected $maxIndexRows = 100000;
+
+    /** @var int Numero massimo di token distinti mantenuti nel vocabolario */
+    protected $maxVocabSize = 30000;
+
     /**
      * @param int $idShop
      * @param int $idLang
@@ -171,7 +177,8 @@ class SmartSearchLearner
                 FROM `' . _DB_PREFIX_ . 'smartsearch_index`
                 WHERE id_shop = ' . $this->idShop . '
                   AND id_lang = ' . $this->idLang . '
-                  AND active = 1';
+                  AND active = 1
+                LIMIT ' . (int) $this->maxIndexRows;
 
         $rows = Db::getInstance()->executeS($sql);
         if (!$rows) {
@@ -185,6 +192,13 @@ class SmartSearchLearner
                 }
                 $this->vocab[$token]++;
             }
+        }
+
+        // Limita la dimensione del vocabolario ai token piu' frequenti,
+        // per contenere memoria e tempo di confronto su cataloghi molto grandi.
+        if (count($this->vocab) > $this->maxVocabSize) {
+            arsort($this->vocab);
+            $this->vocab = array_slice($this->vocab, 0, $this->maxVocabSize, true);
         }
 
         // Indici di supporto per limitare i confronti Levenshtein
@@ -405,7 +419,8 @@ class SmartSearchLearner
 
         if ($existing) {
             $current = array_filter(array_map('trim', explode(',', $existing['synonyms'])));
-            if (in_array($target, $current, true)) {
+            $currentLower = array_map('mb_strtolower', $current);
+            if (in_array($target, $currentLower, true)) {
                 return true; // gia' presente
             }
             $current[] = $target;

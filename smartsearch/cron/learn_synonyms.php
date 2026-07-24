@@ -53,7 +53,7 @@ require_once $psRootPath . '/config/config.inc.php';
 // Verifica token per accesso HTTP
 if (!$isCli) {
     $expectedToken = md5(_COOKIE_KEY_ . 'smartsearch_cron');
-    if ($secureToken !== $expectedToken) {
+    if (!hash_equals($expectedToken, (string) $secureToken)) {
         header('HTTP/1.1 403 Forbidden');
         echo 'Token non valido';
         exit(1);

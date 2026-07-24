@@ -417,7 +417,7 @@ class SmartSearch extends Module
             `date_add` DATETIME NOT NULL,
             `date_upd` DATETIME NOT NULL,
             PRIMARY KEY (`id_candidate`),
-            UNIQUE KEY `pair_shop` (`source_term`, `target_term`, `id_shop`),
+            UNIQUE KEY `pair_shop` (`source_term`(64), `target_term`(64), `id_shop`),
             INDEX `idx_status_shop` (`status`, `id_shop`),
             INDEX `idx_confidence` (`confidence`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
@@ -499,7 +499,7 @@ class SmartSearch extends Module
                     `date_add` DATETIME NOT NULL,
                     `date_upd` DATETIME NOT NULL,
                     PRIMARY KEY (`id_candidate`),
-                    UNIQUE KEY `pair_shop` (`source_term`, `target_term`, `id_shop`),
+                    UNIQUE KEY `pair_shop` (`source_term`(64), `target_term`(64), `id_shop`),
                     INDEX `idx_status_shop` (`status`, `id_shop`),
                     INDEX `idx_confidence` (`confidence`)
                 ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;'
