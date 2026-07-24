@@ -3,7 +3,7 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.2.0
+**Versione:** 2.3.0
 **Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
@@ -197,6 +197,34 @@ Sistema intelligente di raccomandazioni basato sugli acquisti:
 
 ---
 
+### Apprendimento Automatico dei Sinonimi (Auto-Learning)
+
+Il modulo impara **da solo** nuovi sinonimi e correzioni, senza dipendenze esterne né AI a pagamento — solo i dati che hai già in casa.
+
+#### Come funziona
+1. Ogni ricerca a **zero risultati** viene registrata (tabella `smartsearch_stats`).
+2. A intervalli regolari, il motore confronta questi termini falliti con il **vocabolario del catalogo** (nomi prodotto, brand, codici) e con le ricerche di successo.
+3. Usando **Levenshtein + fonetica (Metaphone/Soundex)** con bucketing per performance, deduce la correzione più probabile e le assegna un punteggio di **confidenza (0-100%)**.
+4. I candidati sopra la **soglia di auto-approvazione** (default 85%) vengono attivati subito; gli altri finiscono in una **coda di revisione** nel pannello, dove li approvi o rifiuti con un click.
+
+**Esempio:** molti utenti cercano `magnesio suprem` → 0 risultati → il sistema propone `suprem → supremo` con confidenza 92% → attivato in automatico. Alla ricerca successiva, la query viene espansa e trova i prodotti giusti.
+
+> Il motore riconosce errori di battitura, varianti di scrittura e termini vicini. Non deduce significati concettuali astratti: per quelli restano disponibili i **sinonimi manuali**.
+
+#### Sinonimi collegati alla ricerca
+I sinonimi (sia manuali sia appresi) vengono ora applicati **direttamente nel percorso di ricerca principale** (indice FULLTEXT): ogni parola della query viene espansa con i suoi sinonimi attivi in modo bidirezionale.
+
+#### Reindicizzazione programmata
+Nuova opzione per ricostruire l'indice del catalogo **ogni N giorni** in automatico. Se sull'hosting non puoi configurare un cron reale, è disponibile uno **scheduler interno (pseudo-cron)** che avvia i job in background durante le visite al negozio, senza rallentare le pagine.
+
+#### Pannello "Apprendimento"
+- Attiva/disattiva auto-apprendimento e reindicizzazione
+- Configura frequenza (giorni), frequenza minima delle ricerche e soglie di confidenza
+- Pulsanti **"Impara ora"** e **"Reindicizza ora"**
+- Statistiche in tempo reale e coda di revisione dei candidati
+
+---
+
 ### Penalità Prodotti Esauriti
 
 I prodotti non disponibili vengono penalizzati del 30% nello scoring, facendoli apparire più in basso nei risultati di ricerca rispetto ai prodotti disponibili.
@@ -293,9 +321,22 @@ Per mantenere aggiornate le correlazioni prodotti, configura un cron job:
 0 3 * * * /usr/bin/php /var/www/html/modules/smartsearch/cron/calculate_correlations.php >> /var/log/smartsearch_cron.log 2>&1
 ```
 
+Per la reindicizzazione del catalogo e l'apprendimento dei sinonimi:
+```bash
+# Reindicizza il catalogo ogni notte alle 2:00
+0 2 * * * /usr/bin/php /var/www/html/modules/smartsearch/cron/rebuild_index.php >> /var/log/smartsearch_index.log 2>&1
+
+# Impara nuovi sinonimi ogni notte alle 4:00
+0 4 * * * /usr/bin/php /var/www/html/modules/smartsearch/cron/learn_synonyms.php >> /var/log/smartsearch_learn.log 2>&1
+```
+
+> Se non puoi configurare un cron reale, lascia attivo lo **scheduler interno** dal pannello "Apprendimento": i job partiranno automaticamente durante le visite al negozio.
+
 ### Via HTTP (con token di sicurezza)
 ```
 https://tuosito.com/modules/smartsearch/cron/calculate_correlations.php?token=TOKEN
+https://tuosito.com/modules/smartsearch/cron/rebuild_index.php?token=TOKEN
+https://tuosito.com/modules/smartsearch/cron/learn_synonyms.php?token=TOKEN
 ```
 
 Per generare il token:
@@ -315,6 +356,7 @@ smartsearch/
 ├── classes/
 │   ├── SmartSearchEngine.php          # Motore di ricerca
 │   ├── SmartSearchCache.php           # Gestione cache
+│   ├── SmartSearchLearner.php         # Apprendimento automatico sinonimi
 │   └── SmartSearchAnalytics.php       # Analytics
 ├── controllers/
 │   ├── front/
@@ -326,7 +368,9 @@ smartsearch/
 │       ├── AdminSmartSearchSynonymsController.php
 │       └── AdminSmartSearchAnalyticsController.php
 ├── cron/
-│   └── calculate_correlations.php     # Cron job correlazioni
+│   ├── calculate_correlations.php     # Cron job correlazioni
+│   ├── rebuild_index.php              # Cron ricostruzione indice
+│   └── learn_synonyms.php             # Cron apprendimento sinonimi
 ├── views/
 │   ├── css/
 │   │   ├── smartsearch.css            # Stili frontend
@@ -420,6 +464,17 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.3.0 (Luglio 2026)
+- **NEW**: Apprendimento automatico dei sinonimi dai log di ricerca a zero risultati + vocabolario del catalogo (motore interno, nessuna dipendenza esterna)
+- **NEW**: Coda di revisione dei sinonimi con auto-approvazione sopra soglia di confidenza configurabile
+- **NEW**: Reindicizzazione del catalogo programmata ogni N giorni
+- **NEW**: Scheduler interno (pseudo-cron) per hosting senza cron reale
+- **NEW**: Nuovo tab "Apprendimento" nel pannello con statistiche, soglie e pulsanti "Impara ora" / "Reindicizza ora"
+- **NEW**: Cron `learn_synonyms.php` per l'apprendimento automatico via CLI o HTTP
+- **NEW**: Classe `SmartSearchLearner` (Levenshtein + fonetica con bucketing)
+- **FIX**: I sinonimi (manuali e appresi) ora vengono applicati nel percorso di ricerca principale basato su indice FULLTEXT (prima venivano ignorati da `searchFromIndex`)
+- **IMPROVEMENT**: Allineata la versione del modulo (codice/config.xml) a quella documentata
 
 ### v2.2.0 (Gennaio 2025)
 - **NEW**: Slider prodotti consigliati in pagina prodotto ("Chi ha acquistato...")

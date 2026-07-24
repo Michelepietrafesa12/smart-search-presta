@@ -15,6 +15,7 @@ if (!defined('_PS_VERSION_')) {
 
 require_once dirname(__FILE__) . '/classes/SmartSearchEngine.php';
 require_once dirname(__FILE__) . '/classes/SmartSearchCache.php';
+require_once dirname(__FILE__) . '/classes/SmartSearchLearner.php';
 
 class SmartSearch extends Module
 {
@@ -108,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.0.0';
+        $this->version = '2.3.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -221,6 +222,17 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 2);
         Configuration::updateValue('SMARTSEARCH_CORRELATIONS_LAST_UPDATE', '');
 
+        // Apprendimento automatico sinonimi + reindicizzazione programmata
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS', 7);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_MIN_FREQ', 3);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD', 85);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', 55);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_LAST', '');
+        Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS', 3);
+        Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_LAST', '');
+
         return true;
     }
 
@@ -242,7 +254,12 @@ class SmartSearch extends Module
             'SMARTSEARCH_VOICE_ENABLED', 'SMARTSEARCH_BANNERS_ENABLED',
             'SMARTSEARCH_CORRELATIONS_ENABLED', 'SMARTSEARCH_CORRELATIONS_PRODUCT_ENABLED',
             'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS',
-            'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'SMARTSEARCH_CORRELATIONS_LAST_UPDATE'
+            'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES', 'SMARTSEARCH_CORRELATIONS_LAST_UPDATE',
+            'SMARTSEARCH_AUTOLEARN_ENABLED', 'SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS',
+            'SMARTSEARCH_AUTOLEARN_MIN_FREQ', 'SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD',
+            'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', 'SMARTSEARCH_AUTOLEARN_LAST',
+            'SMARTSEARCH_AUTOREINDEX_ENABLED', 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS',
+            'SMARTSEARCH_AUTOREINDEX_LAST'
         ];
 
         foreach ($configs as $config) {
@@ -386,6 +403,25 @@ class SmartSearch extends Module
             INDEX `idx_target` (`id_product_target`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
+        // Candidati sinonimo appresi automaticamente (coda di revisione)
+        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates` (
+            `id_candidate` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `source_term` VARCHAR(191) NOT NULL,
+            `target_term` VARCHAR(191) NOT NULL,
+            `confidence` DECIMAL(5,4) NOT NULL DEFAULT 0,
+            `source_type` VARCHAR(32) NOT NULL DEFAULT \'catalog\',
+            `occurrences` INT(11) NOT NULL DEFAULT 1,
+            `status` VARCHAR(16) NOT NULL DEFAULT \'pending\',
+            `id_lang` INT(11) UNSIGNED NOT NULL,
+            `id_shop` INT(11) UNSIGNED NOT NULL,
+            `date_add` DATETIME NOT NULL,
+            `date_upd` DATETIME NOT NULL,
+            PRIMARY KEY (`id_candidate`),
+            UNIQUE KEY `pair_shop` (`source_term`, `target_term`, `id_shop`),
+            INDEX `idx_status_shop` (`status`, `id_shop`),
+            INDEX `idx_confidence` (`confidence`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
         // Inserisci sinonimi di default
         $sql[] = 'INSERT IGNORE INTO `' . _DB_PREFIX_ . 'smartsearch_synonyms` (word, synonyms, id_shop, active, date_add, date_upd) VALUES
             ("smartphone", "cellulare, telefono, mobile, phone", 1, 1, NOW(), NOW()),
@@ -446,6 +482,47 @@ class SmartSearch extends Module
         } catch (Throwable $e) {
             // Tabella potrebbe non esistere ancora
         }
+
+        // Migrazione v8: apprendimento automatico sinonimi + reindicizzazione programmata
+        try {
+            Db::getInstance()->execute(
+                'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates` (
+                    `id_candidate` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `source_term` VARCHAR(191) NOT NULL,
+                    `target_term` VARCHAR(191) NOT NULL,
+                    `confidence` DECIMAL(5,4) NOT NULL DEFAULT 0,
+                    `source_type` VARCHAR(32) NOT NULL DEFAULT \'catalog\',
+                    `occurrences` INT(11) NOT NULL DEFAULT 1,
+                    `status` VARCHAR(16) NOT NULL DEFAULT \'pending\',
+                    `id_lang` INT(11) UNSIGNED NOT NULL,
+                    `id_shop` INT(11) UNSIGNED NOT NULL,
+                    `date_add` DATETIME NOT NULL,
+                    `date_upd` DATETIME NOT NULL,
+                    PRIMARY KEY (`id_candidate`),
+                    UNIQUE KEY `pair_shop` (`source_term`, `target_term`, `id_shop`),
+                    INDEX `idx_status_shop` (`status`, `id_shop`),
+                    INDEX `idx_confidence` (`confidence`)
+                ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;'
+            );
+
+            // Imposta i valori di default solo se non gia' presenti
+            $learnDefaults = array(
+                'SMARTSEARCH_AUTOLEARN_ENABLED' => 1,
+                'SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS' => 7,
+                'SMARTSEARCH_AUTOLEARN_MIN_FREQ' => 3,
+                'SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD' => 85,
+                'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD' => 55,
+                'SMARTSEARCH_AUTOREINDEX_ENABLED' => 1,
+                'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS' => 3,
+            );
+            foreach ($learnDefaults as $key => $value) {
+                if (Configuration::get($key) === false) {
+                    Configuration::updateValue($key, $value);
+                }
+            }
+        } catch (Throwable $e) {
+            // Ignora se non applicabile
+        }
     }
 
     /**
@@ -460,7 +537,8 @@ class SmartSearch extends Module
             'smartsearch_banners',
             'smartsearch_cache',
             'smartsearch_index',
-            'smartsearch_correlations'
+            'smartsearch_correlations',
+            'smartsearch_synonym_candidates'
         ];
 
         foreach ($tables as $table) {
@@ -568,6 +646,159 @@ class SmartSearch extends Module
                 'attributes' => 'defer' // Non blocca il parsing HTML
             ]
         );
+
+        // Scheduler interno (pseudo-cron): se un job programmato e' scaduto,
+        // lo avvia in background senza rallentare la pagina. Fail-safe.
+        try {
+            $this->maybeRunScheduledJobs();
+        } catch (Throwable $e) {
+            // Non deve mai impattare il front office
+        }
+    }
+
+    /**
+     * Scheduler interno. Verifica se i job programmati (reindicizzazione,
+     * apprendimento sinonimi) sono scaduti e li avvia via richiesta HTTP
+     * "fire and forget" verso gli script cron, senza attendere la risposta.
+     *
+     * Utile per hosting che non permettono di configurare un vero cron:
+     * l'aggiornamento avviene in occasione delle visite al negozio.
+     * Ovviamente, se e' gia' configurato un cron reale, non fa nulla di dannoso.
+     */
+    protected function maybeRunScheduledJobs()
+    {
+        // Esegui il controllo al massimo una volta per richiesta
+        static $checked = false;
+        if ($checked) {
+            return;
+        }
+        $checked = true;
+
+        $now = time();
+
+        // 1) Reindicizzazione programmata
+        if ((int) Configuration::get('SMARTSEARCH_AUTOREINDEX_ENABLED') === 1) {
+            $intervalDays = (int) Configuration::get('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS');
+            if ($intervalDays > 0 && $this->isJobDue('SMARTSEARCH_AUTOREINDEX_LAST', $intervalDays, $now)) {
+                // Segna subito l'orario per evitare avvii multipli concorrenti
+                Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_LAST', date('Y-m-d H:i:s', $now));
+                $this->triggerCronAsync('rebuild_index.php');
+            }
+        }
+
+        // 2) Apprendimento automatico sinonimi
+        if ((int) Configuration::get('SMARTSEARCH_AUTOLEARN_ENABLED') === 1) {
+            $intervalDays = (int) Configuration::get('SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS');
+            if ($intervalDays > 0 && $this->isJobDue('SMARTSEARCH_AUTOLEARN_LAST', $intervalDays, $now)) {
+                Configuration::updateValue('SMARTSEARCH_AUTOLEARN_LAST', date('Y-m-d H:i:s', $now));
+                $this->triggerCronAsync('learn_synonyms.php');
+            }
+        }
+    }
+
+    /**
+     * Verifica se un job e' scaduto rispetto al suo ultimo avvio.
+     */
+    protected function isJobDue($lastConfigKey, $intervalDays, $now)
+    {
+        $last = Configuration::get($lastConfigKey);
+        if (empty($last)) {
+            return true;
+        }
+        $lastTs = strtotime($last);
+        if ($lastTs === false) {
+            return true;
+        }
+        return ($now - $lastTs) >= ($intervalDays * 86400);
+    }
+
+    /**
+     * Avvia uno script cron via HTTP in modalita' "fire and forget":
+     * apre la connessione, invia la richiesta e chiude senza leggere la
+     * risposta, cosi' la pagina dell'utente non attende il completamento.
+     */
+    protected function triggerCronAsync($scriptName)
+    {
+        $token = md5(_COOKIE_KEY_ . 'smartsearch_cron');
+
+        $ssl = Configuration::get('PS_SSL_ENABLED');
+        $domain = $ssl ? Tools::getShopDomainSsl(false) : Tools::getShopDomain(false);
+        $baseUri = __PS_BASE_URI__; // es. "/" oppure "/shop/"
+        $path = $baseUri . 'modules/smartsearch/cron/' . $scriptName . '?token=' . $token;
+
+        $port = $ssl ? 443 : 80;
+        $transport = $ssl ? 'ssl://' : '';
+
+        $errno = 0;
+        $errstr = '';
+        $fp = @fsockopen($transport . $domain, $port, $errno, $errstr, 2);
+        if (!$fp) {
+            return false;
+        }
+
+        $out = 'GET ' . $path . " HTTP/1.1\r\n";
+        $out .= 'Host: ' . $domain . "\r\n";
+        $out .= "User-Agent: SmartSearch-Scheduler\r\n";
+        $out .= "Connection: Close\r\n\r\n";
+
+        @fwrite($fp, $out);
+        // Non leggiamo la risposta: chiudiamo subito (fire and forget)
+        @stream_set_timeout($fp, 1);
+        @fclose($fp);
+
+        return true;
+    }
+
+    /**
+     * Esegue un ciclo di apprendimento automatico dei sinonimi.
+     * Chiamato dal cron learn_synonyms.php (o manualmente dal pannello).
+     *
+     * @param int|null $idShop
+     * @param int|null $idLang
+     * @return array ['analyzed' => int, 'candidates' => int, 'auto_applied' => int]
+     */
+    public function learnSynonyms($idShop = null, $idLang = null)
+    {
+        $totals = array('analyzed' => 0, 'candidates' => 0, 'auto_applied' => 0);
+
+        $opts = array(
+            'min_freq' => (int) Configuration::get('SMARTSEARCH_AUTOLEARN_MIN_FREQ') ?: 3,
+            'auto_threshold' => ((int) Configuration::get('SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD') ?: 85) / 100,
+            'min_threshold' => ((int) Configuration::get('SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD') ?: 55) / 100,
+        );
+
+        // Determina le coppie shop/lingua da elaborare
+        $pairs = array();
+        if ($idShop !== null && $idLang !== null) {
+            $pairs[] = array((int) $idShop, (int) $idLang);
+        } else {
+            $shops = Shop::getShops(true);
+            $langs = Language::getLanguages(true);
+            foreach ($shops as $shop) {
+                foreach ($langs as $lang) {
+                    $pairs[] = array((int) $shop['id_shop'], (int) $lang['id_lang']);
+                }
+            }
+        }
+
+        foreach ($pairs as $pair) {
+            $learner = new SmartSearchLearner($pair[0], $pair[1], $opts);
+            $res = $learner->run();
+            $totals['analyzed'] += $res['analyzed'];
+            $totals['candidates'] += $res['candidates'];
+            $totals['auto_applied'] += $res['auto_applied'];
+        }
+
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_LAST', date('Y-m-d H:i:s'));
+
+        // I sinonimi sono cambiati: invalida la cache dei risultati
+        try {
+            $this->invalidateCache();
+        } catch (Throwable $e) {
+            // ignora
+        }
+
+        return $totals;
     }
 
     /**

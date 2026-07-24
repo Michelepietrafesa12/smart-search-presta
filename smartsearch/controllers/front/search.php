@@ -128,6 +128,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     protected function expandQueryWords($words)
     {
         $expanded = [];
+        $synonymMap = $this->getTableSynonyms();
         foreach ($words as $word) {
             // Aggiungi variazioni italiane (singolare/plurale)
             $variations = $this->getItalianWordVariations($word);
@@ -145,6 +146,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
             }
 
+            // Aggiungi sinonimi configurati o appresi automaticamente
+            $wl = mb_strtolower($word);
+            if (isset($synonymMap[$wl])) {
+                foreach ($synonymMap[$wl] as $syn) {
+                    if ($syn !== '' && !in_array($syn, $expanded)) {
+                        $expanded[] = $syn;
+                    }
+                }
+            }
+
             // Aggiungi correzioni brand (typo correction)
             if (mb_strlen($word) >= 4) {
                 $brandCorrections = $this->findSimilarBrandNames($word);
@@ -156,6 +167,74 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
         return $expanded;
+    }
+
+    /**
+     * Cache statica per la mappa dei sinonimi (parola => [sinonimi]).
+     */
+    protected static $tableSynonymsCache = null;
+
+    /**
+     * Carica i sinonimi attivi dalla tabella smartsearch_synonyms.
+     * Include sia quelli inseriti manualmente sia quelli appresi in automatico.
+     * La mappa e' bidirezionale: cercando un sinonimo si espande anche verso
+     * la parola principale e gli altri sinonimi del gruppo.
+     *
+     * @return array
+     */
+    protected function getTableSynonyms()
+    {
+        if (self::$tableSynonymsCache !== null) {
+            return self::$tableSynonymsCache;
+        }
+
+        self::$tableSynonymsCache = [];
+
+        // Rispetta il toggle globale dei sinonimi
+        if (!Configuration::get('SMARTSEARCH_SYNONYMS_ENABLED')) {
+            return self::$tableSynonymsCache;
+        }
+
+        $idShop = (int) $this->context->shop->id;
+        $rows = Db::getInstance()->executeS(
+            'SELECT word, synonyms FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms`
+             WHERE id_shop = ' . $idShop . ' AND active = 1'
+        );
+
+        if (!$rows) {
+            return self::$tableSynonymsCache;
+        }
+
+        $map = [];
+        foreach ($rows as $row) {
+            $word = mb_strtolower(trim($row['word']));
+            $syns = array_filter(array_map(function ($s) {
+                return mb_strtolower(trim($s));
+            }, explode(',', $row['synonyms'])));
+
+            if ($word === '' || empty($syns)) {
+                continue;
+            }
+
+            // Gruppo completo: parola principale + tutti i sinonimi
+            $group = array_unique(array_merge([$word], $syns));
+
+            // Ogni termine del gruppo espande verso tutti gli altri
+            foreach ($group as $term) {
+                foreach ($group as $other) {
+                    if ($term !== $other) {
+                        $map[$term][] = $other;
+                    }
+                }
+            }
+        }
+
+        foreach ($map as $k => $v) {
+            $map[$k] = array_values(array_unique($v));
+        }
+
+        self::$tableSynonymsCache = $map;
+        return self::$tableSynonymsCache;
     }
 
     /**

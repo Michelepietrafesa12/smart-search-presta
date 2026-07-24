@@ -69,6 +69,11 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                                     <i class="icon-picture-o"></i> Banner
                                 </a>
                             </li>
+                            <li class="' . ($this->activeTab == 'learning' ? 'active' : '') . '">
+                                <a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=learning">
+                                    <i class="icon-magic"></i> Apprendimento
+                                </a>
+                            </li>
                             <li class="' . ($this->activeTab == 'style' ? 'active' : '') . '">
                                 <a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=style">
                                     <i class="icon-paint-brush"></i> Stile
@@ -87,6 +92,9 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                 break;
             case 'style':
                 $html .= $this->renderStyleTab();
+                break;
+            case 'learning':
+                $html .= $this->renderLearningTab();
                 break;
             default:
                 $html .= $this->renderSettingsTab();
@@ -166,6 +174,48 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             $this->resetStyleSettings();
             $this->confirmations[] = $this->l('Stile ripristinato ai valori predefiniti!');
             $this->activeTab = 'style';
+        }
+
+        if (Tools::isSubmit('submitLearningSettings')) {
+            $this->saveLearningSettings();
+            $this->confirmations[] = $this->l('Impostazioni di apprendimento salvate!');
+            $this->activeTab = 'learning';
+        }
+
+        if (Tools::isSubmit('runLearnNow')) {
+            $res = $this->module->learnSynonyms(
+                (int)$this->context->shop->id,
+                (int)$this->context->language->id
+            );
+            $this->confirmations[] = sprintf(
+                $this->l('Apprendimento completato: %d query analizzate, %d candidati, %d applicati in automatico.'),
+                (int)$res['analyzed'],
+                (int)$res['candidates'],
+                (int)$res['auto_applied']
+            );
+            $this->activeTab = 'learning';
+        }
+
+        if (Tools::isSubmit('runReindexNow')) {
+            if ($this->module->rebuildSearchIndex()) {
+                Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_LAST', date('Y-m-d H:i:s'));
+                $this->confirmations[] = $this->l('Indice di ricerca ricostruito con successo!');
+            } else {
+                $this->errors[] = $this->l('Errore nella ricostruzione dell\'indice.');
+            }
+            $this->activeTab = 'learning';
+        }
+
+        if (Tools::getValue('approveCandidate')) {
+            $this->approveCandidate((int)Tools::getValue('approveCandidate'));
+            $this->confirmations[] = $this->l('Sinonimo approvato e attivato!');
+            $this->activeTab = 'learning';
+        }
+
+        if (Tools::getValue('rejectCandidate')) {
+            $this->rejectCandidate((int)Tools::getValue('rejectCandidate'));
+            $this->confirmations[] = $this->l('Candidato rifiutato.');
+            $this->activeTab = 'learning';
         }
 
         parent::postProcess();
@@ -578,6 +628,255 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         $html .= '</div>';
 
         return $html;
+    }
+
+    protected function renderLearningTab()
+    {
+        $idShop = (int)$this->context->shop->id;
+        $idLang = (int)$this->context->language->id;
+        $baseLink = $this->context->link->getAdminLink('AdminSmartSearchDashboard');
+        $formAction = $baseLink . '&tab=learning';
+
+        // Valori correnti
+        $autolearnEnabled = (int)Configuration::get('SMARTSEARCH_AUTOLEARN_ENABLED');
+        $autolearnInterval = (int)Configuration::get('SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS') ?: 7;
+        $autolearnMinFreq = (int)Configuration::get('SMARTSEARCH_AUTOLEARN_MIN_FREQ') ?: 3;
+        $autoThreshold = (int)Configuration::get('SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD') ?: 85;
+        $minThreshold = (int)Configuration::get('SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD') ?: 55;
+        $autolearnLast = Configuration::get('SMARTSEARCH_AUTOLEARN_LAST');
+        $autoreindexEnabled = (int)Configuration::get('SMARTSEARCH_AUTOREINDEX_ENABLED');
+        $autoreindexInterval = (int)Configuration::get('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS') ?: 3;
+        $autoreindexLast = Configuration::get('SMARTSEARCH_AUTOREINDEX_LAST');
+
+        // Statistiche
+        $pendingCount = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates`
+             WHERE id_shop = ' . $idShop . ' AND status = "pending"'
+        );
+        $autoCount = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates`
+             WHERE id_shop = ' . $idShop . ' AND status IN ("auto","approved")'
+        );
+        $synonymsCount = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms`
+             WHERE id_shop = ' . $idShop . ' AND active = 1'
+        );
+        $indexCount = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_index` WHERE id_shop = ' . $idShop
+        );
+
+        $html = '<div class="panel"><div class="panel-heading"><i class="icon-magic"></i> Apprendimento Automatico</div>';
+
+        // Introduzione
+        $html .= '<div class="alert alert-info">';
+        $html .= '<h4><i class="icon-info-circle"></i> Come funziona</h4>';
+        $html .= '<p>Il sistema analizza periodicamente le <strong>ricerche a zero risultati</strong> e le confronta con il ';
+        $html .= 'vocabolario del catalogo (nomi prodotto, brand, codici) per dedurre <strong>sinonimi e correzioni</strong> in automatico. ';
+        $html .= 'I suggerimenti con confidenza alta vengono attivati subito; gli altri restano qui in attesa della tua approvazione.</p>';
+        $html .= '<p class="text-muted" style="margin-bottom:0"><small>Il motore riconosce errori di battitura, varianti di scrittura e termini vicini. ';
+        $html .= 'Non deduce significati concettuali (per quelli usa i sinonimi manuali).</small></p>';
+        $html .= '</div>';
+
+        // Statistiche rapide
+        $html .= '<div class="row" style="margin-bottom:15px">';
+        $html .= $this->statBox('icon-inbox', $pendingCount, 'In attesa di revisione', $pendingCount > 0 ? '#f97316' : '#95a5a6');
+        $html .= $this->statBox('icon-check-circle', $autoCount, 'Sinonimi appresi attivi', '#059669');
+        $html .= $this->statBox('icon-tags', $synonymsCount, 'Sinonimi totali attivi', '#25b9d7');
+        $html .= $this->statBox('icon-database', $indexCount, 'Prodotti indicizzati', '#8e44ad');
+        $html .= '</div>';
+
+        // Azioni manuali
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '" style="margin-bottom:15px">';
+        $html .= '<button type="submit" name="runLearnNow" class="btn btn-primary"><i class="icon-magic"></i> ' . $this->l('Impara ora') . '</button> ';
+        $html .= '<button type="submit" name="runReindexNow" class="btn btn-default"><i class="icon-refresh"></i> ' . $this->l('Reindicizza catalogo ora') . '</button>';
+        $html .= ' <span class="help-block" style="display:inline-block;margin-left:10px">';
+        $html .= '<small><i class="icon-clock-o"></i> ' . $this->l('Ultimo apprendimento:') . ' <strong>' . ($autolearnLast ? htmlspecialchars($autolearnLast) : $this->l('mai')) . '</strong>';
+        $html .= ' &nbsp;|&nbsp; ' . $this->l('Ultima reindicizzazione:') . ' <strong>' . ($autoreindexLast ? htmlspecialchars($autoreindexLast) : $this->l('mai')) . '</strong></small></span>';
+        $html .= '</form>';
+
+        // Impostazioni pianificazione
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '">';
+        $html .= '<div class="panel"><div class="panel-heading"><i class="icon-cogs"></i> ' . $this->l('Pianificazione automatica') . '</div>';
+        $html .= '<div class="row">';
+
+        // Colonna apprendimento
+        $html .= '<div class="col-md-6"><h5><i class="icon-magic"></i> ' . $this->l('Apprendimento sinonimi') . '</h5>';
+        $html .= '<div class="form-group"><label>' . $this->l('Attivo') . '</label> ';
+        $html .= '<select name="autolearn_enabled" class="form-control">';
+        $html .= '<option value="1"' . ($autolearnEnabled ? ' selected' : '') . '>' . $this->l('Sì') . '</option>';
+        $html .= '<option value="0"' . (!$autolearnEnabled ? ' selected' : '') . '>' . $this->l('No') . '</option>';
+        $html .= '</select></div>';
+        $html .= '<div class="form-group"><label>' . $this->l('Frequenza (ogni N giorni)') . '</label>';
+        $html .= '<input type="number" name="autolearn_interval" class="form-control" value="' . $autolearnInterval . '" min="1" max="365"></div>';
+        $html .= '<div class="form-group"><label>' . $this->l('Ricerche minime per considerare un termine') . '</label>';
+        $html .= '<input type="number" name="autolearn_minfreq" class="form-control" value="' . $autolearnMinFreq . '" min="1" max="1000">';
+        $html .= '<p class="help-block"><small>' . $this->l('Un termine a zero risultati viene analizzato solo se cercato almeno questo numero di volte.') . '</small></p></div>';
+        $html .= '</div>';
+
+        // Colonna soglie + reindex
+        $html .= '<div class="col-md-6"><h5><i class="icon-sliders"></i> ' . $this->l('Soglie di confidenza') . '</h5>';
+        $html .= '<div class="form-group"><label>' . $this->l('Auto-approvazione sopra (%)') . '</label>';
+        $html .= '<input type="number" name="autolearn_auto_threshold" class="form-control" value="' . $autoThreshold . '" min="50" max="100">';
+        $html .= '<p class="help-block"><small>' . $this->l('Sopra questa confidenza il sinonimo viene attivato senza revisione.') . '</small></p></div>';
+        $html .= '<div class="form-group"><label>' . $this->l('Scarta sotto (%)') . '</label>';
+        $html .= '<input type="number" name="autolearn_min_threshold" class="form-control" value="' . $minThreshold . '" min="0" max="99">';
+        $html .= '<p class="help-block"><small>' . $this->l('Sotto questa confidenza il suggerimento viene ignorato.') . '</small></p></div>';
+
+        $html .= '<h5 style="margin-top:20px"><i class="icon-refresh"></i> ' . $this->l('Reindicizzazione catalogo') . '</h5>';
+        $html .= '<div class="row"><div class="col-md-6"><div class="form-group"><label>' . $this->l('Attiva') . '</label>';
+        $html .= '<select name="autoreindex_enabled" class="form-control">';
+        $html .= '<option value="1"' . ($autoreindexEnabled ? ' selected' : '') . '>' . $this->l('Sì') . '</option>';
+        $html .= '<option value="0"' . (!$autoreindexEnabled ? ' selected' : '') . '>' . $this->l('No') . '</option>';
+        $html .= '</select></div></div>';
+        $html .= '<div class="col-md-6"><div class="form-group"><label>' . $this->l('Ogni N giorni') . '</label>';
+        $html .= '<input type="number" name="autoreindex_interval" class="form-control" value="' . $autoreindexInterval . '" min="1" max="365"></div></div></div>';
+        $html .= '</div>';
+
+        $html .= '</div>'; // row
+        $html .= '<div class="panel-footer"><button type="submit" name="submitLearningSettings" class="btn btn-primary"><i class="icon-save"></i> ' . $this->l('Salva impostazioni') . '</button></div>';
+        $html .= '</div>'; // panel pianificazione
+        $html .= '</form>';
+
+        // Nota sullo scheduler senza cron reale
+        $html .= '<div class="alert alert-warning"><small><i class="icon-lightbulb-o"></i> ';
+        $html .= $this->l('Se non hai un cron configurato sul server, i job vengono avviati automaticamente durante le visite al negozio (pseudo-cron). Per prestazioni ottimali su cataloghi grandi, configura comunque un vero cron job come indicato nel README.');
+        $html .= '</small></div>';
+
+        // Coda di revisione
+        $candidates = Db::getInstance()->executeS(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates`
+             WHERE id_shop = ' . $idShop . ' AND status = "pending"
+             ORDER BY confidence DESC, occurrences DESC
+             LIMIT 200'
+        );
+
+        $html .= '<div class="panel"><div class="panel-heading"><i class="icon-inbox"></i> ' . $this->l('Coda di revisione') . ' <span class="badge">' . $pendingCount . '</span></div>';
+
+        if ($candidates) {
+            $html .= '<table class="table"><thead><tr>';
+            $html .= '<th>' . $this->l('Termine cercato') . '</th><th></th><th>' . $this->l('Suggerito') . '</th>';
+            $html .= '<th>' . $this->l('Confidenza') . '</th><th>' . $this->l('Ricerche') . '</th><th>' . $this->l('Origine') . '</th><th>' . $this->l('Azioni') . '</th>';
+            $html .= '</tr></thead><tbody>';
+            foreach ($candidates as $c) {
+                $conf = round(((float)$c['confidence']) * 100);
+                $confColor = $conf >= 80 ? 'success' : ($conf >= 65 ? 'warning' : 'default');
+                $html .= '<tr>';
+                $html .= '<td><strong>' . htmlspecialchars($c['source_term']) . '</strong></td>';
+                $html .= '<td><i class="icon-long-arrow-right"></i></td>';
+                $html .= '<td>' . htmlspecialchars($c['target_term']) . '</td>';
+                $html .= '<td><span class="label label-' . $confColor . '">' . $conf . '%</span></td>';
+                $html .= '<td>' . (int)$c['occurrences'] . '</td>';
+                $html .= '<td><small class="text-muted">' . htmlspecialchars($c['source_type']) . '</small></td>';
+                $html .= '<td>';
+                $html .= '<a href="' . $baseLink . '&tab=learning&approveCandidate=' . (int)$c['id_candidate'] . '" class="btn btn-success btn-xs"><i class="icon-check"></i> ' . $this->l('Approva') . '</a> ';
+                $html .= '<a href="' . $baseLink . '&tab=learning&rejectCandidate=' . (int)$c['id_candidate'] . '" class="btn btn-default btn-xs"><i class="icon-remove"></i> ' . $this->l('Rifiuta') . '</a>';
+                $html .= '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        } else {
+            $html .= '<div class="alert alert-info" style="margin:15px">' . $this->l('Nessun candidato in attesa. Esegui "Impara ora" dopo aver raccolto ricerche a zero risultati.') . '</div>';
+        }
+        $html .= '</div>'; // panel coda
+
+        $html .= '</div>'; // panel principale
+        return $html;
+    }
+
+    protected function statBox($icon, $value, $label, $color)
+    {
+        $html = '<div class="col-md-3"><div class="panel" style="text-align:center;border-top:3px solid ' . $color . '">';
+        $html .= '<div style="font-size:28px;color:' . $color . '"><i class="' . $icon . '"></i> ' . (int)$value . '</div>';
+        $html .= '<div class="text-muted"><small>' . $label . '</small></div>';
+        $html .= '</div></div>';
+        return $html;
+    }
+
+    protected function saveLearningSettings()
+    {
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_ENABLED', (int)Tools::getValue('autolearn_enabled'));
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS', max(1, (int)Tools::getValue('autolearn_interval')));
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_MIN_FREQ', max(1, (int)Tools::getValue('autolearn_minfreq')));
+
+        $autoThr = (int)Tools::getValue('autolearn_auto_threshold');
+        $minThr = (int)Tools::getValue('autolearn_min_threshold');
+        $autoThr = min(100, max(50, $autoThr));
+        $minThr = min(99, max(0, $minThr));
+        if ($minThr >= $autoThr) {
+            $minThr = max(0, $autoThr - 1);
+        }
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD', $autoThr);
+        Configuration::updateValue('SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', $minThr);
+
+        Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_ENABLED', (int)Tools::getValue('autoreindex_enabled'));
+        Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS', max(1, (int)Tools::getValue('autoreindex_interval')));
+    }
+
+    protected function approveCandidate($id)
+    {
+        $idShop = (int)$this->context->shop->id;
+        $candidate = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates`
+             WHERE id_candidate = ' . $id . ' AND id_shop = ' . $idShop
+        );
+        if (!$candidate) {
+            return false;
+        }
+
+        $this->applyLearnedSynonym($candidate['source_term'], $candidate['target_term'], $idShop);
+
+        Db::getInstance()->update(
+            'smartsearch_synonym_candidates',
+            ['status' => 'approved', 'date_upd' => date('Y-m-d H:i:s')],
+            'id_candidate = ' . $id
+        );
+
+        // I sinonimi sono cambiati: svuota la cache dei risultati
+        $this->clearModuleCache();
+        return true;
+    }
+
+    protected function rejectCandidate($id)
+    {
+        $idShop = (int)$this->context->shop->id;
+        return Db::getInstance()->update(
+            'smartsearch_synonym_candidates',
+            ['status' => 'rejected', 'date_upd' => date('Y-m-d H:i:s')],
+            'id_candidate = ' . $id . ' AND id_shop = ' . $idShop
+        );
+    }
+
+    /**
+     * Aggiunge un sinonimo alla tabella smartsearch_synonyms (word => target).
+     * Se la parola esiste gia', accoda il target senza duplicare.
+     */
+    protected function applyLearnedSynonym($source, $target, $idShop)
+    {
+        $now = date('Y-m-d H:i:s');
+        $existing = Db::getInstance()->getRow(
+            'SELECT id_smartsearch_synonym, synonyms FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms`
+             WHERE word = \'' . pSQL($source) . '\' AND id_shop = ' . (int)$idShop
+        );
+
+        if ($existing) {
+            $current = array_filter(array_map('trim', explode(',', $existing['synonyms'])));
+            if (!in_array($target, $current, true)) {
+                $current[] = $target;
+            }
+            return Db::getInstance()->update(
+                'smartsearch_synonyms',
+                ['synonyms' => pSQL(implode(', ', $current)), 'active' => 1, 'date_upd' => $now],
+                'id_smartsearch_synonym = ' . (int)$existing['id_smartsearch_synonym']
+            );
+        }
+
+        return Db::getInstance()->insert('smartsearch_synonyms', [
+            'word' => pSQL($source),
+            'synonyms' => pSQL($target),
+            'id_shop' => (int)$idShop,
+            'active' => 1,
+            'date_add' => $now,
+            'date_upd' => $now,
+        ]);
     }
 
     protected function getDefaultStyleValues()
