@@ -3263,8 +3263,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $this->context->cookie->write();
             }
 
-            // Invalida la cache dei risultati di questa query cosi' il nuovo
-            // ranking viene applicato prima possibile
+            // Nota: il nuovo ranking viene applicato al scadere della cache
+            // dei risultati (TTL breve). L'LTR e' un segnale graduale, non
+            // richiede effetto immediato sulla singola query.
             die(json_encode(['ok' => true]));
         } catch (Throwable $e) {
             die(json_encode(['ok' => false]));

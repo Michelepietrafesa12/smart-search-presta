@@ -154,6 +154,7 @@ class SmartSearch extends Module
             && $this->registerHook('displayFooterProduct')
             && $this->registerHook('displayShoppingCartFooter')
             && $this->registerHook('actionValidateOrder')
+            && $this->registerHook('actionCartSave')
             && $this->installDb()
             && $this->installTabs();
     }
@@ -561,6 +562,11 @@ class SmartSearch extends Module
                     Configuration::updateValue($key, $value);
                 }
             }
+
+            // Registra gli hook per il learning-to-rank sulle installazioni
+            // esistenti (registerHook e' idempotente).
+            $this->registerHook('actionValidateOrder');
+            $this->registerHook('actionCartSave');
         } catch (Throwable $e) {
             // Ignora se non applicabile
         }
@@ -1034,8 +1040,48 @@ class SmartSearch extends Module
 
             // Consuma l'attribuzione una sola volta
             unset($cookie->smartsearch_last_q, $cookie->smartsearch_last_q_ts);
+            $cookie->write();
         } catch (Throwable $e) {
             // Non bloccare mai il checkout
+        }
+    }
+
+    /**
+     * Attribuzione "aggiunta al carrello" per il learning-to-rank.
+     * Se il prodotto aggiunto proviene da un click su un risultato di ricerca
+     * (cookie recente), incrementa il contatore "carts" per query -> prodotto.
+     * Fail-safe: non deve mai interferire con la gestione del carrello.
+     */
+    public function hookActionCartSave($params)
+    {
+        try {
+            if (!(int) Configuration::get('SMARTSEARCH_LTR_ENABLED')) {
+                return;
+            }
+
+            // Solo aggiunte reali al carrello (il form standard invia add=1)
+            if (!Tools::getValue('add') && Tools::getValue('op') !== 'up') {
+                return;
+            }
+
+            $idProduct = (int) Tools::getValue('id_product', 0);
+            if ($idProduct <= 0) {
+                return;
+            }
+
+            $cookie = $this->context->cookie;
+            $lastQuery = isset($cookie->smartsearch_last_q) ? (string) $cookie->smartsearch_last_q : '';
+            $lastTs = isset($cookie->smartsearch_last_q_ts) ? (int) $cookie->smartsearch_last_q_ts : 0;
+
+            if ($lastQuery === '' || $lastTs === 0 || (time() - $lastTs) > 7200) {
+                return;
+            }
+
+            $idShop = (int) $this->context->shop->id;
+            $idLang = (int) $this->context->language->id;
+            $this->recordClickStat($lastQuery, $idProduct, $idLang, $idShop, 'carts');
+        } catch (Throwable $e) {
+            // Non interferire mai col carrello
         }
     }
 
@@ -1047,7 +1093,9 @@ class SmartSearch extends Module
         $query = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', (string) $query);
         $query = mb_strtolower(trim($query));
         $query = preg_replace('/\s+/', ' ', $query);
-        return mb_substr($query, 0, 191);
+        // Limita a 64 caratteri per coincidere col prefisso della chiave univoca
+        // (query_norm(64)) ed evitare che query lunghe si sovrappongano in lettura.
+        return mb_substr($query, 0, 64);
     }
 
     /**
