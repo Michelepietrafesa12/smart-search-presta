@@ -723,6 +723,7 @@ class SmartSearch extends Module
         $checked = true;
 
         $now = time();
+        $dueScripts = array();
 
         // 1) Reindicizzazione programmata
         if ((int) Configuration::get('SMARTSEARCH_AUTOREINDEX_ENABLED') === 1) {
@@ -730,7 +731,7 @@ class SmartSearch extends Module
             if ($intervalDays > 0 && $this->isJobDue('SMARTSEARCH_AUTOREINDEX_LAST', $intervalDays, $now)) {
                 // Segna subito l'orario per evitare avvii multipli concorrenti
                 Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_LAST', date('Y-m-d H:i:s', $now));
-                $this->triggerCronAsync('rebuild_index.php');
+                $dueScripts[] = 'rebuild_index.php';
             }
         }
 
@@ -739,9 +740,27 @@ class SmartSearch extends Module
             $intervalDays = (int) Configuration::get('SMARTSEARCH_AUTOLEARN_INTERVAL_DAYS');
             if ($intervalDays > 0 && $this->isJobDue('SMARTSEARCH_AUTOLEARN_LAST', $intervalDays, $now)) {
                 Configuration::updateValue('SMARTSEARCH_AUTOLEARN_LAST', date('Y-m-d H:i:s', $now));
-                $this->triggerCronAsync('learn_synonyms.php');
+                $dueScripts[] = 'learn_synonyms.php';
             }
         }
+
+        if (empty($dueScripts)) {
+            return;
+        }
+
+        // Avvia i job SOLO dopo aver consegnato la pagina al visitatore, cosi'
+        // la connessione di rete dello scheduler non aggiunge mai latenza al
+        // caricamento. La pagina e' gia' stata renderizzata a questo punto.
+        $self = $this;
+        register_shutdown_function(function () use ($self, $dueScripts) {
+            // Se disponibile (PHP-FPM), chiudi la risposta verso il browser
+            if (function_exists('fastcgi_finish_request')) {
+                @fastcgi_finish_request();
+            }
+            foreach ($dueScripts as $script) {
+                $self->triggerCronAsync($script);
+            }
+        });
     }
 
     /**
@@ -765,7 +784,7 @@ class SmartSearch extends Module
      * apre la connessione, invia la richiesta e chiude senza leggere la
      * risposta, cosi' la pagina dell'utente non attende il completamento.
      */
-    protected function triggerCronAsync($scriptName)
+    public function triggerCronAsync($scriptName)
     {
         $token = md5(_COOKIE_KEY_ . 'smartsearch_cron');
 
