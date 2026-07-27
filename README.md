@@ -3,7 +3,7 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.3.0
+**Versione:** 2.4.0
 **Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
@@ -194,6 +194,29 @@ Sistema intelligente di raccomandazioni basato sugli acquisti:
 - Script per calcolo automatico delle correlazioni
 - Eseguibile da CLI o via HTTP con token di sicurezza
 - Consigliato: esecuzione notturna giornaliera
+
+---
+
+### Learning-to-Rank (il ranking impara dai click)
+
+I risultati **migliorano da soli con l'uso**: i prodotti che gli utenti cliccano e acquistano per una determinata ricerca salgono automaticamente in cima **per quella ricerca**.
+
+#### Come funziona
+1. Ogni click su un risultato di ricerca viene registrato per la coppia **query → prodotto** (tabella `smartsearch_click_stats`), tramite `navigator.sendBeacon` (non rallenta la navigazione).
+2. Le **conversioni** sono attribuite via hook `actionValidateOrder`: se l'ordine deriva da un click su un risultato (entro 2 ore), i prodotti acquistati ricevono il segnale più forte.
+3. In fase di ranking, il punteggio finale diventa `rilevanza × boost × ltr`, dove il fattore LTR premia i prodotti più performanti per quella query.
+
+#### Pesi dei segnali
+| Evento | Peso |
+|---|---|
+| Click | 1 |
+| Aggiunta al carrello | 3 |
+| Ordine (conversione) | 6 |
+
+Il prodotto con la performance migliore per una query riceve il **boost massimo** (configurabile, default +50%), gli altri in proporzione. La **rilevanza testuale resta prioritaria**: l'LTR riordina tra risultati già pertinenti, non introduce risultati fuori tema.
+
+#### Controllo
+Dal tab "Apprendimento": attiva/disattiva, regola la **forza del boost** (0-100%) e monitora il numero di segnali raccolti. Tutto interno, nessun costo ricorrente, nessun dato inviato a terzi.
 
 ---
 
@@ -464,6 +487,14 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.4.0 (Luglio 2026)
+- **NEW**: Learning-to-rank — i prodotti più cliccati/acquistati per una query salgono automaticamente nei risultati di quella query
+- **NEW**: Tracking click sui risultati via `navigator.sendBeacon` (tabella `smartsearch_click_stats`)
+- **NEW**: Attribuzione conversioni via hook `actionValidateOrder` (finestra 2 ore)
+- **NEW**: Controllo LTR nel tab "Apprendimento" (attiva/disattiva + forza del boost 0-100%)
+- **NEW**: Endpoint AJAX `action=track` e potatura automatica dei segnali obsoleti
+- **IMPROVEMENT**: Ranking finale = rilevanza × boost × learning-to-rank
 
 ### v2.3.0 (Luglio 2026)
 - **NEW**: Apprendimento automatico dei sinonimi dai log di ricerca a zero risultati + vocabolario del catalogo (motore interno, nessuna dipendenza esterna)

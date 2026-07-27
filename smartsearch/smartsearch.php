@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.3.0';
+        $this->version = '2.4.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -153,6 +153,7 @@ class SmartSearch extends Module
             && $this->registerHook('actionProductDelete')
             && $this->registerHook('displayFooterProduct')
             && $this->registerHook('displayShoppingCartFooter')
+            && $this->registerHook('actionValidateOrder')
             && $this->installDb()
             && $this->installTabs();
     }
@@ -233,6 +234,10 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS', 3);
         Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_LAST', '');
 
+        // Learning-to-rank (i prodotti performanti per una query salgono)
+        Configuration::updateValue('SMARTSEARCH_LTR_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_LTR_STRENGTH', 50);
+
         return true;
     }
 
@@ -259,7 +264,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_AUTOLEARN_MIN_FREQ', 'SMARTSEARCH_AUTOLEARN_AUTO_THRESHOLD',
             'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', 'SMARTSEARCH_AUTOLEARN_LAST',
             'SMARTSEARCH_AUTOREINDEX_ENABLED', 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS',
-            'SMARTSEARCH_AUTOREINDEX_LAST'
+            'SMARTSEARCH_AUTOREINDEX_LAST',
+            'SMARTSEARCH_LTR_ENABLED', 'SMARTSEARCH_LTR_STRENGTH'
         ];
 
         foreach ($configs as $config) {
@@ -403,6 +409,22 @@ class SmartSearch extends Module
             INDEX `idx_target` (`id_product_target`)
         ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
 
+        // Statistiche di click/conversione per query (learning-to-rank)
+        $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_click_stats` (
+            `id_click_stat` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `query_norm` VARCHAR(191) NOT NULL,
+            `id_product` INT(11) UNSIGNED NOT NULL,
+            `id_lang` INT(11) UNSIGNED NOT NULL,
+            `id_shop` INT(11) UNSIGNED NOT NULL,
+            `clicks` INT(11) NOT NULL DEFAULT 0,
+            `carts` INT(11) NOT NULL DEFAULT 0,
+            `orders` INT(11) NOT NULL DEFAULT 0,
+            `date_upd` DATETIME NOT NULL,
+            PRIMARY KEY (`id_click_stat`),
+            UNIQUE KEY `query_product` (`query_norm`(64), `id_product`, `id_shop`, `id_lang`),
+            INDEX `idx_query_shop_lang` (`query_norm`(64), `id_shop`, `id_lang`)
+        ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;';
+
         // Candidati sinonimo appresi automaticamente (coda di revisione)
         $sql[] = 'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_synonym_candidates` (
             `id_candidate` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -505,6 +527,23 @@ class SmartSearch extends Module
                 ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;'
             );
 
+            Db::getInstance()->execute(
+                'CREATE TABLE IF NOT EXISTS `' . _DB_PREFIX_ . 'smartsearch_click_stats` (
+                    `id_click_stat` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+                    `query_norm` VARCHAR(191) NOT NULL,
+                    `id_product` INT(11) UNSIGNED NOT NULL,
+                    `id_lang` INT(11) UNSIGNED NOT NULL,
+                    `id_shop` INT(11) UNSIGNED NOT NULL,
+                    `clicks` INT(11) NOT NULL DEFAULT 0,
+                    `carts` INT(11) NOT NULL DEFAULT 0,
+                    `orders` INT(11) NOT NULL DEFAULT 0,
+                    `date_upd` DATETIME NOT NULL,
+                    PRIMARY KEY (`id_click_stat`),
+                    UNIQUE KEY `query_product` (`query_norm`(64), `id_product`, `id_shop`, `id_lang`),
+                    INDEX `idx_query_shop_lang` (`query_norm`(64), `id_shop`, `id_lang`)
+                ) ENGINE=' . _MYSQL_ENGINE_ . ' DEFAULT CHARSET=utf8mb4;'
+            );
+
             // Imposta i valori di default solo se non gia' presenti
             $learnDefaults = array(
                 'SMARTSEARCH_AUTOLEARN_ENABLED' => 1,
@@ -514,6 +553,8 @@ class SmartSearch extends Module
                 'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD' => 55,
                 'SMARTSEARCH_AUTOREINDEX_ENABLED' => 1,
                 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS' => 3,
+                'SMARTSEARCH_LTR_ENABLED' => 1,
+                'SMARTSEARCH_LTR_STRENGTH' => 50,
             );
             foreach ($learnDefaults as $key => $value) {
                 if (Configuration::get($key) === false) {
@@ -538,7 +579,8 @@ class SmartSearch extends Module
             'smartsearch_cache',
             'smartsearch_index',
             'smartsearch_correlations',
-            'smartsearch_synonym_candidates'
+            'smartsearch_synonym_candidates',
+            'smartsearch_click_stats'
         ];
 
         foreach ($tables as $table) {
@@ -791,6 +833,17 @@ class SmartSearch extends Module
 
         Configuration::updateValue('SMARTSEARCH_AUTOLEARN_LAST', date('Y-m-d H:i:s'));
 
+        // Potatura click-stats obsoleti a basso segnale (evita crescita illimitata)
+        try {
+            Db::getInstance()->execute(
+                'DELETE FROM `' . _DB_PREFIX_ . 'smartsearch_click_stats`
+                 WHERE date_upd < DATE_SUB(NOW(), INTERVAL 180 DAY)
+                   AND (clicks + carts + orders) <= 1'
+            );
+        } catch (Throwable $e) {
+            // ignora
+        }
+
         // I sinonimi sono cambiati: invalida la cache dei risultati
         try {
             $this->invalidateCache();
@@ -926,6 +979,105 @@ class SmartSearch extends Module
         if ($idProduct) {
             $this->deleteProductIndex($idProduct);
         }
+    }
+
+    /**
+     * Attribuzione conversioni per il learning-to-rank.
+     * Se l'ordine deriva da un click su un risultato di ricerca (cookie
+     * impostato al click, entro la finestra temporale), incrementa il
+     * contatore "orders" per la coppia query -> prodotto acquistato.
+     * Fail-safe: non deve MAI bloccare la validazione dell'ordine.
+     */
+    public function hookActionValidateOrder($params)
+    {
+        try {
+            if (!(int) Configuration::get('SMARTSEARCH_LTR_ENABLED')) {
+                return;
+            }
+
+            $cookie = $this->context->cookie;
+            $lastQuery = isset($cookie->smartsearch_last_q) ? (string) $cookie->smartsearch_last_q : '';
+            $lastTs = isset($cookie->smartsearch_last_q_ts) ? (int) $cookie->smartsearch_last_q_ts : 0;
+
+            if ($lastQuery === '' || $lastTs === 0) {
+                return;
+            }
+
+            // Finestra di attribuzione: 2 ore
+            if ((time() - $lastTs) > 7200) {
+                return;
+            }
+
+            $order = isset($params['order']) ? $params['order'] : null;
+            if (!$order || !Validate::isLoadedObject($order)) {
+                return;
+            }
+
+            $idShop = (int) $order->id_shop;
+            $idLang = (int) $order->id_lang;
+            $queryNorm = $this->normalizeClickQuery($lastQuery);
+            if ($queryNorm === '') {
+                return;
+            }
+
+            $products = $order->getProducts();
+            if (!is_array($products)) {
+                return;
+            }
+
+            foreach ($products as $p) {
+                $idProduct = (int) (isset($p['product_id']) ? $p['product_id'] : (isset($p['id_product']) ? $p['id_product'] : 0));
+                if ($idProduct > 0) {
+                    $this->recordClickStat($queryNorm, $idProduct, $idLang, $idShop, 'orders');
+                }
+            }
+
+            // Consuma l'attribuzione una sola volta
+            unset($cookie->smartsearch_last_q, $cookie->smartsearch_last_q_ts);
+        } catch (Throwable $e) {
+            // Non bloccare mai il checkout
+        }
+    }
+
+    /**
+     * Normalizza una query per le statistiche di click (coerente col front controller).
+     */
+    public function normalizeClickQuery($query)
+    {
+        $query = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', (string) $query);
+        $query = mb_strtolower(trim($query));
+        $query = preg_replace('/\s+/', ' ', $query);
+        return mb_substr($query, 0, 191);
+    }
+
+    /**
+     * Incrementa un contatore di click-stat (clicks|carts|orders) per query+prodotto.
+     */
+    public function recordClickStat($queryNorm, $idProduct, $idLang, $idShop, $type)
+    {
+        $allowed = array('clicks', 'carts', 'orders');
+        if (!in_array($type, $allowed, true)) {
+            return false;
+        }
+        $queryNorm = $this->normalizeClickQuery($queryNorm);
+        if ($queryNorm === '' || (int) $idProduct <= 0) {
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $sql = 'INSERT INTO `' . _DB_PREFIX_ . 'smartsearch_click_stats`
+                (query_norm, id_product, id_lang, id_shop, ' . $type . ', date_upd)
+                VALUES (
+                    \'' . pSQL($queryNorm) . '\',
+                    ' . (int) $idProduct . ',
+                    ' . (int) $idLang . ',
+                    ' . (int) $idShop . ',
+                    1,
+                    \'' . pSQL($now) . '\'
+                )
+                ON DUPLICATE KEY UPDATE ' . $type . ' = ' . $type . ' + 1, date_upd = VALUES(date_upd)';
+
+        return (bool) Db::getInstance()->execute($sql);
     }
 
     /**

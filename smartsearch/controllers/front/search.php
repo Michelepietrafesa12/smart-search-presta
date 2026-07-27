@@ -1271,6 +1271,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                         if (!$this->checkRateLimit(200, 60, 'suggestions')) { $this->dieRateLimit(); }
                         $this->displayAjaxSuggestions();
                         break;
+                    case 'track':
+                        if (!$this->checkRateLimit(200, 60, 'track')) { $this->dieRateLimit(); }
+                        $this->displayAjaxTrack();
+                        break;
                     case 'search':
                     default:
                         $this->displayAjaxSearch();
@@ -1356,10 +1360,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // 4. Applica boosting configurato
         $results = $this->applyBoosting($results, $query, $idShop);
 
-        // 5. Ordina per score totale (relevance_score * boost_score)
+        // 4b. Applica learning-to-rank (i prodotti performanti per questa query salgono)
+        $results = $this->applyLearningToRank($results, $query, $idShop, $idLang);
+
+        // 5. Ordina per score totale (relevance_score * boost_score * ltr_score)
         usort($results, function($a, $b) {
-            $scoreA = ($a['_relevance_score'] ?? 0) * ($a['_boost_score'] ?? 1);
-            $scoreB = ($b['_relevance_score'] ?? 0) * ($b['_boost_score'] ?? 1);
+            $scoreA = ($a['_relevance_score'] ?? 0) * ($a['_boost_score'] ?? 1) * ($a['_ltr_score'] ?? 1);
+            $scoreB = ($b['_relevance_score'] ?? 0) * ($b['_boost_score'] ?? 1) * ($b['_ltr_score'] ?? 1);
             if ($scoreA !== $scoreB) {
                 return $scoreB <=> $scoreA;
             }
@@ -3154,6 +3161,115 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     // =========================================================================
     // SEARCH TRACKING (per statistiche e "forse cercavi")
     // =========================================================================
+
+    /**
+     * Learning-to-rank: applica un moltiplicatore al punteggio in base alle
+     * performance storiche (click, carrelli, ordini) dei prodotti per QUESTA
+     * query. Il prodotto con la performance migliore riceve il boost massimo
+     * (configurabile), gli altri in proporzione. La rilevanza resta primaria.
+     *
+     * @return array
+     */
+    protected function applyLearningToRank($results, $query, $idShop, $idLang)
+    {
+        if (empty($results) || !(int) Configuration::get('SMARTSEARCH_LTR_ENABLED')) {
+            return $results;
+        }
+
+        $queryNorm = $this->module->normalizeClickQuery($query);
+        if ($queryNorm === '') {
+            return $results;
+        }
+
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_product, clicks, carts, orders
+             FROM `' . _DB_PREFIX_ . 'smartsearch_click_stats`
+             WHERE query_norm = \'' . pSQL($queryNorm) . '\'
+               AND id_shop = ' . (int) $idShop . '
+               AND id_lang = ' . (int) $idLang
+        );
+
+        if (!$rows) {
+            return $results;
+        }
+
+        // Pesi: click = 1, aggiunta al carrello = 3, ordine = 6
+        $weights = [];
+        $maxWeight = 0;
+        foreach ($rows as $r) {
+            $w = (int) $r['clicks'] + ((int) $r['carts'] * 3) + ((int) $r['orders'] * 6);
+            if ($w > 0) {
+                $weights[(int) $r['id_product']] = $w;
+                if ($w > $maxWeight) {
+                    $maxWeight = $w;
+                }
+            }
+        }
+
+        if ($maxWeight <= 0) {
+            return $results;
+        }
+
+        // Forza del boost: 0..100 -> 0..1 (es. 50 => fino a +50% per il migliore)
+        $strength = ((int) Configuration::get('SMARTSEARCH_LTR_STRENGTH') ?: 50) / 100;
+
+        foreach ($results as &$product) {
+            $pid = (int) ($product['id_product'] ?? 0);
+            if ($pid > 0 && isset($weights[$pid])) {
+                $product['_ltr_score'] = 1 + $strength * ($weights[$pid] / $maxWeight);
+            } else {
+                $product['_ltr_score'] = 1.0;
+            }
+        }
+        unset($product);
+
+        return $results;
+    }
+
+    /**
+     * Endpoint AJAX per tracciare un evento su un risultato di ricerca
+     * (learning-to-rank). Registra click e aggiunte al carrello per la
+     * coppia query -> prodotto e memorizza l'ultima query in un cookie per
+     * l'attribuzione delle conversioni all'ordine.
+     */
+    protected function displayAjaxTrack()
+    {
+        header('Content-Type: application/json; charset=utf-8');
+
+        try {
+            if (!(int) Configuration::get('SMARTSEARCH_LTR_ENABLED')) {
+                die(json_encode(['ok' => false]));
+            }
+
+            $query = trim(strip_tags(Tools::getValue('q', '')));
+            $idProduct = (int) Tools::getValue('id_product', 0);
+            $event = Tools::getValue('event', 'click');
+            $map = ['click' => 'clicks', 'cart' => 'carts'];
+
+            if ($query === '' || mb_strlen($query) < 2 || $idProduct <= 0 || !isset($map[$event])) {
+                die(json_encode(['ok' => false]));
+            }
+
+            $idLang = (int) $this->context->language->id;
+            $idShop = (int) $this->context->shop->id;
+            $queryNorm = $this->module->normalizeClickQuery($query);
+
+            $this->module->recordClickStat($queryNorm, $idProduct, $idLang, $idShop, $map[$event]);
+
+            // Memorizza l'ultima query per l'attribuzione delle conversioni
+            if ($event === 'click') {
+                $this->context->cookie->smartsearch_last_q = $queryNorm;
+                $this->context->cookie->smartsearch_last_q_ts = time();
+                $this->context->cookie->write();
+            }
+
+            // Invalida la cache dei risultati di questa query cosi' il nuovo
+            // ranking viene applicato prima possibile
+            die(json_encode(['ok' => true]));
+        } catch (Throwable $e) {
+            die(json_encode(['ok' => false]));
+        }
+    }
 
     /**
      * Traccia la query di ricerca per statistiche

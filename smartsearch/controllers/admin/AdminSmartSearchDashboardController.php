@@ -733,6 +733,26 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         $html .= '</div>';
 
         $html .= '</div>'; // row
+
+        // Sezione Learning-to-Rank
+        $ltrEnabled = (int)Configuration::get('SMARTSEARCH_LTR_ENABLED');
+        $ltrStrength = (int)Configuration::get('SMARTSEARCH_LTR_STRENGTH') ?: 50;
+        $ltrSignals = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_click_stats` WHERE id_shop = ' . $idShop
+        );
+        $html .= '<hr><h5><i class="icon-line-chart"></i> ' . $this->l('Learning-to-Rank (ranking che impara dai click)') . '</h5>';
+        $html .= '<p class="help-block"><small>' . $this->l('I prodotti più cliccati e acquistati per una determinata ricerca salgono automaticamente nei risultati di quella ricerca. Segnali raccolti finora:') . ' <strong>' . $ltrSignals . '</strong></small></p>';
+        $html .= '<div class="row">';
+        $html .= '<div class="col-md-6"><div class="form-group"><label>' . $this->l('Attivo') . '</label>';
+        $html .= '<select name="ltr_enabled" class="form-control">';
+        $html .= '<option value="1"' . ($ltrEnabled ? ' selected' : '') . '>' . $this->l('Sì') . '</option>';
+        $html .= '<option value="0"' . (!$ltrEnabled ? ' selected' : '') . '>' . $this->l('No') . '</option>';
+        $html .= '</select></div></div>';
+        $html .= '<div class="col-md-6"><div class="form-group"><label>' . $this->l('Forza del boost (%)') . '</label>';
+        $html .= '<input type="number" name="ltr_strength" class="form-control" value="' . $ltrStrength . '" min="0" max="100">';
+        $html .= '<p class="help-block"><small>' . $this->l('Boost massimo applicato al prodotto più performante (es. 50 = fino a +50%). La rilevanza testuale resta prioritaria.') . '</small></p></div></div>';
+        $html .= '</div>';
+
         $html .= '<div class="panel-footer"><button type="submit" name="submitLearningSettings" class="btn btn-primary"><i class="icon-save"></i> ' . $this->l('Salva impostazioni') . '</button></div>';
         $html .= '</div>'; // panel pianificazione
         $html .= '</form>';
@@ -809,6 +829,9 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
         Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_ENABLED', (int)Tools::getValue('autoreindex_enabled'));
         Configuration::updateValue('SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS', max(1, (int)Tools::getValue('autoreindex_interval')));
+
+        Configuration::updateValue('SMARTSEARCH_LTR_ENABLED', (int)Tools::getValue('ltr_enabled'));
+        Configuration::updateValue('SMARTSEARCH_LTR_STRENGTH', min(100, max(0, (int)Tools::getValue('ltr_strength'))));
     }
 
     protected function approveCandidate($id)

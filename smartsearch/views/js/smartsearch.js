@@ -280,6 +280,15 @@
         overlay.querySelector('.smartsearch-close-btn').addEventListener('click', closeOverlay);
         overlay.querySelector('.smartsearch-clear-input').addEventListener('click', clearInput);
 
+        // Learning-to-rank: traccia i click sui risultati (delegato, copre tutti
+        // i percorsi di rendering). Usa sendBeacon per sopravvivere alla navigazione.
+        overlay.addEventListener('click', (e) => {
+            const card = e.target.closest('.smartsearch-product-card');
+            if (card && card.dataset.productId) {
+                trackResultEvent(card.dataset.productId, 'click');
+            }
+        }, true);
+
         // Close on ESC
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && overlay.classList.contains('active')) {
@@ -414,6 +423,34 @@
             renderBestsellers(bestsellersCache);
         } else {
             loadBestsellers();
+        }
+    }
+
+    /**
+     * Traccia un evento su un risultato di ricerca (learning-to-rank).
+     * Non blocca la navigazione e ignora silenziosamente gli errori.
+     */
+    function trackResultEvent(productId, event) {
+        try {
+            if (!config.ajax_url || !currentQuery || !productId) {
+                return;
+            }
+            const url = config.ajax_url + '?ajax=1&action=track'
+                + '&event=' + encodeURIComponent(event)
+                + '&id_product=' + encodeURIComponent(productId)
+                + '&q=' + encodeURIComponent(currentQuery);
+
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon(url);
+            } else {
+                fetch(url, {
+                    method: 'POST',
+                    keepalive: true,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+            }
+        } catch (err) {
+            /* silenzioso */
         }
     }
 
