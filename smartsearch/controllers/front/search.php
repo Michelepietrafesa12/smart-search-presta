@@ -1367,8 +1367,22 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // 4b. Applica learning-to-rank (i prodotti performanti per questa query salgono)
         $results = $this->applyLearningToRank($results, $query, $idShop, $idLang);
 
-        // 5. Ordina per score totale (relevance_score * boost_score * ltr_score)
-        usort($results, function($a, $b) {
+        // 5. Ordina: prima per copertura parole (match_all), poi per score
+        //    totale (relevance_score * boost_score * ltr_score).
+        //    I prodotti senza copertura (es. iniettati dal boosting) usano la
+        //    copertura massima come default, così restano nel gruppo di testa.
+        $maxCov = 0;
+        foreach ($results as $r) {
+            if (isset($r['_coverage']) && $r['_coverage'] > $maxCov) {
+                $maxCov = $r['_coverage'];
+            }
+        }
+        usort($results, function($a, $b) use ($maxCov) {
+            $covA = isset($a['_coverage']) ? $a['_coverage'] : $maxCov;
+            $covB = isset($b['_coverage']) ? $b['_coverage'] : $maxCov;
+            if ($covA !== $covB) {
+                return $covB <=> $covA; // più parole coperte = più in alto
+            }
             $scoreA = ($a['_relevance_score'] ?? 0) * ($a['_boost_score'] ?? 1) * ($a['_ltr_score'] ?? 1);
             $scoreB = ($b['_relevance_score'] ?? 0) * ($b['_boost_score'] ?? 1) * ($b['_ltr_score'] ?? 1);
             if ($scoreA !== $scoreB) {
