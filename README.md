@@ -3,7 +3,7 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.5.0
+**Versione:** 2.6.0
 **Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
@@ -194,6 +194,26 @@ Sistema intelligente di raccomandazioni basato sugli acquisti:
 - Script per calcolo automatico delle correlazioni
 - Eseguibile da CLI o via HTTP con token di sicurezza
 - Consigliato: esecuzione notturna giornaliera
+
+---
+
+### Pannello "Analisi delle ricerche" (stile Doofinder)
+
+Un pannello di controllo che mostra cosa cercano davvero i clienti e trasforma le ricerche fallite in miglioramenti, con un click.
+
+#### 1. Parole chiave senza risultati
+La lista delle ricerche che non trovano nulla, ordinate per frequenza. Ogni riga è **azionabile**:
+- **Crea sinonimo** inline: mappa la parola verso un termine corretto → alla ricerca successiva torna a dare risultati e sparisce dalla lista.
+- **Ignora** (e "Mostra ignorate" / "Ripristina") per tenere pulita la lista.
+
+#### 2. Ricerche più frequenti + CTR
+Le ricerche top con numero di risultati, click, **CTR** (percentuale di ricerche seguite da un click) e ordini attribuiti. Un CTR basso su ricerche frequenti segnala risultati poco pertinenti da migliorare.
+
+#### 3. Ricerche con pochi risultati
+I "quasi-fallimenti" (meno di 5 prodotti) su cui intervenire con sinonimi, boosting o nuovi prodotti.
+
+#### 4. Gestione sinonimi completa
+Lista dei sinonimi attivi con **aggiungi / modifica / elimina / attiva-disattiva**, oltre a quelli creati dalle ricerche senza risultati e a quelli appresi in automatico (tab "Apprendimento").
 
 ---
 
@@ -515,6 +535,14 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.6.0 (Luglio 2026)
+- **NEW**: Nuovo tab "Analisi" con i dati delle ricerche
+- **NEW**: Lista parole chiave senza risultati con azione inline "Crea sinonimo" e "Ignora"
+- **NEW**: Ricerche più frequenti con CTR e ordini attribuiti (dai dati di tracking)
+- **NEW**: Ricerche con pochi risultati (< 5)
+- **NEW**: Gestione sinonimi completa (aggiungi/modifica/elimina/attiva-disattiva)
+- **NEW**: Colonna `handled` su `smartsearch_stats` per marcare le parole chiave gestite
 
 ### v2.5.0 (Luglio 2026)
 - **NEW**: Logica `match_all` con rilassamento progressivo — privilegia i prodotti che coprono tutte le parole della query (stile Doofinder), rilassando solo se i risultati sono pochi

@@ -69,6 +69,11 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                                     <i class="icon-picture-o"></i> Banner
                                 </a>
                             </li>
+                            <li class="' . ($this->activeTab == 'analytics' ? 'active' : '') . '">
+                                <a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=analytics">
+                                    <i class="icon-bar-chart"></i> Analisi
+                                </a>
+                            </li>
                             <li class="' . ($this->activeTab == 'learning' ? 'active' : '') . '">
                                 <a href="' . $this->context->link->getAdminLink('AdminSmartSearchDashboard') . '&tab=learning">
                                     <i class="icon-magic"></i> Apprendimento
@@ -95,6 +100,9 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                 break;
             case 'learning':
                 $html .= $this->renderLearningTab();
+                break;
+            case 'analytics':
+                $html .= $this->renderAnalyticsTab();
                 break;
             default:
                 $html .= $this->renderSettingsTab();
@@ -216,6 +224,44 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             $this->rejectCandidate((int)Tools::getValue('rejectCandidate'));
             $this->confirmations[] = $this->l('Candidato rifiutato.');
             $this->activeTab = 'learning';
+        }
+
+        // --- Tab Analisi ---
+        if (Tools::isSubmit('submitSynonymFromKeyword')) {
+            if ($this->saveSynonymFromKeyword()) {
+                $this->confirmations[] = $this->l('Sinonimo creato e parola chiave gestita!');
+            }
+            $this->activeTab = 'analytics';
+        }
+
+        if (Tools::getValue('ignoreKeyword')) {
+            $this->setKeywordHandled((int)Tools::getValue('ignoreKeyword'), 1);
+            $this->confirmations[] = $this->l('Parola chiave ignorata.');
+            $this->activeTab = 'analytics';
+        }
+
+        if (Tools::getValue('restoreKeyword')) {
+            $this->setKeywordHandled((int)Tools::getValue('restoreKeyword'), 0);
+            $this->confirmations[] = $this->l('Parola chiave ripristinata.');
+            $this->activeTab = 'analytics';
+        }
+
+        if (Tools::isSubmit('submitSynonym')) {
+            if ($this->saveSynonym()) {
+                $this->confirmations[] = $this->l('Sinonimo salvato!');
+            }
+            $this->activeTab = 'analytics';
+        }
+
+        if (Tools::getValue('deleteSynonym')) {
+            $this->deleteSynonym((int)Tools::getValue('deleteSynonym'));
+            $this->confirmations[] = $this->l('Sinonimo eliminato.');
+            $this->activeTab = 'analytics';
+        }
+
+        if (Tools::getValue('toggleSynonym')) {
+            $this->toggleSynonym((int)Tools::getValue('toggleSynonym'));
+            $this->activeTab = 'analytics';
         }
 
         parent::postProcess();
@@ -950,6 +996,287 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'date_add' => $now,
             'date_upd' => $now,
         ]);
+    }
+
+    protected function renderAnalyticsTab()
+    {
+        $idShop = (int)$this->context->shop->id;
+        $idLang = (int)$this->context->language->id;
+        $baseLink = $this->context->link->getAdminLink('AdminSmartSearchDashboard');
+        $formAction = $baseLink . '&tab=analytics';
+        $lowThreshold = 5;
+
+        // Mappa CTR: click/ordini aggregati per query normalizzata
+        $clickMap = [];
+        $clickRows = Db::getInstance()->executeS(
+            'SELECT query_norm, SUM(clicks) AS clicks, SUM(orders) AS orders
+             FROM `' . _DB_PREFIX_ . 'smartsearch_click_stats`
+             WHERE id_shop = ' . $idShop . '
+             GROUP BY query_norm'
+        );
+        if ($clickRows) {
+            foreach ($clickRows as $r) {
+                $clickMap[$r['query_norm']] = ['clicks' => (int)$r['clicks'], 'orders' => (int)$r['orders']];
+            }
+        }
+
+        $html = '<div class="panel"><div class="panel-heading"><i class="icon-bar-chart"></i> ' . $this->l('Analisi delle ricerche') . '</div>';
+        $html .= '<div class="alert alert-info" style="margin:0 0 15px"><small><i class="icon-info-circle"></i> ' . $this->l('Qui vedi cosa cercano davvero i tuoi clienti. Trasforma le ricerche fallite in sinonimi con un click, come su Doofinder.') . '</small></div>';
+
+        // === SEZIONE 1: PAROLE CHIAVE SENZA RISULTATI ===
+        $showIgnored = (int)Tools::getValue('showIgnored', 0);
+        $zeroRows = Db::getInstance()->executeS(
+            'SELECT id_smartsearch_stats, search_query, search_count, last_search
+             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+             WHERE id_shop = ' . $idShop . ' AND id_lang = ' . $idLang . '
+               AND results_count = 0 AND handled = ' . ($showIgnored ? 1 : 0) . '
+             ORDER BY search_count DESC
+             LIMIT 100'
+        );
+
+        $html .= '<div class="panel"><div class="panel-heading"><i class="icon-warning"></i> ' . $this->l('Parole chiave senza risultati');
+        $html .= ' <span class="badge badge-danger">' . (is_array($zeroRows) ? count($zeroRows) : 0) . '</span>';
+        $html .= '<div class="pull-right">';
+        if ($showIgnored) {
+            $html .= '<a href="' . $formAction . '" class="btn btn-default btn-xs">' . $this->l('Mostra da gestire') . '</a>';
+        } else {
+            $html .= '<a href="' . $formAction . '&showIgnored=1" class="btn btn-default btn-xs">' . $this->l('Mostra ignorate') . '</a>';
+        }
+        $html .= '</div></div>';
+
+        if ($zeroRows) {
+            $html .= '<table class="table"><thead><tr><th>' . $this->l('Ricerca') . '</th><th>' . $this->l('Volte') . '</th><th>' . $this->l('Ultima') . '</th><th style="width:45%">' . $this->l('Azione') . '</th></tr></thead><tbody>';
+            foreach ($zeroRows as $row) {
+                $kw = htmlspecialchars($row['search_query']);
+                $html .= '<tr>';
+                $html .= '<td><strong>' . $kw . '</strong></td>';
+                $html .= '<td>' . (int)$row['search_count'] . '</td>';
+                $html .= '<td><small class="text-muted">' . htmlspecialchars(substr($row['last_search'], 0, 10)) . '</small></td>';
+                $html .= '<td>';
+                if ($showIgnored) {
+                    $html .= '<a href="' . $baseLink . '&tab=analytics&showIgnored=1&restoreKeyword=' . (int)$row['id_smartsearch_stats'] . '" class="btn btn-default btn-xs"><i class="icon-undo"></i> ' . $this->l('Ripristina') . '</a>';
+                } else {
+                    // Form inline: crea sinonimo
+                    $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '" class="form-inline" style="display:inline-block">';
+                    $html .= '<input type="hidden" name="kw_stat_id" value="' . (int)$row['id_smartsearch_stats'] . '">';
+                    $html .= '<input type="text" name="kw_word" class="form-control input-sm" value="' . $kw . '" style="width:130px" title="' . $this->l('Parola da correggere') . '">';
+                    $html .= ' <i class="icon-arrow-right"></i> ';
+                    $html .= '<input type="text" name="kw_target" class="form-control input-sm" placeholder="' . $this->l('termine corretto') . '" style="width:150px" required>';
+                    $html .= ' <button type="submit" name="submitSynonymFromKeyword" class="btn btn-success btn-xs"><i class="icon-plus"></i> ' . $this->l('Crea sinonimo') . '</button>';
+                    $html .= '</form> ';
+                    $html .= '<a href="' . $baseLink . '&tab=analytics&ignoreKeyword=' . (int)$row['id_smartsearch_stats'] . '" class="btn btn-default btn-xs" title="' . $this->l('Ignora') . '"><i class="icon-eye-slash"></i></a>';
+                }
+                $html .= '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        } else {
+            $html .= '<div class="alert alert-success" style="margin:15px">' . $this->l('Nessuna ricerca senza risultati da gestire. Ottimo!') . '</div>';
+        }
+        $html .= '</div>';
+
+        // === SEZIONE 2: RICERCHE PIU' FREQUENTI + CTR ===
+        $topRows = Db::getInstance()->executeS(
+            'SELECT search_query, search_count, results_count
+             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+             WHERE id_shop = ' . $idShop . ' AND id_lang = ' . $idLang . '
+               AND results_count > 0
+             ORDER BY search_count DESC
+             LIMIT 30'
+        );
+
+        $html .= '<div class="panel"><div class="panel-heading"><i class="icon-search"></i> ' . $this->l('Ricerche più frequenti') . '</div>';
+        if ($topRows) {
+            $html .= '<table class="table"><thead><tr><th>' . $this->l('Ricerca') . '</th><th>' . $this->l('Ricerche') . '</th><th>' . $this->l('Risultati') . '</th><th>' . $this->l('Click') . '</th><th>' . $this->l('CTR') . '</th><th>' . $this->l('Ordini') . '</th></tr></thead><tbody>';
+            foreach ($topRows as $row) {
+                $norm = $this->module->normalizeClickQuery($row['search_query']);
+                $clicks = isset($clickMap[$norm]) ? $clickMap[$norm]['clicks'] : 0;
+                $orders = isset($clickMap[$norm]) ? $clickMap[$norm]['orders'] : 0;
+                $searches = max(1, (int)$row['search_count']);
+                $ctr = round(min(100, ($clicks / $searches) * 100));
+                $ctrColor = $ctr >= 40 ? 'success' : ($ctr >= 15 ? 'warning' : 'default');
+                $html .= '<tr>';
+                $html .= '<td><strong>' . htmlspecialchars($row['search_query']) . '</strong></td>';
+                $html .= '<td>' . (int)$row['search_count'] . '</td>';
+                $html .= '<td>' . (int)$row['results_count'] . '</td>';
+                $html .= '<td>' . $clicks . '</td>';
+                $html .= '<td><span class="label label-' . $ctrColor . '">' . $ctr . '%</span></td>';
+                $html .= '<td>' . ($orders > 0 ? '<strong>' . $orders . '</strong>' : '-') . '</td>';
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table>';
+            $html .= '<p class="help-block" style="padding:0 15px"><small>' . $this->l('CTR = percentuale di ricerche seguite da un click su un risultato. Un CTR basso su ricerche frequenti indica risultati poco pertinenti.') . '</small></p>';
+        } else {
+            $html .= '<div class="alert alert-info" style="margin:15px">' . $this->l('Ancora nessun dato di ricerca. Torna qui dopo qualche giorno di utilizzo.') . '</div>';
+        }
+        $html .= '</div>';
+
+        // === SEZIONE 3: RICERCHE CON POCHI RISULTATI ===
+        $lowRows = Db::getInstance()->executeS(
+            'SELECT search_query, search_count, results_count
+             FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+             WHERE id_shop = ' . $idShop . ' AND id_lang = ' . $idLang . '
+               AND results_count > 0 AND results_count < ' . (int)$lowThreshold . '
+             ORDER BY search_count DESC
+             LIMIT 30'
+        );
+
+        $html .= '<div class="panel"><div class="panel-heading"><i class="icon-filter"></i> ' . $this->l('Ricerche con pochi risultati') . ' <small class="text-muted">(< ' . (int)$lowThreshold . ')</small></div>';
+        if ($lowRows) {
+            $html .= '<table class="table"><thead><tr><th>' . $this->l('Ricerca') . '</th><th>' . $this->l('Ricerche') . '</th><th>' . $this->l('Risultati') . '</th></tr></thead><tbody>';
+            foreach ($lowRows as $row) {
+                $html .= '<tr><td><strong>' . htmlspecialchars($row['search_query']) . '</strong></td><td>' . (int)$row['search_count'] . '</td><td><span class="label label-warning">' . (int)$row['results_count'] . '</span></td></tr>';
+            }
+            $html .= '</tbody></table>';
+            $html .= '<p class="help-block" style="padding:0 15px"><small>' . $this->l('Ricerche che trovano pochi prodotti: valuta un sinonimo, un boost o l\'aggiunta di prodotti.') . '</small></p>';
+        } else {
+            $html .= '<div class="alert alert-info" style="margin:15px">' . $this->l('Nessuna ricerca con pochi risultati.') . '</div>';
+        }
+        $html .= '</div>';
+
+        // === SEZIONE 4: GESTIONE SINONIMI ===
+        $html .= $this->renderSynonymManager($idShop, $formAction, $baseLink);
+
+        $html .= '</div>'; // panel principale
+        return $html;
+    }
+
+    /**
+     * Sezione gestione sinonimi (lista + aggiungi/modifica/elimina).
+     */
+    protected function renderSynonymManager($idShop, $formAction, $baseLink)
+    {
+        $editId = (int)Tools::getValue('editSynonym', 0);
+        $editRow = null;
+        if ($editId) {
+            $editRow = Db::getInstance()->getRow(
+                'SELECT * FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms`
+                 WHERE id_smartsearch_synonym = ' . $editId . ' AND id_shop = ' . (int)$idShop
+            );
+        }
+
+        $html = '<div class="panel"><div class="panel-heading"><i class="icon-tags"></i> ' . $this->l('Gestione sinonimi') . '</div>';
+
+        // Form aggiungi / modifica
+        $html .= '<form method="post" action="' . htmlspecialchars($formAction) . '"><div class="row">';
+        $html .= '<input type="hidden" name="synonym_id" value="' . ($editRow ? (int)$editRow['id_smartsearch_synonym'] : 0) . '">';
+        $html .= '<div class="col-md-4"><div class="form-group"><label>' . $this->l('Parola') . '</label>';
+        $html .= '<input type="text" name="synonym_word" class="form-control" value="' . ($editRow ? htmlspecialchars($editRow['word']) : '') . '" placeholder="' . $this->l('es: magnesio') . '" required></div></div>';
+        $html .= '<div class="col-md-5"><div class="form-group"><label>' . $this->l('Sinonimi (separati da virgola)') . '</label>';
+        $html .= '<input type="text" name="synonym_list" class="form-control" value="' . ($editRow ? htmlspecialchars($editRow['synonyms']) : '') . '" placeholder="' . $this->l('es: magnesium, mg') . '" required></div></div>';
+        $html .= '<div class="col-md-3"><div class="form-group"><label>&nbsp;</label><br>';
+        $html .= '<button type="submit" name="submitSynonym" class="btn btn-primary"><i class="icon-save"></i> ' . ($editRow ? $this->l('Aggiorna') : $this->l('Aggiungi')) . '</button>';
+        if ($editRow) {
+            $html .= ' <a href="' . $formAction . '" class="btn btn-default">' . $this->l('Annulla') . '</a>';
+        }
+        $html .= '</div></div></div></form>';
+
+        // Lista sinonimi
+        $syns = Db::getInstance()->executeS(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms`
+             WHERE id_shop = ' . (int)$idShop . '
+             ORDER BY word ASC
+             LIMIT 500'
+        );
+
+        if ($syns) {
+            $html .= '<hr><table class="table"><thead><tr><th>' . $this->l('Parola') . '</th><th>' . $this->l('Sinonimi') . '</th><th>' . $this->l('Stato') . '</th><th>' . $this->l('Azioni') . '</th></tr></thead><tbody>';
+            foreach ($syns as $s) {
+                $id = (int)$s['id_smartsearch_synonym'];
+                $html .= '<tr>';
+                $html .= '<td><strong>' . htmlspecialchars($s['word']) . '</strong></td>';
+                $html .= '<td>' . htmlspecialchars($s['synonyms']) . '</td>';
+                $html .= '<td><a href="' . $baseLink . '&tab=analytics&toggleSynonym=' . $id . '" class="label label-' . ($s['active'] ? 'success' : 'default') . '">' . ($s['active'] ? $this->l('Attivo') : $this->l('Off')) . '</a></td>';
+                $html .= '<td>';
+                $html .= '<a href="' . $baseLink . '&tab=analytics&editSynonym=' . $id . '" class="btn btn-default btn-xs"><i class="icon-edit"></i></a> ';
+                $html .= '<a href="' . $baseLink . '&tab=analytics&deleteSynonym=' . $id . '" class="btn btn-danger btn-xs" onclick="return confirm(\'' . $this->l('Eliminare questo sinonimo?') . '\')"><i class="icon-trash"></i></a>';
+                $html .= '</td></tr>';
+            }
+            $html .= '</tbody></table>';
+        } else {
+            $html .= '<div class="alert alert-info" style="margin:15px">' . $this->l('Nessun sinonimo configurato. Aggiungine uno sopra o creane dalle ricerche senza risultati.') . '</div>';
+        }
+        $html .= '</div>';
+        return $html;
+    }
+
+    protected function saveSynonymFromKeyword()
+    {
+        $idShop = (int)$this->context->shop->id;
+        $word = trim(Tools::getValue('kw_word', ''));
+        $target = trim(Tools::getValue('kw_target', ''));
+        $statId = (int)Tools::getValue('kw_stat_id', 0);
+
+        if ($word === '' || $target === '') {
+            $this->errors[] = $this->l('Parola e termine corretto sono obbligatori.');
+            return false;
+        }
+
+        $this->applyLearnedSynonym(mb_strtolower($word), mb_strtolower($target), $idShop);
+        if ($statId) {
+            $this->setKeywordHandled($statId, 1);
+        }
+        $this->clearModuleCache();
+        return true;
+    }
+
+    protected function setKeywordHandled($idStat, $handled)
+    {
+        $idShop = (int)$this->context->shop->id;
+        return Db::getInstance()->update(
+            'smartsearch_stats',
+            ['handled' => (int)$handled],
+            'id_smartsearch_stats = ' . (int)$idStat . ' AND id_shop = ' . $idShop
+        );
+    }
+
+    protected function saveSynonym()
+    {
+        $idShop = (int)$this->context->shop->id;
+        $id = (int)Tools::getValue('synonym_id', 0);
+        $word = trim(Tools::getValue('synonym_word', ''));
+        $list = trim(Tools::getValue('synonym_list', ''));
+
+        if ($word === '' || $list === '') {
+            $this->errors[] = $this->l('Compila parola e sinonimi.');
+            return false;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        if ($id) {
+            $ok = Db::getInstance()->update('smartsearch_synonyms', [
+                'word' => pSQL($word),
+                'synonyms' => pSQL($list),
+                'date_upd' => $now,
+            ], 'id_smartsearch_synonym = ' . $id . ' AND id_shop = ' . $idShop);
+        } else {
+            $ok = Db::getInstance()->insert('smartsearch_synonyms', [
+                'word' => pSQL($word),
+                'synonyms' => pSQL($list),
+                'id_shop' => $idShop,
+                'active' => 1,
+                'date_add' => $now,
+                'date_upd' => $now,
+            ]);
+        }
+        $this->clearModuleCache();
+        return $ok;
+    }
+
+    protected function deleteSynonym($id)
+    {
+        $idShop = (int)$this->context->shop->id;
+        $ok = Db::getInstance()->delete('smartsearch_synonyms', 'id_smartsearch_synonym = ' . (int)$id . ' AND id_shop = ' . $idShop);
+        $this->clearModuleCache();
+        return $ok;
+    }
+
+    protected function toggleSynonym($id)
+    {
+        $idShop = (int)$this->context->shop->id;
+        $current = Db::getInstance()->getValue('SELECT active FROM `' . _DB_PREFIX_ . 'smartsearch_synonyms` WHERE id_smartsearch_synonym = ' . (int)$id . ' AND id_shop = ' . $idShop);
+        $ok = Db::getInstance()->update('smartsearch_synonyms', ['active' => $current ? 0 : 1], 'id_smartsearch_synonym = ' . (int)$id . ' AND id_shop = ' . $idShop);
+        $this->clearModuleCache();
+        return $ok;
     }
 
     protected function getDefaultStyleValues()

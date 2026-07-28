@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.5.0';
+        $this->version = '2.6.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -303,6 +303,7 @@ class SmartSearch extends Module
             `results_count` INT(11) NOT NULL DEFAULT 0,
             `id_lang` INT(11) UNSIGNED NOT NULL,
             `id_shop` INT(11) UNSIGNED NOT NULL,
+            `handled` TINYINT(1) NOT NULL DEFAULT 0,
             `last_search` DATETIME NOT NULL,
             `date_add` DATETIME NOT NULL,
             PRIMARY KEY (`id_smartsearch_stats`),
@@ -584,6 +585,18 @@ class SmartSearch extends Module
             // esistenti (registerHook e' idempotente).
             $this->registerHook('actionValidateOrder');
             $this->registerHook('actionCartSave');
+
+            // Colonna "handled" su smartsearch_stats per marcare come gestite
+            // le parole chiave a zero risultati dal pannello Analisi.
+            $col = Db::getInstance()->executeS(
+                'SHOW COLUMNS FROM `' . _DB_PREFIX_ . 'smartsearch_stats` LIKE \'handled\''
+            );
+            if (empty($col)) {
+                Db::getInstance()->execute(
+                    'ALTER TABLE `' . _DB_PREFIX_ . 'smartsearch_stats` '
+                    . 'ADD COLUMN `handled` TINYINT(1) NOT NULL DEFAULT 0 AFTER `id_shop`'
+                );
+            }
         } catch (Throwable $e) {
             // Ignora se non applicabile
         }
