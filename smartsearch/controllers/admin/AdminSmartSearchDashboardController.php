@@ -31,6 +31,16 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
     {
         parent::initContent();
 
+        // Assicura che lo schema sia aggiornato anche se l'utente apre il
+        // pannello prima di visitare la pagina di configurazione del modulo.
+        if ($this->module && method_exists($this->module, 'runMigrations')) {
+            try {
+                $this->module->runMigrations();
+            } catch (Throwable $e) {
+                // Non bloccare il rendering del pannello
+            }
+        }
+
         $this->content = $this->renderDashboard();
 
         $this->context->smarty->assign('content', $this->content);
@@ -1034,8 +1044,13 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
              LIMIT 100'
         );
 
+        $zeroTotal = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_stats`
+             WHERE id_shop = ' . $idShop . ' AND id_lang = ' . $idLang . '
+               AND results_count = 0 AND handled = ' . ($showIgnored ? 1 : 0)
+        );
         $html .= '<div class="panel"><div class="panel-heading"><i class="icon-warning"></i> ' . $this->l('Parole chiave senza risultati');
-        $html .= ' <span class="badge badge-danger">' . (is_array($zeroRows) ? count($zeroRows) : 0) . '</span>';
+        $html .= ' <span class="badge badge-danger">' . $zeroTotal . '</span>';
         $html .= '<div class="pull-right">';
         if ($showIgnored) {
             $html .= '<a href="' . $formAction . '" class="btn btn-default btn-xs">' . $this->l('Mostra da gestire') . '</a>';

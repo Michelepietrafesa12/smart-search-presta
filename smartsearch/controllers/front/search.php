@@ -2242,6 +2242,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                     // Penalità per risultati fuzzy (sono meno precisi)
                     $product['_relevance_score'] *= 0.7;
                 }
+                // I risultati fuzzy (rete di sicurezza) non hanno copertura
+                // calcolata: assegna 0 così restano sotto i match reali quando
+                // è attiva la logica match_all.
+                if (!isset($product['_coverage'])) {
+                    $product['_coverage'] = 0;
+                }
                 $merged[$id] = $product;
             }
         }

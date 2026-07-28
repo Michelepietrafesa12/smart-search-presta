@@ -493,9 +493,10 @@ class SmartSearch extends Module
 
     /**
      * Esegue le migrazioni di schema per aggiornamenti in-place.
-     * Chiamato da getContent() così gira anche su installazioni esistenti.
+     * Chiamato da getContent() e dai controller admin del modulo, così gira
+     * anche su installazioni esistenti a prescindere dalla pagina aperta.
      */
-    protected function runMigrations()
+    public function runMigrations()
     {
         // Migrazione v7: aggiunge name_only_content per scoring pesato FULLTEXT
         try {
