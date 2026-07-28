@@ -3,7 +3,7 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.4.0
+**Versione:** 2.5.0
 **Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
@@ -194,6 +194,34 @@ Sistema intelligente di raccomandazioni basato sugli acquisti:
 - Script per calcolo automatico delle correlazioni
 - Eseguibile da CLI o via HTTP con token di sicurezza
 - Consigliato: esecuzione notturna giornaliera
+
+---
+
+### Logica Match All + Rilassamento Progressivo (stile Doofinder)
+
+Come il `match_all` di Doofinder: la ricerca privilegia i prodotti che contengono **tutte** le parole della query, non solo alcune.
+
+#### Come funziona
+1. Per ogni prodotto candidato viene calcolata la **copertura**: quante parole della query copre (una parola è coperta anche da una sua variante singolare/plurale, unità di misura o sinonimo attivo).
+2. Vengono mostrati prima i prodotti che coprono **tutte** le parole.
+3. Se questi sono meno della soglia minima configurabile (default 12), il requisito si **rilassa progressivamente** a N-1, N-2… parole, finché non ci sono abbastanza risultati.
+4. Solo se anche così i risultati sono pochi, entra in gioco il fuzzy come rete di sicurezza.
+
+**Esempio:** cercando "magnesio supremo 150g", in cima appaiono solo i prodotti che contengono *tutte e tre* le informazioni, non quelli che hanno solo "magnesio". Attivabile/disattivabile dal pannello.
+
+---
+
+### Criteri di Rilevanza Configurabili
+
+Come il "Criteri di rilevanza" di Doofinder: dal pannello puoi regolare quanto pesano nel ranking i fattori non testuali (in percentuale, 100% = standard):
+
+| Criterio | Effetto |
+|---|---|
+| **Peso vendite / bestseller** | 0 = ignora le vendite, 200 = doppio peso ai più venduti |
+| **Peso novità** | quanto contano i prodotti aggiunti di recente |
+| **Penalità prodotti esauriti** | 0 = nessuna, 30 = -30% (default), 100 = spinti in fondo |
+
+La rilevanza testuale resta sempre il fattore primario; questi pesi regolano i "pareggi".
 
 ---
 
@@ -487,6 +515,13 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.5.0 (Luglio 2026)
+- **NEW**: Logica `match_all` con rilassamento progressivo — privilegia i prodotti che coprono tutte le parole della query (stile Doofinder), rilassando solo se i risultati sono pochi
+- **NEW**: Calcolo della copertura parole per prodotto (parola coperta anche da variante/unità/sinonimo)
+- **NEW**: Criteri di rilevanza configurabili dal pannello (peso vendite, peso novità, penalità esauriti)
+- **NEW**: Sezioni "Match All" e "Criteri di rilevanza" nel tab Impostazioni
+- **IMPROVEMENT**: `calculateRelevanceScore` ora usa pesi configurabili invece di valori fissi
 
 ### v2.4.0 (Luglio 2026)
 - **NEW**: Learning-to-rank — i prodotti più cliccati/acquistati per una query salgono automaticamente nei risultati di quella query

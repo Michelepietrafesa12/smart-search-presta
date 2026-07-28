@@ -1343,6 +1343,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $results = $this->applyFiltersToResults($results, $filters, $idShop);
         }
 
+        // 2c. Logica match_all: privilegia i prodotti che coprono TUTTE le
+        // parole della query, rilassando solo se i risultati sono pochi.
+        $results = $this->applyMatchAllGating($results, $query);
+
         // 3. Se pochi risultati, aggiungi fuzzy search
         if (count($results) < 5) {
             $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop, $filters);
@@ -1896,6 +1900,131 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * Logica "match_all" con rilassamento progressivo (stile Doofinder).
+     *
+     * Calcola per ogni prodotto quante parole della query copre (una parola e'
+     * coperta se il prodotto contiene la parola stessa o una sua variante/
+     * sinonimo). Mantiene solo i prodotti con copertura massima; se sono meno
+     * della soglia minima, rilassa il requisito a N-1, N-2... parole finche'
+     * non raggiunge abbastanza risultati o arriva a 1 parola.
+     *
+     * @return array
+     */
+    protected function applyMatchAllGating($results, $query)
+    {
+        if (empty($results) || !(int) Configuration::get('SMARTSEARCH_MATCHALL_ENABLED')) {
+            return $results;
+        }
+
+        $queryLower = mb_strtolower(trim($query));
+        $words = array_values(array_unique(array_filter(explode(' ', $queryLower), function ($w) {
+            return mb_strlen($w) >= 2;
+        })));
+
+        // Con una sola parola non c'e' nulla da "combinare"
+        if (count($words) < 2) {
+            return $results;
+        }
+
+        $groups = $this->buildCoverageGroups($words);
+        $wordCount = count($groups);
+
+        // Calcola la copertura di ogni prodotto
+        $maxCoverage = 0;
+        foreach ($results as &$product) {
+            $haystack = $this->productHaystack($product);
+            $covered = 0;
+            foreach ($groups as $tokens) {
+                foreach ($tokens as $token) {
+                    if ($token !== '' && mb_strpos($haystack, $token) !== false) {
+                        $covered++;
+                        break;
+                    }
+                }
+            }
+            $product['_coverage'] = $covered;
+            if ($covered > $maxCoverage) {
+                $maxCoverage = $covered;
+            }
+        }
+        unset($product);
+
+        // Nessun prodotto copre neppure una parola: lascia invariato
+        if ($maxCoverage <= 0) {
+            return $results;
+        }
+
+        $minResults = (int) Configuration::get('SMARTSEARCH_MATCHALL_MIN_RESULTS') ?: 12;
+
+        // Parti dalla copertura massima e rilassa finche' non raggiungi la soglia
+        $required = $maxCoverage;
+        $filtered = array();
+        while ($required >= 1) {
+            $filtered = array_filter($results, function ($p) use ($required) {
+                return ($p['_coverage'] ?? 0) >= $required;
+            });
+            if (count($filtered) >= $minResults || $required === 1) {
+                break;
+            }
+            $required--;
+        }
+
+        return array_values($filtered);
+    }
+
+    /**
+     * Costruisce, per ogni parola della query, l'insieme dei token accettati
+     * (la parola + variazioni italiane + variazioni unita' + sinonimi attivi),
+     * coerente con l'espansione usata in fase di ricerca.
+     *
+     * @return array array di array di token (uno per parola)
+     */
+    protected function buildCoverageGroups($words)
+    {
+        $synonymMap = $this->getTableSynonyms();
+        $groups = array();
+
+        foreach ($words as $word) {
+            $tokens = array($word);
+
+            foreach ($this->getItalianWordVariations($word) as $v) {
+                $tokens[] = $v;
+            }
+            foreach ($this->getUnitVariations($word) as $v) {
+                $tokens[] = $v;
+            }
+            $wl = mb_strtolower($word);
+            if (isset($synonymMap[$wl])) {
+                foreach ($synonymMap[$wl] as $syn) {
+                    $tokens[] = $syn;
+                }
+            }
+
+            $groups[] = array_values(array_unique(array_filter(array_map('mb_strtolower', $tokens))));
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Costruisce il testo ricercabile di un prodotto (campi ad alto valore)
+     * per il calcolo della copertura parole.
+     */
+    protected function productHaystack($product)
+    {
+        $parts = array(
+            $product['name'] ?? '',
+            $product['manufacturer_name'] ?? '',
+            $product['category_name'] ?? '',
+            $product['reference'] ?? '',
+            $product['ean13'] ?? '',
+            $product['description_short'] ?? '',
+        );
+
+        return mb_strtolower(strip_tags(implode(' ', $parts)));
+    }
+
+    /**
      * Calcola lo score di rilevanza per un prodotto
      */
     protected function calculateRelevanceScore($product, $query, $words)
@@ -2001,36 +2130,72 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
         }
 
-        // === BONUS BESTSELLER ===
-        $salesCount = (int)($product['sales_count'] ?? 0);
-        if ($salesCount > 100) {
-            $score += 20;
-        } elseif ($salesCount > 50) {
-            $score += 15;
-        } elseif ($salesCount > 10) {
-            $score += 10;
-        } elseif ($salesCount > 0) {
-            $score += 5;
-        }
+        // Pesi dei criteri di rilevanza (configurabili dal pannello)
+        $criteria = $this->getRelevanceCriteria();
 
-        // === BONUS PRODOTTO RECENTE ===
+        // === BONUS BESTSELLER (peso vendite configurabile) ===
+        $salesCount = (int)($product['sales_count'] ?? 0);
+        $salesBonus = 0;
+        if ($salesCount > 100) {
+            $salesBonus = 20;
+        } elseif ($salesCount > 50) {
+            $salesBonus = 15;
+        } elseif ($salesCount > 10) {
+            $salesBonus = 10;
+        } elseif ($salesCount > 0) {
+            $salesBonus = 5;
+        }
+        $score += $salesBonus * $criteria['sales'];
+
+        // === BONUS PRODOTTO RECENTE (peso novità configurabile) ===
         if (!empty($product['date_add'])) {
             $daysOld = (time() - strtotime($product['date_add'])) / 86400;
+            $noveltyBonus = 0;
             if ($daysOld <= 7) {
-                $score += 15; // Novità ultima settimana
+                $noveltyBonus = 15; // Novità ultima settimana
             } elseif ($daysOld <= 30) {
-                $score += 10; // Novità ultimo mese
+                $noveltyBonus = 10; // Novità ultimo mese
+            }
+            $score += $noveltyBonus * $criteria['novelty'];
+        }
+
+        // === PENALITÀ PRODOTTI ESAURITI (percentuale configurabile) ===
+        if ($criteria['stock_penalty'] > 0) {
+            $quantity = StockAvailable::getQuantityAvailableByProduct((int)$product['id_product']);
+            if ($quantity <= 0) {
+                $score = (int)round($score * (1 - $criteria['stock_penalty']));
             }
         }
 
-        // === PENALITÀ PRODOTTI ESAURITI ===
-        // Prodotti senza stock vengono penalizzati del 30%
-        $quantity = StockAvailable::getQuantityAvailableByProduct((int)$product['id_product']);
-        if ($quantity <= 0) {
-            $score = (int)round($score * 0.7); // -30%
+        return $score;
+    }
+
+    /** @var array|null Cache statica dei pesi dei criteri di rilevanza */
+    protected static $relevanceCriteriaCache = null;
+
+    /**
+     * Restituisce i pesi dei criteri di rilevanza (normalizzati 0..1 per i
+     * moltiplicatori, e frazione per la penalità stock).
+     *
+     * @return array ['sales' => float, 'novelty' => float, 'stock_penalty' => float]
+     */
+    protected function getRelevanceCriteria()
+    {
+        if (self::$relevanceCriteriaCache !== null) {
+            return self::$relevanceCriteriaCache;
         }
 
-        return $score;
+        $salesW = Configuration::get('SMARTSEARCH_REL_SALES_WEIGHT');
+        $novelW = Configuration::get('SMARTSEARCH_REL_NOVELTY_WEIGHT');
+        $stockP = Configuration::get('SMARTSEARCH_REL_STOCK_PENALTY');
+
+        self::$relevanceCriteriaCache = array(
+            'sales' => ($salesW === false ? 100 : (int) $salesW) / 100,
+            'novelty' => ($novelW === false ? 100 : (int) $novelW) / 100,
+            'stock_penalty' => min(100, max(0, ($stockP === false ? 30 : (int) $stockP))) / 100,
+        );
+
+        return self::$relevanceCriteriaCache;
     }
 
     /**

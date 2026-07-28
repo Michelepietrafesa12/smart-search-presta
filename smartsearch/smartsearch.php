@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.4.0';
+        $this->version = '2.5.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -239,6 +239,15 @@ class SmartSearch extends Module
         Configuration::updateValue('SMARTSEARCH_LTR_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_LTR_STRENGTH', 50);
 
+        // Logica match_all (richiedi tutte le parole, rilassa se pochi risultati)
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_MIN_RESULTS', 12);
+
+        // Criteri di rilevanza configurabili (pesi in %)
+        Configuration::updateValue('SMARTSEARCH_REL_SALES_WEIGHT', 100);
+        Configuration::updateValue('SMARTSEARCH_REL_NOVELTY_WEIGHT', 100);
+        Configuration::updateValue('SMARTSEARCH_REL_STOCK_PENALTY', 30);
+
         return true;
     }
 
@@ -266,7 +275,10 @@ class SmartSearch extends Module
             'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', 'SMARTSEARCH_AUTOLEARN_LAST',
             'SMARTSEARCH_AUTOREINDEX_ENABLED', 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS',
             'SMARTSEARCH_AUTOREINDEX_LAST',
-            'SMARTSEARCH_LTR_ENABLED', 'SMARTSEARCH_LTR_STRENGTH'
+            'SMARTSEARCH_LTR_ENABLED', 'SMARTSEARCH_LTR_STRENGTH',
+            'SMARTSEARCH_MATCHALL_ENABLED', 'SMARTSEARCH_MATCHALL_MIN_RESULTS',
+            'SMARTSEARCH_REL_SALES_WEIGHT', 'SMARTSEARCH_REL_NOVELTY_WEIGHT',
+            'SMARTSEARCH_REL_STOCK_PENALTY'
         ];
 
         foreach ($configs as $config) {
@@ -556,6 +568,11 @@ class SmartSearch extends Module
                 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS' => 3,
                 'SMARTSEARCH_LTR_ENABLED' => 1,
                 'SMARTSEARCH_LTR_STRENGTH' => 50,
+                'SMARTSEARCH_MATCHALL_ENABLED' => 1,
+                'SMARTSEARCH_MATCHALL_MIN_RESULTS' => 12,
+                'SMARTSEARCH_REL_SALES_WEIGHT' => 100,
+                'SMARTSEARCH_REL_NOVELTY_WEIGHT' => 100,
+                'SMARTSEARCH_REL_STOCK_PENALTY' => 30,
             );
             foreach ($learnDefaults as $key => $value) {
                 if (Configuration::get($key) === false) {

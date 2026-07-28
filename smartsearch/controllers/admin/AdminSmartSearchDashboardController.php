@@ -248,6 +248,50 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                     'input' => [
                         ['type' => 'switch', 'label' => $this->l('Fuzzy Search'), 'name' => 'SMARTSEARCH_FUZZY_ENABLED', 'is_bool' => true, 'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]]],
                         ['type' => 'switch', 'label' => $this->l('Filtri Dinamici'), 'name' => 'SMARTSEARCH_FACETS_ENABLED', 'is_bool' => true, 'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]]],
+                        [
+                            'type' => 'switch',
+                            'label' => $this->l('Match All (richiedi tutte le parole)'),
+                            'name' => 'SMARTSEARCH_MATCHALL_ENABLED',
+                            'is_bool' => true,
+                            'desc' => $this->l('Come Doofinder: mostra prima i prodotti che contengono TUTTE le parole cercate, rilassando solo se i risultati sono pochi.'),
+                            'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]],
+                        ],
+                        [
+                            'type' => 'text',
+                            'label' => $this->l('Risultati minimi prima di rilassare'),
+                            'name' => 'SMARTSEARCH_MATCHALL_MIN_RESULTS',
+                            'class' => 'fixed-width-sm',
+                            'desc' => $this->l('Se i prodotti che coprono tutte le parole sono meno di questo numero, la ricerca accetta anche prodotti con una parola in meno, e così via.'),
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'form' => [
+                    'legend' => ['title' => $this->l('Criteri di rilevanza'), 'icon' => 'icon-sort-amount-desc'],
+                    'description' => $this->l('Regola quanto pesano questi fattori nell\'ordinamento dei risultati (100% = comportamento standard).'),
+                    'input' => [
+                        [
+                            'type' => 'text',
+                            'label' => $this->l('Peso vendite / bestseller (%)'),
+                            'name' => 'SMARTSEARCH_REL_SALES_WEIGHT',
+                            'class' => 'fixed-width-sm',
+                            'desc' => $this->l('0 = ignora le vendite, 100 = standard, 200 = doppio peso ai più venduti.'),
+                        ],
+                        [
+                            'type' => 'text',
+                            'label' => $this->l('Peso novità (%)'),
+                            'name' => 'SMARTSEARCH_REL_NOVELTY_WEIGHT',
+                            'class' => 'fixed-width-sm',
+                            'desc' => $this->l('Quanto contano i prodotti aggiunti di recente.'),
+                        ],
+                        [
+                            'type' => 'text',
+                            'label' => $this->l('Penalità prodotti esauriti (%)'),
+                            'name' => 'SMARTSEARCH_REL_STOCK_PENALTY',
+                            'class' => 'fixed-width-sm',
+                            'desc' => $this->l('Di quanto scende un prodotto senza stock (0 = nessuna penalità, 30 = -30%, 100 = in fondo).'),
+                        ],
                     ],
                 ],
             ],
@@ -268,6 +312,11 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'SMARTSEARCH_MAX_RESULTS' => Configuration::get('SMARTSEARCH_MAX_RESULTS') ?: 8,
             'SMARTSEARCH_FUZZY_ENABLED' => Configuration::get('SMARTSEARCH_FUZZY_ENABLED'),
             'SMARTSEARCH_FACETS_ENABLED' => Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
+            'SMARTSEARCH_MATCHALL_ENABLED' => Configuration::get('SMARTSEARCH_MATCHALL_ENABLED'),
+            'SMARTSEARCH_MATCHALL_MIN_RESULTS' => (int)Configuration::get('SMARTSEARCH_MATCHALL_MIN_RESULTS') ?: 12,
+            'SMARTSEARCH_REL_SALES_WEIGHT' => ($v = Configuration::get('SMARTSEARCH_REL_SALES_WEIGHT')) === false ? 100 : (int)$v,
+            'SMARTSEARCH_REL_NOVELTY_WEIGHT' => ($v = Configuration::get('SMARTSEARCH_REL_NOVELTY_WEIGHT')) === false ? 100 : (int)$v,
+            'SMARTSEARCH_REL_STOCK_PENALTY' => ($v = Configuration::get('SMARTSEARCH_REL_STOCK_PENALTY')) === false ? 30 : (int)$v,
             'SMARTSEARCH_BANNERS_ENABLED' => Configuration::get('SMARTSEARCH_BANNERS_ENABLED'),
         ];
 
@@ -974,6 +1023,15 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         Configuration::updateValue('SMARTSEARCH_FUZZY_ENABLED', (int)Tools::getValue('SMARTSEARCH_FUZZY_ENABLED'));
         Configuration::updateValue('SMARTSEARCH_FACETS_ENABLED', (int)Tools::getValue('SMARTSEARCH_FACETS_ENABLED'));
         Configuration::updateValue('SMARTSEARCH_BANNERS_ENABLED', (int)Tools::getValue('SMARTSEARCH_BANNERS_ENABLED'));
+
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_ENABLED', (int)Tools::getValue('SMARTSEARCH_MATCHALL_ENABLED'));
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_MIN_RESULTS', max(1, (int)Tools::getValue('SMARTSEARCH_MATCHALL_MIN_RESULTS')));
+        Configuration::updateValue('SMARTSEARCH_REL_SALES_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_SALES_WEIGHT'))));
+        Configuration::updateValue('SMARTSEARCH_REL_NOVELTY_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_NOVELTY_WEIGHT'))));
+        Configuration::updateValue('SMARTSEARCH_REL_STOCK_PENALTY', max(0, min(100, (int)Tools::getValue('SMARTSEARCH_REL_STOCK_PENALTY'))));
+
+        // I criteri di rilevanza incidono sul ranking: svuota la cache risultati
+        $this->clearModuleCache();
     }
 
     protected function saveBoost()
