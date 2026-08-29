@@ -1968,7 +1968,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Genera i candidati e le condizioni SQL
         $candidates = array();
         $conditions = array();
-        $column = $this->isSearchIndexAvailable() ? 'product_name' : 'name';
+        $useIndex = $this->isSearchIndexAvailable();
+        // Colonna già qualificata: evita sostituzioni testuali sulla query
+        $column = $useIndex ? 'si.product_name' : 'pl.name';
 
         // Entrambe le parti almeno 2 caratteri: copre anche prefissi brevi
         // come "euphidra" -> "Eu-Phidra". Nessun rischio di split inventati
@@ -1989,12 +1991,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         try {
-            if ($this->isSearchIndexAvailable()) {
-                $sql = 'SELECT product_name AS n
-                        FROM `' . _DB_PREFIX_ . 'smartsearch_index`
-                        WHERE id_shop = ' . (int) $idShop . '
-                          AND id_lang = ' . (int) $idLang . '
-                          AND active = 1
+            if ($useIndex) {
+                $sql = 'SELECT si.product_name AS n
+                        FROM `' . _DB_PREFIX_ . 'smartsearch_index` si
+                        WHERE si.id_shop = ' . (int) $idShop . '
+                          AND si.id_lang = ' . (int) $idLang . '
+                          AND si.active = 1
                           AND (' . implode(' OR ', $conditions) . ')
                         LIMIT 5';
             } else {
@@ -2003,8 +2005,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                         INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps
                             ON pl.id_product = ps.id_product AND ps.id_shop = ' . (int) $idShop . '
                         WHERE pl.id_lang = ' . (int) $idLang . '
+                          AND pl.id_shop = ' . (int) $idShop . '
                           AND ps.active = 1
-                          AND (' . str_replace('name LIKE', 'pl.name LIKE', implode(' OR ', $conditions)) . ')
+                          AND (' . implode(' OR ', $conditions) . ')
                         LIMIT 5';
             }
 

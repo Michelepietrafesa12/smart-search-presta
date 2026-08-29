@@ -444,8 +444,7 @@ smartsearch/
 ├── classes/
 │   ├── SmartSearchEngine.php          # Motore di ricerca
 │   ├── SmartSearchCache.php           # Gestione cache
-│   ├── SmartSearchLearner.php         # Apprendimento automatico sinonimi
-│   └── SmartSearchAnalytics.php       # Analytics
+│   └── SmartSearchLearner.php         # Apprendimento automatico sinonimi
 ├── controllers/
 │   ├── front/
 │   │   └── search.php                 # Controller AJAX
@@ -453,8 +452,7 @@ smartsearch/
 │       ├── AdminSmartSearchDashboardController.php
 │       ├── AdminSmartSearchBoostController.php
 │       ├── AdminSmartSearchBannersController.php
-│       ├── AdminSmartSearchSynonymsController.php
-│       └── AdminSmartSearchAnalyticsController.php
+│       └── AdminSmartSearchSynonymsController.php
 ├── cron/
 │   ├── calculate_correlations.php     # Cron job correlazioni
 │   ├── rebuild_index.php              # Cron ricostruzione indice
@@ -472,8 +470,7 @@ smartsearch/
 │   │   └── admin/dashboard.tpl        # Template dashboard
 │   └── img/banners/                   # Upload banner
 └── docs/
-    ├── n8n-workflow.json              # Workflow n8n esempio
-    └── supabase-schema.sql            # Schema DB analytics
+    └── supabase-schema.sql            # Schema DB analytics esterno (opzionale)
 ```
 
 ---
