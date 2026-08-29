@@ -3,7 +3,7 @@
 Un modulo PrestaShop avanzato che aggiunge una ricerca dinamica intelligente professionale con overlay fullscreen, fuzzy search, filtri dinamici, boosting prodotti, banner promozionali, prodotti consigliati basati su correlazioni d'acquisto e integrazione analytics.
 
 **Autore:** Michele Pietrafesa
-**Versione:** 2.6.0
+**Versione:** 2.6.1
 **Compatibilità:** PrestaShop 1.7.0.0+
 
 ---
@@ -214,6 +214,23 @@ I "quasi-fallimenti" (meno di 5 prodotti) su cui intervenire con sinonimi, boost
 
 #### 4. Gestione sinonimi completa
 Lista dei sinonimi attivi con **aggiungi / modifica / elimina / attiva-disattiva**, oltre a quelli creati dalle ricerche senza risultati e a quelli appresi in automatico (tab "Apprendimento").
+
+---
+
+### Parole Attaccate / Separate (Decompounding)
+
+Risolve il caso in cui il cliente scrive la ricerca **tutta attaccata** mentre nel catalogo il nome del prodotto contiene uno spazio o un trattino:
+
+| Ricerca cliente | Prodotto a catalogo | Prima | Ora |
+|---|---|---|---|
+| `neopecia` | Neo Pecia | ❌ nessun risultato | ✅ trovato |
+| `euphidra` | Eu-Phidra | ❌ nessun risultato | ✅ trovato |
+| `magnesiosupremo` | Magnesio Supremo | ❌ nessun risultato | ✅ trovato |
+
+#### Come funziona
+Quando una ricerca di una sola parola restituisce pochi risultati, il motore genera tutte le divisioni possibili della parola e **verifica sul catalogo reale** quale di queste esiste davvero — poi ripete la ricerca con la versione divisa. Nessuna divisione viene inventata: se `neo pecia` non esiste tra i prodotti, non viene usata.
+
+Il caso inverso (cliente scrive `neo pecia`, prodotto "Neopecia") era già gestito dalla ricerca per sottostringa.
 
 ---
 
@@ -535,6 +552,11 @@ Content-Type: application/json
 ---
 
 ## Changelog
+
+### v2.6.1 (Luglio 2026)
+- **FIX**: Parole scritte tutte attaccate ora trovano prodotti il cui nome contiene uno spazio o un trattino (es. `neopecia` → "Neo Pecia", `euphidra` → "Eu-Phidra")
+- **NEW**: Decompounding/word splitting verificato sul catalogo (nessuno split inventato)
+- **IMPROVEMENT**: L'ordinamento usa la percentuale di copertura invece del conteggio assoluto, così query di lunghezza diversa restano confrontabili
 
 ### v2.6.0 (Luglio 2026)
 - **NEW**: Nuovo tab "Analisi" con i dati delle ricerche

@@ -1347,6 +1347,24 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // parole della query, rilassando solo se i risultati sono pochi.
         $results = $this->applyMatchAllGating($results, $query);
 
+        // 2d. Decompounding: la query è scritta tutta attaccata ("neopecia")
+        // ma nel catalogo il nome ha uno spazio ("Neo Pecia"). Prova a
+        // spezzarla e ripeti la ricerca con la versione divisa.
+        if (count($results) < 3) {
+            $splitQuery = $this->findCompoundSplit($query, $idLang, $idShop);
+            if ($splitQuery !== null) {
+                $splitResults = $this->isSearchIndexAvailable()
+                    ? $this->searchFromIndex($splitQuery, $idLang, $idShop, $filters)
+                    : $this->searchProductsWithScoring($splitQuery, $idLang, $idShop, $filters);
+
+                if (!empty($filters)) {
+                    $splitResults = $this->applyFiltersToResults($splitResults, $filters, $idShop);
+                }
+                $splitResults = $this->applyMatchAllGating($splitResults, $splitQuery);
+                $results = $this->mergeResultsWithScoring($results, $splitResults, $splitQuery);
+            }
+        }
+
         // 3. Se pochi risultati, aggiungi fuzzy search
         if (count($results) < 5) {
             $fuzzyResults = $this->searchProductsFuzzy($query, $idLang, $idShop, $filters);
@@ -1373,13 +1391,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         //    copertura massima come default, così restano nel gruppo di testa.
         $maxCov = 0;
         foreach ($results as $r) {
-            if (isset($r['_coverage']) && $r['_coverage'] > $maxCov) {
-                $maxCov = $r['_coverage'];
+            if (isset($r['_coverage_ratio']) && $r['_coverage_ratio'] > $maxCov) {
+                $maxCov = $r['_coverage_ratio'];
             }
         }
         usort($results, function($a, $b) use ($maxCov) {
-            $covA = isset($a['_coverage']) ? $a['_coverage'] : $maxCov;
-            $covB = isset($b['_coverage']) ? $b['_coverage'] : $maxCov;
+            $covA = isset($a['_coverage_ratio']) ? $a['_coverage_ratio'] : $maxCov;
+            $covB = isset($b['_coverage_ratio']) ? $b['_coverage_ratio'] : $maxCov;
             if ($covA !== $covB) {
                 return $covB <=> $covA; // più parole coperte = più in alto
             }
@@ -1914,6 +1932,107 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     }
 
     /**
+     * Decompounding / word splitting.
+     *
+     * Risolve il caso in cui l'utente scrive la query tutta attaccata mentre
+     * nel catalogo il nome contiene uno spazio (o un trattino):
+     *   ricerca "neopecia"  ->  prodotto "Neo Pecia"
+     *
+     * Genera tutti gli split possibili della parola (entrambe le parti di
+     * almeno 3 caratteri) e verifica con UNA sola query quale di questi
+     * esiste realmente nel catalogo, evitando split inventati.
+     *
+     * @return string|null la query divisa (es. "neo pecia") oppure null
+     */
+    protected function findCompoundSplit($query, $idLang, $idShop)
+    {
+        $queryLower = mb_strtolower(trim($query));
+
+        // Solo query di una singola parola
+        if ($queryLower === '' || mb_strpos($queryLower, ' ') !== false) {
+            return null;
+        }
+
+        $len = mb_strlen($queryLower);
+        if ($len < 6 || $len > 30) {
+            return null;
+        }
+
+        // Solo lettere/numeri (niente simboli)
+        if (!preg_match('/^[\p{L}\p{N}]+$/u', $queryLower)) {
+            return null;
+        }
+
+        $separators = array(' ', '-');
+
+        // Genera i candidati e le condizioni SQL
+        $candidates = array();
+        $conditions = array();
+        $column = $this->isSearchIndexAvailable() ? 'product_name' : 'name';
+
+        // Entrambe le parti almeno 2 caratteri: copre anche prefissi brevi
+        // come "euphidra" -> "Eu-Phidra". Nessun rischio di split inventati
+        // perché ogni candidato viene verificato sul catalogo reale.
+        for ($i = 2; $i <= $len - 2; $i++) {
+            $left = mb_substr($queryLower, 0, $i);
+            $right = mb_substr($queryLower, $i);
+            $candidates[] = array($left, $right);
+
+            foreach ($separators as $sep) {
+                $pattern = pSQL($this->escapeLikeWildcards($left . $sep . $right));
+                $conditions[] = $column . " LIKE '%" . $pattern . "%'";
+            }
+        }
+
+        if (empty($conditions)) {
+            return null;
+        }
+
+        try {
+            if ($this->isSearchIndexAvailable()) {
+                $sql = 'SELECT product_name AS n
+                        FROM `' . _DB_PREFIX_ . 'smartsearch_index`
+                        WHERE id_shop = ' . (int) $idShop . '
+                          AND id_lang = ' . (int) $idLang . '
+                          AND active = 1
+                          AND (' . implode(' OR ', $conditions) . ')
+                        LIMIT 5';
+            } else {
+                $sql = 'SELECT pl.name AS n
+                        FROM `' . _DB_PREFIX_ . 'product_lang` pl
+                        INNER JOIN `' . _DB_PREFIX_ . 'product_shop` ps
+                            ON pl.id_product = ps.id_product AND ps.id_shop = ' . (int) $idShop . '
+                        WHERE pl.id_lang = ' . (int) $idLang . '
+                          AND ps.active = 1
+                          AND (' . str_replace('name LIKE', 'pl.name LIKE', implode(' OR ', $conditions)) . ')
+                        LIMIT 5';
+            }
+
+            $rows = Db::getInstance()->executeS($sql);
+        } catch (Throwable $e) {
+            return null;
+        }
+
+        if (!$rows) {
+            return null;
+        }
+
+        // Determina quale split è realmente presente nel nome trovato
+        foreach ($rows as $row) {
+            $nameLower = mb_strtolower($row['n']);
+            foreach ($candidates as $candidate) {
+                foreach ($separators as $sep) {
+                    if (mb_strpos($nameLower, $candidate[0] . $sep . $candidate[1]) !== false) {
+                        return $candidate[0] . ' ' . $candidate[1];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Logica "match_all" con rilassamento progressivo (stile Doofinder).
      *
      * Calcola per ogni prodotto quante parole della query copre (una parola e'
@@ -1957,6 +2076,9 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
             }
             $product['_coverage'] = $covered;
+            // Percentuale di copertura: rende confrontabili query di lunghezza
+            // diversa (es. originale "neopecia" vs divisa "neo pecia").
+            $product['_coverage_ratio'] = $wordCount > 0 ? ($covered / $wordCount) : 0;
             if ($covered > $maxCoverage) {
                 $maxCoverage = $covered;
             }
@@ -2244,9 +2366,13 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 }
                 // I risultati fuzzy (rete di sicurezza) non hanno copertura
                 // calcolata: assegna 0 così restano sotto i match reali quando
-                // è attiva la logica match_all.
+                // è attiva la logica match_all. I risultati provenienti dal
+                // decompounding, invece, arrivano già con la loro copertura.
                 if (!isset($product['_coverage'])) {
                     $product['_coverage'] = 0;
+                }
+                if (!isset($product['_coverage_ratio'])) {
+                    $product['_coverage_ratio'] = 0;
                 }
                 $merged[$id] = $product;
             }
