@@ -587,8 +587,15 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
 
             // Controlla cache per query popolari (include offset/limit/sort nella chiave)
+            // IMPORTANTE: i prezzi sono calcolati con Product::getPriceStatic(), che
+            // dipende da valuta, gruppo cliente e paese (sconti riservati, tasse).
+            // Senza questi elementi nella chiave, un cliente vedrebbe i prezzi
+            // memorizzati per un altro (es. sconti rivenditore mostrati a tutti).
             $filterHash = md5(json_encode($filters));
-            $cacheKey = 'smartsearch_' . md5($query . '_' . $idLang . '_' . $idShop . '_' . $offset . '_' . $limit . '_' . $sort . '_' . $filterHash);
+            $cacheKey = 'smartsearch_' . md5(
+                $query . '_' . $idLang . '_' . $idShop . '_' . $offset . '_' . $limit . '_' . $sort . '_' . $filterHash
+                . '_' . $this->getPriceContextKey()
+            );
             $cachedResult = $this->getFromCache($cacheKey);
 
             if ($cachedResult !== false) {
@@ -903,13 +910,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         // Facets globali (no productIds): cachati 10 min
         // Facets contestuali: cachati con hash degli ID (più breve TTL)
+        // I facet contengono i range di PREZZO, quindi dipendono anch'essi da
+        // valuta/gruppo/paese: il contesto prezzo entra nella chiave di cache.
+        $priceCtx = $this->getPriceContextKey();
         $isFiltered = !empty($productIds);
         if ($isFiltered) {
             sort($productIds);
-            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop . '_' . md5(implode(',', $productIds));
+            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop . '_' . $priceCtx . '_' . md5(implode(',', $productIds));
             $cached = $this->getFromCache($cacheKey, 300);
         } else {
-            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop;
+            $cacheKey = 'smartsearch_facets_' . (int) $idLang . '_' . (int) $idShop . '_' . $priceCtx;
             $cached = $this->getFromCache($cacheKey, 600);
         }
         if ($cached !== false) {
@@ -1395,18 +1405,28 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 $maxCov = $r['_coverage_ratio'];
             }
         }
-        usort($results, function($a, $b) use ($maxCov) {
-            $covA = isset($a['_coverage_ratio']) ? $a['_coverage_ratio'] : $maxCov;
-            $covB = isset($b['_coverage_ratio']) ? $b['_coverage_ratio'] : $maxCov;
-            if ($covA !== $covB) {
+        // Confronti numerici con tolleranza: usare !== su valori che possono
+        // essere int o float (es. 100 vs 100.0) li considererebbe diversi pur
+        // essendo numericamente uguali, rendendo l'ordinamento non
+        // deterministico a parità di punteggio.
+        $epsilon = 0.000001;
+        usort($results, function ($a, $b) use ($maxCov, $epsilon) {
+            $covA = (float) ($a['_coverage_ratio'] ?? $maxCov);
+            $covB = (float) ($b['_coverage_ratio'] ?? $maxCov);
+            if (abs($covA - $covB) > $epsilon) {
                 return $covB <=> $covA; // più parole coperte = più in alto
             }
-            $scoreA = ($a['_relevance_score'] ?? 0) * ($a['_boost_score'] ?? 1) * ($a['_ltr_score'] ?? 1);
-            $scoreB = ($b['_relevance_score'] ?? 0) * ($b['_boost_score'] ?? 1) * ($b['_ltr_score'] ?? 1);
-            if ($scoreA !== $scoreB) {
+            $scoreA = (float) ($a['_relevance_score'] ?? 0) * (float) ($a['_boost_score'] ?? 1) * (float) ($a['_ltr_score'] ?? 1);
+            $scoreB = (float) ($b['_relevance_score'] ?? 0) * (float) ($b['_boost_score'] ?? 1) * (float) ($b['_ltr_score'] ?? 1);
+            if (abs($scoreA - $scoreB) > $epsilon) {
                 return $scoreB <=> $scoreA;
             }
-            return strcmp($a['name'] ?? '', $b['name'] ?? '');
+            // Ordine stabile a parità di punteggio: nome, poi ID
+            $byName = strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+            if ($byName !== 0) {
+                return $byName;
+            }
+            return ((int) ($a['id_product'] ?? 0)) <=> ((int) ($b['id_product'] ?? 0));
         });
 
         // 6. Limita risultati totali a 200
@@ -1589,6 +1609,31 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     /**
      * Verifica se la tabella smartsearch_index è popolata
      */
+    /**
+     * Identifica il contesto che influenza i PREZZI mostrati.
+     *
+     * Product::getPriceStatic() usa il contesto corrente: valuta, gruppo del
+     * cliente (sconti riservati) e paese (aliquote IVA). Questi elementi devono
+     * entrare in ogni chiave di cache che memorizza prezzi, altrimenti un
+     * cliente si vedrebbe servire i prezzi calcolati per un altro.
+     *
+     * @return string
+     */
+    protected function getPriceContextKey()
+    {
+        $idCurrency = isset($this->context->currency->id) ? (int) $this->context->currency->id : 0;
+        $idCountry = isset($this->context->country->id) ? (int) $this->context->country->id : 0;
+
+        $idGroup = 0;
+        if (isset($this->context->customer) && Validate::isLoadedObject($this->context->customer)) {
+            $idGroup = (int) $this->context->customer->id_default_group;
+        } elseif (method_exists('Configuration', 'get')) {
+            $idGroup = (int) Configuration::get('PS_UNIDENTIFIED_GROUP');
+        }
+
+        return 'c' . $idCurrency . 'p' . $idCountry . 'g' . $idGroup;
+    }
+
     protected function isSearchIndexAvailable()
     {
         if (self::$searchIndexAvailable === null) {
