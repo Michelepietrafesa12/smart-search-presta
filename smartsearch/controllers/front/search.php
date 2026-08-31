@@ -41,9 +41,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         // -e -> -a (barrette -> barretta, proteine -> proteina)
-        if ($last1 === 'e') {
+        // Esclusi i suffissi -ore/-ione/-ale/-ile: lì il plurale è in -i
+        // (integratore -> integratori), e generare "integratora"/"integratoro"
+        // produceva varianti inesistenti che appesantivano ogni ricerca.
+        if ($last1 === 'e' && !preg_match('/(ore|ione|ale|ile|are|ere)$/u', $word)) {
             $variations[] = $base . 'a';
-            $variations[] = $base . 'o'; // energie -> energio? no, ma copre casi strani
         }
 
         // -he -> -a (bottiglie -> bottiglia, confezioni -> confezione)
@@ -2081,7 +2083,14 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         }
 
         $len = mb_strlen($queryLower);
-        if ($len < 6 || $len > 30) {
+
+        // Confine lettera/numero: nei nomi di integratori è frequentissimo
+        // (omega3, b12, d3, k2, q10, c1000). Per questi casi si accettano
+        // anche query più corte, perché la divisione è semanticamente forte.
+        $hasLetterDigitBoundary = (bool) preg_match('/[a-z][0-9]|[0-9][a-z]/u', $queryLower);
+        $minLen = $hasLetterDigitBoundary ? 3 : 6;
+
+        if ($len < $minLen || $len > 30) {
             return null;
         }
 
@@ -2102,7 +2111,26 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Entrambe le parti almeno 2 caratteri: copre anche prefissi brevi
         // come "euphidra" -> "Eu-Phidra". Nessun rischio di split inventati
         // perché ogni candidato viene verificato sul catalogo reale.
+        $splitPoints = array();
         for ($i = 2; $i <= $len - 2; $i++) {
+            $splitPoints[$i] = true;
+        }
+
+        // Aggiunge i punti di divisione sul confine lettera/numero, anche
+        // quando una delle due parti è di un solo carattere: "omega3" deve
+        // poter diventare "omega 3", e "b12" -> "b 12".
+        if (preg_match_all('/[a-z][0-9]|[0-9][a-z]/u', $queryLower, $m, PREG_OFFSET_CAPTURE)) {
+            foreach ($m[0] as $match) {
+                // offset in byte -> posizione in caratteri
+                $pos = mb_strlen(substr($queryLower, 0, $match[1])) + 1;
+                if ($pos >= 1 && $pos <= $len - 1) {
+                    $splitPoints[$pos] = true;
+                }
+            }
+        }
+        ksort($splitPoints);
+
+        foreach (array_keys($splitPoints) as $i) {
             $left = mb_substr($queryLower, 0, $i);
             $right = mb_substr($queryLower, $i);
             $candidates[] = array($left, $right);
