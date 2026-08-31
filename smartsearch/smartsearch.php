@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.6.1';
+        $this->version = '2.6.2';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -238,9 +238,13 @@ class SmartSearch extends Module
         // Learning-to-rank (i prodotti performanti per una query salgono)
         Configuration::updateValue('SMARTSEARCH_LTR_ENABLED', 1);
         Configuration::updateValue('SMARTSEARCH_LTR_STRENGTH', 50);
+        Configuration::updateValue('SMARTSEARCH_LTR_MIN_SIGNALS', 5);
 
-        // Logica match_all (richiedi tutte le parole, rilassa se pochi risultati)
+        // Logica match_all. Modalità predefinita "sort": la copertura delle
+        // parole influenza solo l'ordinamento, senza mai rimuovere prodotti
+        // dai risultati (scelta sicura per le conversioni).
         Configuration::updateValue('SMARTSEARCH_MATCHALL_ENABLED', 1);
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_MODE', 'sort');
         Configuration::updateValue('SMARTSEARCH_MATCHALL_MIN_RESULTS', 12);
 
         // Criteri di rilevanza configurabili (pesi in %)
@@ -275,8 +279,8 @@ class SmartSearch extends Module
             'SMARTSEARCH_AUTOLEARN_MIN_THRESHOLD', 'SMARTSEARCH_AUTOLEARN_LAST',
             'SMARTSEARCH_AUTOREINDEX_ENABLED', 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS',
             'SMARTSEARCH_AUTOREINDEX_LAST',
-            'SMARTSEARCH_LTR_ENABLED', 'SMARTSEARCH_LTR_STRENGTH',
-            'SMARTSEARCH_MATCHALL_ENABLED', 'SMARTSEARCH_MATCHALL_MIN_RESULTS',
+            'SMARTSEARCH_LTR_ENABLED', 'SMARTSEARCH_LTR_STRENGTH', 'SMARTSEARCH_LTR_MIN_SIGNALS',
+            'SMARTSEARCH_MATCHALL_ENABLED', 'SMARTSEARCH_MATCHALL_MODE', 'SMARTSEARCH_MATCHALL_MIN_RESULTS',
             'SMARTSEARCH_REL_SALES_WEIGHT', 'SMARTSEARCH_REL_NOVELTY_WEIGHT',
             'SMARTSEARCH_REL_STOCK_PENALTY'
         ];
@@ -570,8 +574,10 @@ class SmartSearch extends Module
                 'SMARTSEARCH_AUTOREINDEX_INTERVAL_DAYS' => 3,
                 'SMARTSEARCH_LTR_ENABLED' => 1,
                 'SMARTSEARCH_LTR_STRENGTH' => 50,
+                'SMARTSEARCH_LTR_MIN_SIGNALS' => 5,
                 'SMARTSEARCH_MATCHALL_ENABLED' => 1,
                 'SMARTSEARCH_MATCHALL_MIN_RESULTS' => 12,
+                'SMARTSEARCH_MATCHALL_MODE' => 'sort',
                 'SMARTSEARCH_REL_SALES_WEIGHT' => 100,
                 'SMARTSEARCH_REL_NOVELTY_WEIGHT' => 100,
                 'SMARTSEARCH_REL_STOCK_PENALTY' => 30,

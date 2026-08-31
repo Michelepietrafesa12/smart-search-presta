@@ -1696,6 +1696,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 si.product_name AS name,
                 si.link_rewrite,
                 si.description_short,
+                LEFT(si.search_content, 2000) AS _haystack,
                 \'\' AS description,
                 si.reference,
                 si.ean13,
@@ -2093,6 +2094,16 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return $results;
         }
 
+        // MODALITA' "sort" (predefinita e consigliata): la copertura influenza
+        // solo l'ORDINAMENTO, nessun prodotto viene rimosso dai risultati.
+        // Per un e-commerce il rischio è asimmetrico: nascondere un prodotto
+        // pertinente è una vendita persa, mostrarlo più in basso non costa nulla.
+        $mode = Configuration::get('SMARTSEARCH_MATCHALL_MODE');
+        if ($mode === false || $mode === '' || $mode !== 'filter') {
+            return $results;
+        }
+
+        // MODALITA' "filter": comportamento match_all stretto (stile Doofinder).
         $minResults = (int) Configuration::get('SMARTSEARCH_MATCHALL_MIN_RESULTS') ?: 12;
 
         // Parti dalla copertura massima e rilassa finche' non raggiungi la soglia
@@ -2151,6 +2162,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
      */
     protected function productHaystack($product)
     {
+        // IMPORTANTE: la copertura deve essere calcolata sugli STESSI contenuti
+        // su cui la ricerca ha fatto match, altrimenti un prodotto trovato
+        // grazie alla descrizione lunga risulterebbe "non pertinente" e
+        // verrebbe penalizzato o scartato.
         $parts = array(
             $product['name'] ?? '',
             $product['manufacturer_name'] ?? '',
@@ -2158,6 +2173,10 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $product['reference'] ?? '',
             $product['ean13'] ?? '',
             $product['description_short'] ?? '',
+            // Percorso indice: estratto di search_content (include la
+            // descrizione lunga). Percorso fallback: descrizione completa.
+            $product['_haystack'] ?? '',
+            $product['description'] ?? '',
         );
 
         return mb_strtolower(strip_tags(implode(' ', $parts)));
@@ -3510,14 +3529,28 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
         // Pesi: click = 1, aggiunta al carrello = 3, ordine = 6
         $weights = [];
         $maxWeight = 0;
+        $totalWeight = 0;
         foreach ($rows as $r) {
             $w = (int) $r['clicks'] + ((int) $r['carts'] * 3) + ((int) $r['orders'] * 6);
             if ($w > 0) {
                 $weights[(int) $r['id_product']] = $w;
+                $totalWeight += $w;
                 if ($w > $maxWeight) {
                     $maxWeight = $w;
                 }
             }
+        }
+
+        // Soglia minima di affidabilità: con pochissimi segnali il dato è
+        // rumore statistico (un solo click prenderebbe il boost massimo e
+        // potrebbe scavalcare un prodotto più pertinente). Meglio non
+        // intervenire finché non ci sono abbastanza dati per quella query.
+        $minSignals = (int) Configuration::get('SMARTSEARCH_LTR_MIN_SIGNALS');
+        if ($minSignals <= 0) {
+            $minSignals = 5;
+        }
+        if ($totalWeight < $minSignals) {
+            return $results;
         }
 
         if ($maxWeight <= 0) {

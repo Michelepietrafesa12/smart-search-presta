@@ -313,11 +313,25 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                             'values' => [['id' => 'on', 'value' => 1], ['id' => 'off', 'value' => 0]],
                         ],
                         [
+                            'type' => 'select',
+                            'label' => $this->l('Modalità Match All'),
+                            'name' => 'SMARTSEARCH_MATCHALL_MODE',
+                            'desc' => $this->l('CONSIGLIATO "Solo ordinamento": i prodotti che coprono tutte le parole vanno in cima, ma nessun prodotto viene mai nascosto. "Filtra i risultati" nasconde i prodotti meno pertinenti: più preciso, ma può ridurre le vendite se un prodotto valido viene escluso.'),
+                            'options' => [
+                                'query' => [
+                                    ['id' => 'sort', 'name' => $this->l('Solo ordinamento (sicuro, consigliato)')],
+                                    ['id' => 'filter', 'name' => $this->l('Filtra i risultati (stretto, stile Doofinder)')],
+                                ],
+                                'id' => 'id',
+                                'name' => 'name',
+                            ],
+                        ],
+                        [
                             'type' => 'text',
                             'label' => $this->l('Risultati minimi prima di rilassare'),
                             'name' => 'SMARTSEARCH_MATCHALL_MIN_RESULTS',
                             'class' => 'fixed-width-sm',
-                            'desc' => $this->l('Se i prodotti che coprono tutte le parole sono meno di questo numero, la ricerca accetta anche prodotti con una parola in meno, e così via.'),
+                            'desc' => $this->l('Usato solo in modalità "Filtra": se i prodotti che coprono tutte le parole sono meno di questo numero, la ricerca accetta anche prodotti con una parola in meno, e così via.'),
                         ],
                     ],
                 ],
@@ -369,6 +383,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'SMARTSEARCH_FUZZY_ENABLED' => Configuration::get('SMARTSEARCH_FUZZY_ENABLED'),
             'SMARTSEARCH_FACETS_ENABLED' => Configuration::get('SMARTSEARCH_FACETS_ENABLED'),
             'SMARTSEARCH_MATCHALL_ENABLED' => Configuration::get('SMARTSEARCH_MATCHALL_ENABLED'),
+            'SMARTSEARCH_MATCHALL_MODE' => Configuration::get('SMARTSEARCH_MATCHALL_MODE') ?: 'sort',
             'SMARTSEARCH_MATCHALL_MIN_RESULTS' => (int)Configuration::get('SMARTSEARCH_MATCHALL_MIN_RESULTS') ?: 12,
             'SMARTSEARCH_REL_SALES_WEIGHT' => ($v = Configuration::get('SMARTSEARCH_REL_SALES_WEIGHT')) === false ? 100 : (int)$v,
             'SMARTSEARCH_REL_NOVELTY_WEIGHT' => ($v = Configuration::get('SMARTSEARCH_REL_NOVELTY_WEIGHT')) === false ? 100 : (int)$v,
@@ -1367,6 +1382,8 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         Configuration::updateValue('SMARTSEARCH_BANNERS_ENABLED', (int)Tools::getValue('SMARTSEARCH_BANNERS_ENABLED'));
 
         Configuration::updateValue('SMARTSEARCH_MATCHALL_ENABLED', (int)Tools::getValue('SMARTSEARCH_MATCHALL_ENABLED'));
+        $matchAllMode = Tools::getValue('SMARTSEARCH_MATCHALL_MODE') === 'filter' ? 'filter' : 'sort';
+        Configuration::updateValue('SMARTSEARCH_MATCHALL_MODE', $matchAllMode);
         Configuration::updateValue('SMARTSEARCH_MATCHALL_MIN_RESULTS', max(1, (int)Tools::getValue('SMARTSEARCH_MATCHALL_MIN_RESULTS')));
         Configuration::updateValue('SMARTSEARCH_REL_SALES_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_SALES_WEIGHT'))));
         Configuration::updateValue('SMARTSEARCH_REL_NOVELTY_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_NOVELTY_WEIGHT'))));
