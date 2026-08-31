@@ -546,13 +546,26 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
 
         try {
             $query = Tools::getValue('q', '');
-            $query = trim(strip_tags($query));
+            // Difesa: un array (?q[]=x) farebbe fallire trim(); una query
+            // lunghissima genererebbe centinaia di condizioni SQL.
+            if (is_array($query)) {
+                $query = '';
+            }
+            $query = trim(strip_tags((string) $query));
+            if (mb_strlen($query) > 100) {
+                $query = mb_substr($query, 0, 100);
+            }
 
             $idLang = (int)$this->context->language->id;
             $idShop = (int)$this->context->shop->id;
 
-            // Wildcard "*" restituisce prodotti recenti
+            // Wildcard "*" restituisce prodotti recenti.
+            // Applica comunque il limite di richieste: senza, questo ramo era
+            // un endpoint pesante e illimitato (rischio di sovraccarico).
             if ($query === '*') {
+                if (!$this->checkRateLimit(30, 60, 'search')) {
+                    $this->dieRateLimit();
+                }
                 $products = $this->getRecentProducts($idLang, $idShop, 20);
                 die(json_encode([
                     'products' => $products,
@@ -645,9 +658,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             // Costruisci facets filtrati per i prodotti trovati (solo alla prima richiesta)
             $facets = [];
             if ($offset === 0) {
-                $matchedIds = array_map(function ($p) {
-                    return (int) ($p['id_product'] ?? 0);
-                }, $allProducts);
+                // formatProducts() emette la chiave 'id' (non 'id_product'):
+                // leggere la chiave sbagliata produceva un elenco di zeri e
+                // quindi filtri laterali sempre vuoti.
+                $matchedIds = array_values(array_filter(array_map(function ($p) {
+                    return (int) ($p['id'] ?? $p['id_product'] ?? 0);
+                }, $allProducts)));
                 $facets = $this->buildFacets($idLang, $idShop, $matchedIds);
             }
 
@@ -677,7 +693,12 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             }
 
             // Traccia ricerca per statistiche (per "forse cercavi" futuro)
-            $this->trackSearchQuery($query, count($products), $idLang, $idShop);
+            // Registra il TOTALE dei risultati, non quelli della pagina corrente:
+            // altrimenti una ricerca sana richiesta a pagina 3 verrebbe salvata
+            // con 0 risultati e finirebbe tra le "ricerche senza risultati".
+            if ($offset === 0) {
+                $this->trackSearchQuery($query, $totalCount, $idLang, $idShop);
+            }
 
             die(json_encode($response, JSON_UNESCAPED_UNICODE));
 
@@ -1331,14 +1352,20 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             return [];
         }
 
-        // 1. Prima controlla match esatto EAN/SKU (priorità massima)
+        // 1. Match esatto EAN/SKU: massima priorità, ma NON deve interrompere la
+        //    ricerca. Query come "omega3", "b12", "d3" contengono un numero e
+        //    sembrano codici: restituire solo il prodotto con quel codice
+        //    nasconderebbe tutti gli altri prodotti pertinenti.
         $exactMatch = $this->searchByExactCode($query, $idLang, $idShop);
         if (!empty($exactMatch)) {
-            // Applica filtri anche al match esatto
             $exactMatch = $this->applyFiltersToResults($exactMatch, $filters, $idShop);
-            if (!empty($exactMatch)) {
-                return $this->formatProducts($exactMatch, $idLang);
+            foreach ($exactMatch as &$exactRow) {
+                // Punteggio molto alto e copertura piena: restano in cima
+                $exactRow['_relevance_score'] = 10000;
+                $exactRow['_coverage_ratio'] = 1.0;
+                $exactRow['_coverage'] = 1;
             }
+            unset($exactRow);
         }
 
         // 2. Ricerca: usa indice pre-calcolato se disponibile, altrimenti query dirette
@@ -1385,12 +1412,28 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
             $results = $this->mergeResultsWithScoring($results, $fuzzyResults, $query);
         }
 
-        if (empty($results)) {
+        if (empty($results) && empty($exactMatch)) {
             return [];
         }
+        if (empty($results)) {
+            $results = $exactMatch;
+        }
 
-        // 4. Applica boosting configurato
+        // 3b. Unisci i match per codice esatto (deduplicati, restano in cima
+        //     grazie al punteggio massimo assegnato sopra).
+        if (!empty($exactMatch)) {
+            $results = $this->mergeResultsWithScoring($exactMatch, $results, $query);
+        }
+
+        // 4. Applica boosting configurato.
+        //    I prodotti "iniettati" dalle regole di boost devono comunque
+        //    rispettare i filtri scelti dal cliente, altrimenti chi filtra per
+        //    marca/prezzo/disponibilità si vedrebbe comparire prodotti esclusi.
+        $beforeBoost = count($results);
         $results = $this->applyBoosting($results, $query, $idShop);
+        if (!empty($filters) && count($results) > $beforeBoost) {
+            $results = $this->applyFiltersToResults($results, $filters, $idShop);
+        }
 
         // 4b. Applica learning-to-rank (i prodotti performanti per questa query salgono)
         $results = $this->applyLearningToRank($results, $query, $idShop, $idLang);
@@ -1564,7 +1607,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 OR p.ean13 = \'' . pSQL($code) . '\'
                 OR p.upc = \'' . pSQL($code) . '\'
             )
-            LIMIT 1';
+            LIMIT 20';
 
         $result = Db::getInstance()->executeS($sql);
         return $result ?: [];
@@ -1660,7 +1703,11 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 if ($catalog > 0) {
                     self::$searchIndexAvailable = ($indexed >= ($catalog * 0.8));
 
-                    if (!self::$searchIndexAvailable && $indexed > 0) {
+                    // Registra l'avviso al massimo una volta all'ora: era scritto
+                    // a OGNI ricerca, riempiendo la tabella dei log.
+                    $lastWarn = (int) Configuration::get('SMARTSEARCH_INDEX_WARN_TS');
+                    if (!self::$searchIndexAvailable && $indexed > 0 && (time() - $lastWarn) > 3600) {
+                        Configuration::updateValue('SMARTSEARCH_INDEX_WARN_TS', time());
                         PrestaShopLogger::addLog(
                             sprintf(
                                 'SmartSearch: indice incompleto (%d/%d prodotti), uso la ricerca diretta. '
@@ -1775,7 +1822,7 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
                 si.product_name AS name,
                 si.link_rewrite,
                 si.description_short,
-                LEFT(si.search_content, 2000) AS _haystack,
+                LEFT(si.search_content, 20000) AS _haystack,
                 \'\' AS description,
                 si.reference,
                 si.ean13,

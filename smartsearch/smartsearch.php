@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.6.3';
+        $this->version = '2.7.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -1273,6 +1273,7 @@ class SmartSearch extends Module
             LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
             LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
                 AND cl.id_lang = ' . (int) $idLang . '
+                AND cl.id_shop = ' . (int) $idShop . '
             WHERE p.id_product = ' . (int) $idProduct;
 
         $product = Db::getInstance()->getRow($sql);
@@ -1331,7 +1332,14 @@ class SmartSearch extends Module
                 NOW()
             )';
 
-        Db::getInstance()->execute($sql);
+        // Verifica l'esito: PrestaShop non lancia eccezioni sugli errori SQL in
+        // produzione, quindi senza questo controllo un prodotto che non entra
+        // nell'indice resterebbe introvabile senza alcuna traccia nei log.
+        $this->execIndexStep(
+            Db::getInstance(),
+            $sql,
+            'indicizzazione prodotto ' . (int) $idProduct . ' (shop ' . (int) $idShop . ', lingua ' . (int) $idLang . ')'
+        );
     }
 
     /**
@@ -1493,6 +1501,7 @@ class SmartSearch extends Module
                     LEFT JOIN ' . _DB_PREFIX_ . 'manufacturer m ON p.id_manufacturer = m.id_manufacturer
                     LEFT JOIN ' . _DB_PREFIX_ . 'category_lang cl ON p.id_category_default = cl.id_category
                         AND cl.id_lang = ' . $idLang . '
+                    AND cl.id_shop = ' . $idShop . '
                     WHERE ps.active = 1';
 
                 if (!$this->execIndexStep($db, $sql, 'popolamento indice (shop ' . $idShop . ', lingua ' . $idLang . ')')) {
@@ -1600,8 +1609,14 @@ class SmartSearch extends Module
             'SMARTSEARCH_CORRELATIONS_CART_ENABLED', 'SMARTSEARCH_CORRELATIONS_DAYS', 'SMARTSEARCH_CORRELATIONS_MIN_PURCHASES'
         ];
 
+        // ATTENZIONE: HelperForm genera un <form> SEPARATO per ogni fieldset,
+        // quindi l'invio contiene solo i campi della sezione salvata. Scrivere
+        // comunque tutte le chiavi azzererebbe quelle non inviate — inclusa
+        // SMARTSEARCH_ENABLED, disattivando la ricerca sull'intero sito.
         foreach ($configs as $config) {
-            Configuration::updateValue($config, (int)Tools::getValue($config));
+            if (Tools::getIsset($config)) {
+                Configuration::updateValue($config, (int)Tools::getValue($config));
+            }
         }
 
         $this->invalidateCache();

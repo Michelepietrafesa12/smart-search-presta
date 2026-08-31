@@ -102,4 +102,36 @@ foreach ([['', 'query vuota'], ['   ', 'solo spazi'], ['+++', 'solo simboli'],
     T::ok("nessun errore con: $label", $ok);
 }
 
+// ═══════════════════════════════════════════════════════════════
+T::section('BUG 7 — Salvare le impostazioni disattivava la ricerca');
+// HelperForm genera un form per sezione: i campi non inviati venivano
+// scritti a 0, azzerando anche SMARTSEARCH_ENABLED.
+Configuration::$data['SMARTSEARCH_ENABLED'] = 1;
+Configuration::$data['SMARTSEARCH_MIN_CHARS'] = 3;
+Tools::$values = ['SMARTSEARCH_BANNERS_ENABLED' => 1];   // invio della sola sezione "Extra"
+$saved = [];
+foreach (['SMARTSEARCH_ENABLED', 'SMARTSEARCH_MIN_CHARS', 'SMARTSEARCH_BANNERS_ENABLED'] as $k) {
+    if (Tools::isSubmit($k)) { $saved[$k] = (int) Tools::getValue($k); }
+}
+T::ok('i campi non inviati NON vengono toccati', !array_key_exists('SMARTSEARCH_ENABLED', $saved));
+T::ok('il campo inviato viene salvato', ($saved['SMARTSEARCH_BANNERS_ENABLED'] ?? null) === 1);
+T::ok('la ricerca resta attiva', (int) Configuration::get('SMARTSEARCH_ENABLED') === 1);
+Tools::$values = [];
+
+// ═══════════════════════════════════════════════════════════════
+T::section('BUG 8 — Una query tipo "omega3" mostrava un solo prodotto');
+$src = file_get_contents(__DIR__ . '/../smartsearch/controllers/front/search.php');
+$pos = strpos($src, 'protected function searchByExactCode');
+$block = substr($src, $pos, 3000);
+T::ok('la ricerca per codice non si ferma al primo risultato', strpos($block, 'LIMIT 1;') === false && strpos($block, "LIMIT 1'") === false);
+T::ok('la ricerca prosegue oltre il match di codice', strpos($src, 'NON deve interrompere la') !== false);
+T::ok('i match di codice vengono uniti agli altri risultati', strpos($src, "mergeResultsWithScoring(\$exactMatch") !== false);
+
+// ═══════════════════════════════════════════════════════════════
+T::section('BUG 9 — Filtri laterali sempre vuoti / statistiche falsate');
+T::ok('i facet leggono la chiave corretta del prodotto', strpos($src, "(int) (\$p['id'] ?? \$p['id_product'] ?? 0)") !== false);
+T::ok('le statistiche registrano il totale, non la pagina', strpos($src, 'trackSearchQuery($query, $totalCount') !== false);
+T::ok('la query utente ha un limite di lunghezza', strpos($src, 'mb_strlen($query) > 100') !== false);
+T::ok('il ramo wildcard applica il limite di richieste', strpos($src, "checkRateLimit(30, 60, 'search')") !== false);
+
 exit(T::summary());

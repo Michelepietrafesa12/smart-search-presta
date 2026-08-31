@@ -296,6 +296,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                         ['type' => 'text', 'label' => $this->l('Caratteri minimi'), 'name' => 'SMARTSEARCH_MIN_CHARS', 'class' => 'fixed-width-sm'],
                         ['type' => 'text', 'label' => $this->l('Risultati massimi'), 'name' => 'SMARTSEARCH_MAX_RESULTS', 'class' => 'fixed-width-sm'],
                     ],
+                    'submit' => ['title' => $this->l('Salva questa sezione')],
                 ],
             ],
             [
@@ -334,6 +335,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                             'desc' => $this->l('Usato solo in modalità "Filtra": se i prodotti che coprono tutte le parole sono meno di questo numero, la ricerca accetta anche prodotti con una parola in meno, e così via.'),
                         ],
                     ],
+                    'submit' => ['title' => $this->l('Salva questa sezione')],
                 ],
             ],
             [
@@ -363,6 +365,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
                             'desc' => $this->l('Di quanto scende un prodotto senza stock (0 = nessuna penalità, 30 = -30%, 100 = in fondo).'),
                         ],
                     ],
+                    'submit' => ['title' => $this->l('Salva questa sezione')],
                 ],
             ],
             [
@@ -1372,22 +1375,49 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         Configuration::updateValue('SMARTSEARCH_STYLE_BUTTON_TEXT', $defaults['button_text']);
     }
 
+    /**
+     * Salva le impostazioni.
+     *
+     * ATTENZIONE: HelperForm genera un <form> SEPARATO per ogni fieldset, quindi
+     * l'invio contiene solo i campi della sezione salvata. Scrivere comunque
+     * tutte le chiavi azzererebbe quelle non inviate — inclusa
+     * SMARTSEARCH_ENABLED, facendo sparire la ricerca dal sito.
+     * Si aggiornano perciò SOLO i campi realmente presenti nell'invio.
+     */
     protected function saveSettings()
     {
-        Configuration::updateValue('SMARTSEARCH_ENABLED', (int)Tools::getValue('SMARTSEARCH_ENABLED'));
-        Configuration::updateValue('SMARTSEARCH_MIN_CHARS', (int)Tools::getValue('SMARTSEARCH_MIN_CHARS'));
-        Configuration::updateValue('SMARTSEARCH_MAX_RESULTS', (int)Tools::getValue('SMARTSEARCH_MAX_RESULTS'));
-        Configuration::updateValue('SMARTSEARCH_FUZZY_ENABLED', (int)Tools::getValue('SMARTSEARCH_FUZZY_ENABLED'));
-        Configuration::updateValue('SMARTSEARCH_FACETS_ENABLED', (int)Tools::getValue('SMARTSEARCH_FACETS_ENABLED'));
-        Configuration::updateValue('SMARTSEARCH_BANNERS_ENABLED', (int)Tools::getValue('SMARTSEARCH_BANNERS_ENABLED'));
+        // Interruttori e valori numerici: aggiornati solo se presenti nel POST
+        $intFields = [
+            'SMARTSEARCH_ENABLED'              => null,
+            'SMARTSEARCH_MIN_CHARS'            => [1, 10],
+            'SMARTSEARCH_MAX_RESULTS'          => [1, 200],
+            'SMARTSEARCH_FUZZY_ENABLED'        => null,
+            'SMARTSEARCH_FACETS_ENABLED'       => null,
+            'SMARTSEARCH_BANNERS_ENABLED'      => null,
+            'SMARTSEARCH_MATCHALL_ENABLED'     => null,
+            'SMARTSEARCH_MATCHALL_MIN_RESULTS' => [1, 200],
+            'SMARTSEARCH_REL_SALES_WEIGHT'     => [0, 500],
+            'SMARTSEARCH_REL_NOVELTY_WEIGHT'   => [0, 500],
+            'SMARTSEARCH_REL_STOCK_PENALTY'    => [0, 100],
+        ];
 
-        Configuration::updateValue('SMARTSEARCH_MATCHALL_ENABLED', (int)Tools::getValue('SMARTSEARCH_MATCHALL_ENABLED'));
-        $matchAllMode = Tools::getValue('SMARTSEARCH_MATCHALL_MODE') === 'filter' ? 'filter' : 'sort';
-        Configuration::updateValue('SMARTSEARCH_MATCHALL_MODE', $matchAllMode);
-        Configuration::updateValue('SMARTSEARCH_MATCHALL_MIN_RESULTS', max(1, (int)Tools::getValue('SMARTSEARCH_MATCHALL_MIN_RESULTS')));
-        Configuration::updateValue('SMARTSEARCH_REL_SALES_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_SALES_WEIGHT'))));
-        Configuration::updateValue('SMARTSEARCH_REL_NOVELTY_WEIGHT', max(0, min(500, (int)Tools::getValue('SMARTSEARCH_REL_NOVELTY_WEIGHT'))));
-        Configuration::updateValue('SMARTSEARCH_REL_STOCK_PENALTY', max(0, min(100, (int)Tools::getValue('SMARTSEARCH_REL_STOCK_PENALTY'))));
+        foreach ($intFields as $key => $range) {
+            if (!Tools::getIsset($key)) {
+                continue; // campo non inviato: lascialo invariato
+            }
+            $value = (int)Tools::getValue($key);
+            if (is_array($range)) {
+                $value = max($range[0], min($range[1], $value));
+            }
+            Configuration::updateValue($key, $value);
+        }
+
+        if (Tools::getIsset('SMARTSEARCH_MATCHALL_MODE')) {
+            Configuration::updateValue(
+                'SMARTSEARCH_MATCHALL_MODE',
+                Tools::getValue('SMARTSEARCH_MATCHALL_MODE') === 'filter' ? 'filter' : 'sort'
+            );
+        }
 
         // I criteri di rilevanza incidono sul ranking: svuota la cache risultati
         $this->clearModuleCache();
