@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.7.0';
+        $this->version = '2.8.0';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -357,7 +357,7 @@ class SmartSearch extends Module
             `image` VARCHAR(255) NOT NULL,
             `link` VARCHAR(255),
             `keywords` TEXT,
-            `position` ENUM("top", "bottom", "sidebar") NOT NULL DEFAULT "top",
+            `position` ENUM("top", "middle", "bottom", "sidebar") NOT NULL DEFAULT "top",
             `id_shop` INT(11) UNSIGNED NOT NULL,
             `id_lang` INT(11) UNSIGNED NOT NULL,
             `active` TINYINT(1) NOT NULL DEFAULT 1,
@@ -592,6 +592,14 @@ class SmartSearch extends Module
             // esistenti (registerHook e' idempotente).
             $this->registerHook('actionValidateOrder');
             $this->registerHook('actionCartSave');
+
+            // La posizione "middle" (banner tra i risultati) è usata dal frontend
+            // ma mancava nello schema: i banner salvati con quella posizione non
+            // venivano mai mostrati.
+            Db::getInstance()->execute(
+                'ALTER TABLE `' . _DB_PREFIX_ . 'smartsearch_banners` '
+                . 'MODIFY `position` ENUM("top", "middle", "bottom", "sidebar") NOT NULL DEFAULT "top"'
+            );
 
             // Colonna "handled" su smartsearch_stats per marcare come gestite
             // le parole chiave a zero risultati dal pannello Analisi.
@@ -1422,6 +1430,35 @@ class SmartSearch extends Module
     public function rebuildSearchIndex()
     {
         $db = Db::getInstance();
+
+        // Blocco: la ricostruzione può partire da più fonti (cron reale,
+        // pseudo-cron da una visita, pulsante nel pannello). Due esecuzioni
+        // contemporanee userebbero le stesse tabelle temporanee e potrebbero
+        // pubblicare un indice incompleto, rendendo introvabili dei prodotti.
+        $lockName = _DB_PREFIX_ . 'smartsearch_rebuild';
+        $gotLock = $db->getValue("SELECT GET_LOCK('" . pSQL($lockName) . "', 1)");
+        if ($gotLock !== '1' && $gotLock !== 1) {
+            $this->logIndexError('Ricostruzione già in corso: esecuzione ignorata.');
+            return false;
+        }
+
+        try {
+            $result = $this->doRebuildSearchIndex($db);
+        } catch (Throwable $e) {
+            $this->logIndexError('Errore imprevisto: ' . $e->getMessage());
+            $result = false;
+        }
+
+        $db->execute("SELECT RELEASE_LOCK('" . pSQL($lockName) . "')");
+
+        return $result;
+    }
+
+    /**
+     * Corpo effettivo della ricostruzione (protetto dal blocco).
+     */
+    protected function doRebuildSearchIndex($db)
+    {
         $liveTable = '`' . _DB_PREFIX_ . 'smartsearch_index`';
         $tmpTable  = '`' . _DB_PREFIX_ . 'smartsearch_index_tmp`';
         $oldTable  = '`' . _DB_PREFIX_ . 'smartsearch_index_old`';

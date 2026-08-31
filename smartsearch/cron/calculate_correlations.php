@@ -13,6 +13,13 @@
  */
 
 // Impedisci accesso diretto senza autenticazione via HTTP
+// Questi lavori sono lunghi e vengono avviati anche in background: senza
+// queste impostazioni PHP li interrompeva a metà (timeout o chiusura della
+// connessione) lasciando l'indice incompleto, in silenzio.
+@ignore_user_abort(true);
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
 $isCli = (php_sapi_name() === 'cli' || defined('STDIN'));
 
 if (!$isCli) {
@@ -84,7 +91,7 @@ try {
     $endTime = microtime(true);
     $executionTime = round($endTime - $startTime, 2);
 
-    if ($result) {
+    if ($result !== false) {
         logMessage('SUCCESS: Correlazioni calcolate con successo');
         logMessage('Tempo di esecuzione: ' . $executionTime . ' secondi');
 
@@ -104,7 +111,7 @@ try {
         exit(1);
     }
 
-} catch (Exception $e) {
+} catch (Throwable $e) {
     logMessage('ERRORE CRITICO: ' . $e->getMessage(), true);
     logMessage('Stack trace: ' . $e->getTraceAsString(), true);
     exit(1);
@@ -183,7 +190,7 @@ function getCorrelationStats()
                 WHERE id_shop = ' . $idShop;
 
         return Db::getInstance()->getRow($sql);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         return false;
     }
 }

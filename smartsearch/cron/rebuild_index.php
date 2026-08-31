@@ -12,6 +12,13 @@
  *   0 2 * * * /usr/bin/php /var/www/html/modules/smartsearch/cron/rebuild_index.php >> /var/log/smartsearch_index.log 2>&1
  */
 
+// Questi lavori sono lunghi e vengono avviati anche in background: senza
+// queste impostazioni PHP li interrompeva a metà (timeout o chiusura della
+// connessione) lasciando l'indice incompleto, in silenzio.
+@ignore_user_abort(true);
+@set_time_limit(0);
+@ini_set('memory_limit', '512M');
+
 $isCli = (php_sapi_name() === 'cli' || defined('STDIN'));
 
 if (!$isCli) {
@@ -106,12 +113,12 @@ try {
                     $log('  [' . $row['date_add'] . '] ' . $row['message'], true);
                 }
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             // il log è solo un aiuto: non deve far fallire lo script
         }
         exit(1);
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     $log('Errore critico: ' . $e->getMessage(), true);
     exit(1);
 }

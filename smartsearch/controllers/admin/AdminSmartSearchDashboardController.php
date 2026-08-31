@@ -548,7 +548,7 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         $html .= '<div class="row">';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Nome</label><input type="text" name="banner_name" class="form-control" required></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Immagine</label><input type="file" name="banner_image" class="form-control" accept="image/*" required></div></div>';
-        $html .= '<div class="col-md-2"><div class="form-group"><label>Posizione</label><select name="banner_position" class="form-control"><option value="top">Top</option><option value="middle">Middle</option><option value="bottom">Bottom</option></select></div></div>';
+        $html .= '<div class="col-md-2"><div class="form-group"><label>Posizione</label><select name="banner_position" class="form-control"><option value="top">In alto</option><option value="middle">In mezzo ai risultati</option><option value="bottom">In basso</option></select></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Keywords</label><input type="text" name="banner_keywords" class="form-control" placeholder="es: scarpe, sport"></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>Link</label><input type="url" name="banner_link" class="form-control"></div></div>';
         $html .= '<div class="col-md-2"><div class="form-group"><label>&nbsp;</label><button type="submit" name="submitBanner" class="btn btn-success btn-block"><i class="icon-plus"></i> Aggiungi</button></div></div>';
@@ -1462,7 +1462,34 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
         }
 
         $file = $_FILES['banner_image'];
+
+        // SICUREZZA: la cartella dei banner è raggiungibile via web. Senza
+        // controlli era possibile caricare un file .php ed eseguirlo sul server.
+        if (!isset($file['error']) || $file['error'] !== UPLOAD_ERR_OK) {
+            $this->errors[] = $this->l('Errore durante il caricamento del file.');
+            return false;
+        }
+
+        if ($file['size'] > 4194304) { // 4 MB
+            $this->errors[] = $this->l('Immagine troppo grande (massimo 4 MB).');
+            return false;
+        }
+
+        $allowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, $allowedExt, true)) {
+            $this->errors[] = $this->l('Formato non ammesso. Usa JPG, PNG, GIF o WEBP.');
+            return false;
+        }
+
+        // Verifica che sia davvero un'immagine, non solo dall'estensione
+        $imageInfo = @getimagesize($file['tmp_name']);
+        $allowedTypes = [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP];
+        if ($imageInfo === false || !in_array($imageInfo[2], $allowedTypes, true)) {
+            $this->errors[] = $this->l('Il file caricato non è un\'immagine valida.');
+            return false;
+        }
+
         $filename = 'banner_' . uniqid() . '.' . $ext;
 
         if (!move_uploaded_file($file['tmp_name'], $this->uploadDir . $filename)) {
@@ -1474,7 +1501,8 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
             'name' => $name,
             'image' => $filename,
             'link' => pSQL(Tools::getValue('banner_link')),
-            'position' => pSQL(Tools::getValue('banner_position')),
+            'position' => pSQL(in_array(Tools::getValue('banner_position'), ['top', 'middle', 'bottom', 'sidebar'], true)
+                ? Tools::getValue('banner_position') : 'top'),
             'keywords' => pSQL(Tools::getValue('banner_keywords')),
             'id_shop' => (int)$this->context->shop->id,
             'id_lang' => (int)$this->context->language->id,
@@ -1499,7 +1527,17 @@ class AdminSmartSearchDashboardController extends ModuleAdminController
 
     protected function clearModuleCache()
     {
+        // Svuota SIA la tabella cache del modulo SIA la cache di PrestaShop, dove
+        // il front controller memorizza davvero i risultati: pulire solo la
+        // tabella faceva sì che le modifiche non avessero effetto per minuti.
         Db::getInstance()->execute('TRUNCATE TABLE `' . _DB_PREFIX_ . 'smartsearch_cache`');
+        try {
+            if (method_exists('Cache', 'getInstance')) {
+                Cache::getInstance()->flush();
+            }
+        } catch (Throwable $e) {
+            // la pulizia della cache non deve bloccare il salvataggio
+        }
     }
 
     /**

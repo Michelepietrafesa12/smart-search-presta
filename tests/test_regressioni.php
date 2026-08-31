@@ -134,4 +134,28 @@ T::ok('le statistiche registrano il totale, non la pagina', strpos($src, 'trackS
 T::ok('la query utente ha un limite di lunghezza', strpos($src, 'mb_strlen($query) > 100') !== false);
 T::ok('il ramo wildcard applica il limite di richieste', strpos($src, "checkRateLimit(30, 60, 'search')") !== false);
 
+// ═══════════════════════════════════════════════════════════════
+T::section('SICUREZZA — XSS memorizzato tramite le ricerche dei visitatori');
+$js = file_get_contents(__DIR__ . '/../smartsearch/views/js/smartsearch.js');
+T::ok('escapeHtml protegge le virgolette doppie', strpos($js, "replace(/\"/g, '&quot;')") !== false);
+T::ok('escapeHtml protegge gli apici', strpos($js, "replace(/'/g, '&#39;')") !== false);
+T::ok('i link dei banner sono validati (no javascript:)', strpos($js, 'function safeUrl') !== false);
+T::ok('i banner usano l URL validato', strpos($js, 'href="${bannerHref}"') !== false);
+
+T::section('SICUREZZA — Upload di file arbitrari nel pannello');
+$adm = file_get_contents(__DIR__ . '/../smartsearch/controllers/admin/AdminSmartSearchDashboardController.php');
+T::ok('estensioni immagine su lista consentita', strpos($adm, "\$allowedExt = ['jpg', 'jpeg', 'png', 'gif', 'webp']") !== false);
+T::ok('verifica che sia davvero un immagine', strpos($adm, 'getimagesize') !== false);
+T::ok('controlla gli errori di caricamento', strpos($adm, 'UPLOAD_ERR_OK') !== false);
+
+T::section('AFFIDABILITA — cron e ricostruzione indice');
+$mod = file_get_contents(__DIR__ . '/../smartsearch/smartsearch.php');
+T::ok('ricostruzione protetta da blocco anti-concorrenza', strpos($mod, "GET_LOCK") !== false);
+T::ok('il blocco viene sempre rilasciato', strpos($mod, "RELEASE_LOCK") !== false);
+foreach (['rebuild_index', 'learn_synonyms', 'calculate_correlations'] as $c) {
+    $src = file_get_contents(__DIR__ . "/../smartsearch/cron/$c.php");
+    T::ok("cron $c non viene interrotto a metà", strpos($src, 'ignore_user_abort') !== false);
+}
+T::ok('la posizione banner "middle" esiste nello schema', strpos($mod, 'ENUM("top", "middle", "bottom", "sidebar")') !== false);
+
 exit(T::summary());

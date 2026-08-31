@@ -82,7 +82,8 @@
 
         let html = '';
         banners.forEach(banner => {
-            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const bannerHref = safeUrl(banner.link);
+            const linkOpen = bannerHref ? `<a href="${bannerHref}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
             const linkClose = banner.link ? '</a>' : '</div>';
 
             html += `
@@ -1167,6 +1168,14 @@
         if (searchAbortController) {
             searchAbortController.abort();
         }
+        // Annulla anche un eventuale "carica altri" ancora in corso: altrimenti
+        // i prodotti della ricerca precedente venivano aggiunti ai risultati
+        // della nuova ricerca.
+        if (loadMoreAbortController) {
+            loadMoreAbortController.abort();
+            loadMoreAbortController = null;
+        }
+        isLoadingMore = false;
         searchAbortController = new AbortController();
 
         currentQuery = query;
@@ -1597,7 +1606,8 @@
 
         let html = '';
         banners.forEach(banner => {
-            const linkOpen = banner.link ? `<a href="${banner.link}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
+            const bannerHref = safeUrl(banner.link);
+            const linkOpen = bannerHref ? `<a href="${bannerHref}" target="_blank" rel="noopener noreferrer" class="smartsearch-banner-link">` : '<div class="smartsearch-banner-link">';
             const linkClose = banner.link ? '</a>' : '</div>';
 
             html += `
@@ -1833,10 +1843,30 @@
     }
 
     function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        if (text === null || text === undefined) return '';
+        // Deve proteggere ANCHE virgolette e apici: questa funzione viene usata
+        // dentro attributi HTML (es. data-query="..."), e i valori provengono
+        // dalle ricerche di altri visitatori. Senza l'escape delle virgolette
+        // era possibile uscire dall'attributo e iniettare codice (XSS).
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    /**
+     * Ripulisce un URL fornito dal pannello: consente solo http/https e
+     * percorsi relativi, bloccando schemi pericolosi come javascript:.
+     */
+    function safeUrl(url) {
+        if (!url) return '';
+        const clean = String(url).trim();
+        if (/^(https?:\/\/|\/|#)/i.test(clean)) {
+            return escapeHtml(clean);
+        }
+        return '';
     }
 
     function escapeRegex(string) {
