@@ -1593,10 +1593,44 @@ class SmartsearchSearchModuleFrontController extends ModuleFrontController
     {
         if (self::$searchIndexAvailable === null) {
             try {
-                $count = (int) Db::getInstance()->getValue(
-                    'SELECT 1 FROM `' . _DB_PREFIX_ . 'smartsearch_index` LIMIT 1'
+                $idShop = (int) $this->context->shop->id;
+                $idLang = (int) $this->context->language->id;
+
+                $indexed = (int) Db::getInstance()->getValue(
+                    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'smartsearch_index`
+                     WHERE id_shop = ' . $idShop . ' AND id_lang = ' . $idLang . ' AND active = 1'
                 );
-                self::$searchIndexAvailable = ($count > 0);
+
+                $catalog = (int) Db::getInstance()->getValue(
+                    'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'product_shop`
+                     WHERE id_shop = ' . $idShop . ' AND active = 1'
+                );
+
+                // CRITICO: usare l'indice solo se copre davvero il catalogo.
+                // Se la ricostruzione fallisce, gli hook sui prodotti popolano
+                // comunque l'indice con i soli articoli modificati: fidarsi di
+                // un indice parziale renderebbe INTROVABILE il resto del
+                // catalogo. In quel caso è molto meglio la ricerca diretta,
+                // più lenta ma completa.
+                if ($catalog > 0) {
+                    self::$searchIndexAvailable = ($indexed >= ($catalog * 0.8));
+
+                    if (!self::$searchIndexAvailable && $indexed > 0) {
+                        PrestaShopLogger::addLog(
+                            sprintf(
+                                'SmartSearch: indice incompleto (%d/%d prodotti), uso la ricerca diretta. '
+                                . 'Esegui "Reindicizza catalogo ora" dal pannello.',
+                                $indexed,
+                                $catalog
+                            ),
+                            2,
+                            null,
+                            'SmartSearch'
+                        );
+                    }
+                } else {
+                    self::$searchIndexAvailable = ($indexed > 0);
+                }
             } catch (Throwable $e) {
                 self::$searchIndexAvailable = false;
             }

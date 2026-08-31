@@ -91,7 +91,24 @@ try {
         $log("Indice ricostruito con successo: {$count} voci in {$elapsed}s");
         exit(0);
     } else {
-        $log('Ricostruzione indice fallita', true);
+        $log('Ricostruzione indice fallita. La causa esatta è registrata nei log di PrestaShop:', true);
+        $log('  Parametri avanzati > Log  (cerca "SmartSearch ricostruzione indice")', true);
+
+        // Mostra subito le ultime righe di log per non dover cercare a mano
+        try {
+            $rows = Db::getInstance()->executeS(
+                'SELECT message, date_add FROM `' . _DB_PREFIX_ . 'log`
+                 WHERE message LIKE \'SmartSearch ricostruzione indice%\'
+                 ORDER BY id_log DESC LIMIT 3'
+            );
+            if ($rows) {
+                foreach ($rows as $row) {
+                    $log('  [' . $row['date_add'] . '] ' . $row['message'], true);
+                }
+            }
+        } catch (Exception $e) {
+            // il log è solo un aiuto: non deve far fallire lo script
+        }
         exit(1);
     }
 } catch (Exception $e) {

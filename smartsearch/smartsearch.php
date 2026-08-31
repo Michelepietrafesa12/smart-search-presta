@@ -109,7 +109,7 @@ class SmartSearch extends Module
     {
         $this->name = 'smartsearch';
         $this->tab = 'search_filter';
-        $this->version = '2.6.2';
+        $this->version = '2.6.3';
         $this->author = 'Michele Pietrafesa';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = [
@@ -1340,6 +1340,77 @@ class SmartSearch extends Module
      *
      * @return bool
      */
+    /**
+     * Esegue una query dell'indice verificandone davvero l'esito.
+     *
+     * In produzione PrestaShop NON lancia eccezioni sugli errori SQL: Db::execute()
+     * restituisce semplicemente false. Affidarsi al solo try/catch lascerebbe
+     * passare inosservati errori gravi, quindi qui si controlla il valore di
+     * ritorno e si registra il messaggio d'errore reale del database.
+     *
+     * @return bool
+     */
+    protected function execIndexStep($db, $sql, $step)
+    {
+        try {
+            $result = $db->execute($sql);
+        } catch (Throwable $e) {
+            $this->logIndexError($step . ' - ' . $e->getMessage());
+            return false;
+        }
+
+        if ($result === false) {
+            $msg = method_exists($db, 'getMsgError') ? $db->getMsgError() : '';
+            $this->logIndexError($step . ($msg !== '' ? ' - MySQL: ' . $msg : ''));
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Registra un errore dell'indice nei log di PrestaShop.
+     * Sempre attivo (non solo in modalità sviluppo): senza questo, il cron
+     * riporta un generico "ricostruzione fallita" senza alcuna causa.
+     */
+    protected function logIndexError($message)
+    {
+        if (class_exists('PrestaShopLogger')) {
+            PrestaShopLogger::addLog('SmartSearch ricostruzione indice: ' . $message, 3, null, 'SmartSearch');
+        }
+    }
+
+    /**
+     * Verifica se il database supporta REGEXP_REPLACE (MySQL 8.0.4+ /
+     * MariaDB 10.0.5+). Su versioni precedenti la funzione non esiste e la
+     * query di indicizzazione fallirebbe completamente.
+     *
+     * @return bool
+     */
+    protected function dbSupportsRegexpReplace($db)
+    {
+        static $supported = null;
+        if ($supported !== null) {
+            return $supported;
+        }
+
+        try {
+            $value = $db->getValue("SELECT REGEXP_REPLACE('a1b', '[0-9]', '') AS t");
+            $supported = ($value === 'ab');
+        } catch (Throwable $e) {
+            $supported = false;
+        }
+
+        if (!$supported) {
+            $this->logIndexError(
+                'REGEXP_REPLACE non disponibile (richiede MySQL 8.0.4+ o MariaDB 10.0.5+): '
+                . 'indicizzo il testo senza rimuovere i tag HTML. L\'indice funziona comunque.'
+            );
+        }
+
+        return $supported;
+    }
+
     public function rebuildSearchIndex()
     {
         $db = Db::getInstance();
@@ -1348,12 +1419,21 @@ class SmartSearch extends Module
         $oldTable  = '`' . _DB_PREFIX_ . 'smartsearch_index_old`';
 
         // 1. Crea tabella temporanea con la stessa struttura
-        try {
-            $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
-            $db->execute('CREATE TABLE ' . $tmpTable . ' LIKE ' . $liveTable);
-        } catch (Throwable $e) {
+        if (!$this->execIndexStep($db, 'DROP TABLE IF EXISTS ' . $tmpTable, 'drop tabella temporanea')
+            || !$this->execIndexStep($db, 'CREATE TABLE ' . $tmpTable . ' LIKE ' . $liveTable, 'creazione tabella temporanea')) {
             return false;
         }
+
+        // Compatibilità: REGEXP_REPLACE esiste solo da MySQL 8.0.4 / MariaDB
+        // 10.0.5. Su MySQL 5.6/5.7 la query fallirebbe e l'indice non verrebbe
+        // MAI ricostruito, quindi in quel caso si indicizza il testo grezzo.
+        $stripTags = $this->dbSupportsRegexpReplace($db);
+        $descShort = $stripTags
+            ? 'REGEXP_REPLACE(IFNULL(pl.description_short, \'\'), \'<[^>]+>\', \' \')'
+            : 'IFNULL(pl.description_short, \'\')';
+        $descLong = $stripTags
+            ? 'REGEXP_REPLACE(IFNULL(pl.description, \'\'), \'<[^>]+>\', \' \')'
+            : 'IFNULL(pl.description, \'\')';
 
         // 2. Popola la tabella temporanea (la live resta intatta)
         $languages = Language::getLanguages(true);
@@ -1381,8 +1461,8 @@ class SmartSearch extends Module
                         ),
                         CONCAT_WS(\' \',
                             pl.name,
-                            REGEXP_REPLACE(IFNULL(pl.description_short, \'\'), \'<[^>]+>\', \' \'),
-                            REGEXP_REPLACE(IFNULL(pl.description, \'\'), \'<[^>]+>\', \' \'),
+                            ' . $descShort . ',
+                            ' . $descLong . ',
                             IFNULL(p.reference, \'\'),
                             IFNULL(m.name, \'\'),
                             IFNULL(cl.name, \'\'),
@@ -1415,37 +1495,36 @@ class SmartSearch extends Module
                         AND cl.id_lang = ' . $idLang . '
                     WHERE ps.active = 1';
 
-                try {
-                    $db->execute($sql);
-                } catch (Throwable $e) {
+                if (!$this->execIndexStep($db, $sql, 'popolamento indice (shop ' . $idShop . ', lingua ' . $idLang . ')')) {
                     // Cleanup e abort: la live table non è stata toccata
                     $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
-                    if (defined('_PS_MODE_DEV_') && _PS_MODE_DEV_) {
-                        PrestaShopLogger::addLog(
-                            'SmartSearch index rebuild error: ' . $e->getMessage(),
-                            3, null, 'SmartSearch'
-                        );
-                    }
                     return false;
                 }
             }
         }
 
+        // 2b. Non sostituire un indice funzionante con uno vuoto: sarebbe
+        // peggio del problema che stiamo risolvendo.
+        $tmpCount = (int) $db->getValue('SELECT COUNT(*) FROM ' . $tmpTable);
+        if ($tmpCount === 0) {
+            $this->logIndexError('L\'indice ricostruito risulta vuoto: nessun prodotto attivo trovato. Indice precedente mantenuto.');
+            $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
+            return false;
+        }
+
         // 3. Swap atomico: tmp → live, vecchia live → old, drop old
-        try {
-            $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
-            $db->execute(
-                'RENAME TABLE '
-                . $liveTable . ' TO ' . $oldTable . ', '
-                . $tmpTable . ' TO ' . $liveTable
-            );
-            $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
-        } catch (Throwable $e) {
-            // Fallback: se il RENAME fallisce, pulisci la tmp
+        $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
+        $renamed = $this->execIndexStep(
+            $db,
+            'RENAME TABLE ' . $liveTable . ' TO ' . $oldTable . ', ' . $tmpTable . ' TO ' . $liveTable,
+            'scambio tabelle (serve il permesso ALTER/DROP sul database)'
+        );
+        if (!$renamed) {
             $db->execute('DROP TABLE IF EXISTS ' . $tmpTable);
             $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
             return false;
         }
+        $db->execute('DROP TABLE IF EXISTS ' . $oldTable);
 
         // Resetta la cache statica per evitare che isSearchIndexAvailable()
         // resti false nella stessa request (es. rebuild da admin)
